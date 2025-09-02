@@ -101,26 +101,76 @@ def beta_vae_collate_fn(batch):
 
 
 def conv1d_vae_collate_fn_old(batch):
-    """
-    batch: list of samples
+    """_summary_
+
+    Parameters
+    ----------
+    batch : list of samples
+
     sample = {
-        "signal1": [Tensor(C, T_x), Tensor(C, T_x), ...],  # one per time window
-        "signal2": [Tensor(C, T_x), Tensor(C, T_x), ...],
+        "signal1": [Tensor(C1, T1.0), Tensor(C1, T1.1), ...],  # one per time window
+        "signal2": [Tensor(C2, T2.0), Tensor(C2, T2.1), ...],
         ...
     }
+    
     For each signal, there is a list of tensors that collects all 
     temporal windows. 
+
+    Returns
+    -------
+    defaultdict
+    {
+        "signal1" : [
+            torch.stack(for tensors T in windows 0),
+            torch.stack(for tensors T in windows 1),
+            ...
+            ],
+        "signal2" : [
+            torch.stack(for tensors T in windows 0),
+            torch.stack(for tensors T in windows 1),
+            ...
+            ]
+    }
+    
+    
+    if batch = [
+        {
+            "S1": [torch.tensor([1]), torch.tensor([2])],
+            "S2": [torch.tensor([10]), torch.tensor([20])]
+        },
+        {
+            "S1": [torch.tensor([3])],
+            "S2": [torch.tensor([30])]
+        }
+    ]
+    
+    {
+        "S1": [
+            torch.stack([torch.tensor([1]), torch.tensor([3])]),  # index 0
+            torch.stack([torch.tensor([2])])                      # index 1 
+        ],
+        "S2": [
+            torch.stack([torch.tensor([10]), torch.tensor([30])]),
+            torch.stack([torch.tensor([20])])
+        ]
+    }
+ 
     """
-    collated_batch = defaultdict(list)
+    collated = defaultdict(lambda : defaultdict(list))
     
     for sample in batch:
         for signal_name, list_of_tensors in sample.items():
-            collated_batch[signal_name].extend(list_of_tensors)
+            for nr, tensor in enumerate(list_of_tensors):
+                collated[signal_name][nr].append(list_of_tensors)
     
     
     # stack into a single tensor per signal
-    for signal_name in collated_batch:
-        collated_batch[signal_name] = torch.stack(flat_list, dim=0) # shape (tot_Nr_windows, nr_channels, time_length)
+    final_batch = {}
+    for signal_key, index_dict in collated.items():
+        final_batch[signal_key] = []
+        # Sort indices to maintain order
+        for i in sorted(index_dict.keys()):
+            final_batch[signal_key].append(torch.stack(index_dict[i]))
 
-    return collated_batch
+    return final_batch
             

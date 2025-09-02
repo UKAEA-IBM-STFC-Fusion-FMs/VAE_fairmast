@@ -50,8 +50,10 @@ from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transfo
 from scripts.pipelines.transforms.shot_level_transforms.beta_vae_transform import (
     BetaVAETransform,
 )
-from scripts.pipelines.models.conv1d_vae import Conv1DVAE
+
 from scripts.pipelines.configs.config_setup import get_settings
+from scripts.pipelines.models.conv1d_vae import Conv1DVAE
+from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
 print(f"\nNumber of Cores: {cpu_count()}\n")
@@ -239,6 +241,7 @@ def initialize_dataloaders(
     return dataloaders_
 
 def create_conv1d_vae_models(
+    device,
     train_dataloader, 
     beta, 
     channels_factor=5,
@@ -250,7 +253,7 @@ def create_conv1d_vae_models(
 
     # Get sample batch to determine signal shapes
     sample_batch = next(iter(train_dataloader))
-
+    
     models = {}
     for signal_name, signal_data in sample_batch.items():
         input_length = signal_data.shape[-1]  # Last dimension is time
@@ -267,61 +270,52 @@ def create_conv1d_vae_models(
         stride = kernel_size
         
         
-    vae_specs = {
-        "beta": beta, 
-        "latent_dim": latent_dim, 
-        "input_length": input_length
-    }
+        vae_specs = {
+            "beta": beta, 
+            "latent_dim": latent_dim, 
+            "input_length": input_length
+        }
     
-    # Encoder layer specs (new format)
-    encoder_layer_specs = {
-        "layers": [
-            {
-                "type": "conv1d",
-                "params": {
-                    "in_channels": in_channels,
-                    "out_channels": out_channels,
-                    "kernel_size": kernel_size,
-                    "stride": stride,
-                    "padding": padding
+        # Encoder layer specs
+        encoder_layer_specs = {
+            "layers": [
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": in_channels,
+                        "out_channels": out_channels,
+                        "kernel_size": kernel_size,
+                        "stride": stride,
+                        "padding": padding
+                    }
+                },
+                {
+                    "type": "relu"
                 }
-            },
-            {
-                "type": "relu"
-            }
-        ]
-    }
+            ]
+        }
 
-    # Decoder layer specs (new format)
-    decoder_layer_specs = {
-        "layers": [
-            {
-                "type": "conv_transpose1d",
-                "params": {
-                    "in_channels": out_channels,
-                    "out_channels": in_channels,
-                    "kernel_size": kernel_size,
-                    "stride": stride,
-                    "padding": padding
+        # Decoder layer specs (new format)
+        decoder_layer_specs = {
+            "layers": [
+                {
+                    "type": "conv_transpose1d",
+                    "params": {
+                        "in_channels": out_channels,
+                        "out_channels": in_channels,
+                        "kernel_size": kernel_size,
+                        "stride": stride,
+                        "padding": padding
+                    }
+                },
+                {
+                    "type": "relu"
                 }
-            },
-            {
-                "type": "relu"
-            }
-        ]
-    }
+            ]
+        }
     
     
-        model = Conv1DVAE(
-                 beta, 
-                 in_channels,
-                 input_length,
-                 out_channels, 
-                 latent_dim, 
-                 kernel_size, 
-                 stride, 
-                 padding=0,
-                 factor = 2).to(device)
+        model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs).to(device)
 
         models[signal_name] = model
 

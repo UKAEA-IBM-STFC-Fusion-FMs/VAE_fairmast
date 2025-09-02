@@ -1,9 +1,9 @@
 {   
     "general":
     {
-        "nr_shots": 5, 
+        "nr_shots": 100, 
         "processes":2,
-        "local": false
+        "local": true
     },
 
     "pca": 
@@ -32,7 +32,7 @@
     "paths":
     {
         "signal list_file": "scripts/benchmarking/data_processing/data/input/list_of_signals.txt",
-        "output_path": "scripts/benchmarking/data_processing/data/output/ImputerModels/",
+        "output_path": "scripts/benchmarking/data_processing/data/output/tmp/",
         "data_split_file": "metadata/2025-05-12/data_splits.csv"
     }
 }
