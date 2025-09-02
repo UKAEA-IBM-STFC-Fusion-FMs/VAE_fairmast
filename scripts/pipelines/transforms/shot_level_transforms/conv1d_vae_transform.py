@@ -47,16 +47,32 @@ class Conv1dVAETransform:
         -------
         vae_samples : dict
             dict of signal_name: [signal_values1, ..., signal_values_idx].
-            HINT: the length of the list is the same for all signals 
-            in the same shot. However, it can vary across different shots.
+            signal_name.shape() = [nr_channels(signal_name), time_length(signal_name)]
+            HINT: len(all_signals) = nr. of time windows, is the same for all signals 
+            in the same shot. However, it can vary across different shots. However,
+            [nr_channels(signal_name), time_length(signal_name)] is the same across shots. 
         """
         all_signals = defaultdict(list)
-        
+        window_ids = []
         # Loop trhough all window_index
         for windowed_signal in list_samples:
-
+            
+            window_id = windowed_signal['window_index']
+            if window_id not in  window_ids:
+                 window_ids.append(window_id)
+            
             # Add signals
             for signal_name, signal_data in windowed_signal["x"].items():
                 all_signals[signal_name].append(torch.tensor(signal_data["values"]))
 
+        # Sanity check to be removed later
+        for name, val in all_signals.items():
+            if len(window_ids) != len(val):
+                print(f"Error, len(window_ids) != len(val): {len(window_ids)} != {len(val)}")
+        for nr, w in enumerate(window_ids):
+            if nr != int(w):
+                print("Error, non sequential window_ids")
+                
         return all_signals
+
+        
