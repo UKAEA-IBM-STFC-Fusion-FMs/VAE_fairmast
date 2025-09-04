@@ -100,7 +100,7 @@ def beta_vae_collate_fn(batch):
     return batched_signals
 
 
-def conv1d_vae_collate_fn_old(batch):
+def conv1d_vae_collate_fn(batch):
     """_summary_
 
     Parameters
@@ -161,7 +161,7 @@ def conv1d_vae_collate_fn_old(batch):
     for sample in batch:
         for signal_name, list_of_tensors in sample.items():
             for nr, tensor in enumerate(list_of_tensors):
-                collated[signal_name][nr].append(list_of_tensors)
+                collated[signal_name][nr].append(tensor)
     
     
     # stack into a single tensor per signal

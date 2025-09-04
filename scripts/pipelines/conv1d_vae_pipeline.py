@@ -18,7 +18,6 @@ REPO_ROOT = os.path.abspath(
 )
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
-print(f"REPO_ROOT: {REPO_ROOT}")
 
 from scripts.MAST_tools.MAST_dataset import MastDataset
 from scripts.pipelines.utils.utils import (
@@ -47,12 +46,10 @@ from scripts.pipelines.transforms.shot_level_transforms.truncation_transform imp
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
-from scripts.pipelines.transforms.shot_level_transforms.beta_vae_transform import (
-    BetaVAETransform,
-)
 
 from scripts.pipelines.configs.config_setup import get_settings
-from scripts.pipelines.models.conv1d_vae import Conv1DVAE
+from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
+from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
@@ -77,7 +74,12 @@ def get_train_test_val_shots(max_index=None):
 
     return train_sh, test_sh, val_sh
 
-def fit_mean_and_std_for_signal_transform( output_sub_dir, verbose=False, use_existing=False):
+def fit_mean_and_std_for_signal_transform( 
+                                          train_shots,
+                                          output_dir, 
+                                          verbose=False,
+                                          use_existing=False, 
+                                          local=True):
     """
     Fit or load mean and std for signal transformation.
 
@@ -86,7 +88,6 @@ def fit_mean_and_std_for_signal_transform( output_sub_dir, verbose=False, use_ex
         verbose: Print verbose output
         use_existing: If True, try to load existing fitted parameters instead of re-fitting
     """
-    output_dir = os.path.join("output", output_sub_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     mean_path = os.path.join(output_dir, "dict_mean_shot.pkl")
@@ -120,7 +121,7 @@ def fit_mean_and_std_for_signal_transform( output_sub_dir, verbose=False, use_ex
         print("\n\n----------TRANSFORM FITTING----------\n")
 
     preprocessing_train_dataset = MastDataset(
-        local=LOCAL_FLAG,
+        local=local,
         shots_list=yamane_sampled_shot_list(train_shots, error=0.05),
         source_signal_list=source_signal_list,
         signal_level_transform_map=None,
@@ -145,103 +146,55 @@ def fit_mean_and_std_for_signal_transform( output_sub_dir, verbose=False, use_ex
     return dict_mean_, dict_std_
 
 def initialize_datasets(
-    sources_and_signals, 
-    shots, 
-    sig_tran_map, 
-    shot_tran, 
-    local_flag=False, 
-    verbose=False):
+        sources_and_signals, 
+        shots, 
+        signal_transform_map, 
+        shot_transforms, 
+        local_flag=False
+    ):
+    
     datasets_ = {"train": None, "val": None, "test": None}
-
-    # Train
-    if shots["train"]:
-        datasets_["train"] = MastDataset(
-            local=local_flag,
-            shots_list=shots["train"],
-            source_signal_list=sources_and_signals,
-            signal_level_transform_map=sig_tran_map,
-            shot_level_transform=shot_tran,
-        )
-        if verbose:
-            print(f"len(mast_train_dataset): {len(datasets_['train'])}")
-
-    # Val
-    if shots["val"]:
-        datasets_["val"] = MastDataset(
-            local=local_flag,
-            shots_list=shots["val"],
-            source_signal_list=sources_and_signals,
-            signal_level_transform_map=sig_tran_map,
-            shot_level_transform=shot_tran,
-        )
-        if verbose:
-            print(f"len(val_dataset): {len(datasets_['val'])}")
-
-    # Test
-    if shots["test"]:
-        datasets_["test"] = MastDataset(
-            local=local_flag,
-            shots_list=shots["test"],
-            source_signal_list=sources_and_signals,
-            signal_level_transform_map=sig_tran_map,
-            shot_level_transform=shot_tran,
-        )
-        if verbose:
-            print(f"len(test_dataset): {len(datasets_['test'])}")
-
+    data_set_types = ["train", "val", "test"]
+    
+    for data_set_type in data_set_types:
+        if shots[data_set_type]:
+            datasets_[data_set_type] = MastDataset(
+                local=local_flag,
+                shots_list=shots[data_set_type],
+                source_signal_list=sources_and_signals,
+                signal_level_transform_map=signal_transform_map,
+                shot_level_transform=shot_transforms,
+            )
+            
     return datasets_
 
 def initialize_dataloaders(
-    datasets,
-    collate_function,
-    batch_size,
-    num_workers,
-    shuffle=True,
-    drop_last=False,
-    verbose=False):
+        datasets,
+        collate_function,
+        batch_size,
+        num_workers,
+        shuffle=True,
+        drop_last=False
+    ):
     
     dataloaders_ = {"train": None, "val": None, "test": None}
 
-    if verbose:
-        print("\n\n----------DATASET & DATALOADER INITIALIZATION----------\n")
-
-    # Train
-    if datasets["train"]:
-        dataloaders_["train"] = DataLoader(
-            dataset=datasets["train"],
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=shuffle,
-            drop_last=drop_last,
-            collate_fn=collate_function,
-        )
-
-    # Val
-    if datasets["val"]:
-        dataloaders_["val"] = DataLoader(
-            dataset=datasets["val"],
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=shuffle,
-            drop_last=drop_last,
-            collate_fn=collate_function,
-        )
-
-    # Test
-    if datasets["test"]:
-        dataloaders_["test"] = DataLoader(
-            dataset=datasets["test"],
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=shuffle,
-            drop_last=drop_last,
-            collate_fn=collate_function,
-        )
+    data_set_types = ["train", "val", "test"]
+    
+    for data_set_type in data_set_types:
+        if datasets[data_set_type]:
+            dataloaders_[data_set_type] = DataLoader(
+                dataset=datasets[data_set_type],
+                batch_size=batch_size,
+                num_workers=num_workers,
+                shuffle=shuffle,
+                drop_last=drop_last,
+                collate_fn=collate_function,
+            )
 
     return dataloaders_
 
 def create_conv1d_vae_models(
-    device,
     train_dataloader, 
     beta, 
     channels_factor=5,
@@ -314,8 +267,7 @@ def create_conv1d_vae_models(
             ]
         }
     
-    
-        model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs).to(device)
+        model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
 
         models[signal_name] = model
 
@@ -325,15 +277,16 @@ def create_conv1d_vae_models(
     return models
 
 def train_beta_vae_models(
+    beta_vae,
     models, 
+    device,
     train_dataloader, 
     val_dataloader, 
     output_dir, 
     verbose=False):
     
     """Train β-VAE models for each signal"""
-    if verbose:
-        print("\n\n----------β-VAE TRAINING----------\n")
+
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -359,55 +312,45 @@ def train_beta_vae_models(
         }
 
     for epoch in range(SETTINGS.TRAINING.num_epochs):
-        if verbose:
-            print(f"\nEpoch {epoch+1}\n")
+        verbose and print(f"\nEpoch {epoch+1}\n")
 
         # Training phase
+        verbose and print("Training phase")
         for signal_name, model in models.items():
             model.train()
+            model.to(device)
 
         train_losses = defaultdict(float)
         train_recon_losses = defaultdict(float)
         train_kl_losses = defaultdict(float)
-        train_counts = defaultdict(int)
+        train_counts =  defaultdict(float)
 
-        if verbose:
-            print("Training phase")
-
-        for batch_idx, batch_signals in enumerate(train_dataloader):
-            if verbose:
-                print(f"Batch idx: {batch_idx}")
-            if verbose and batch_idx == 0:
-                print(f"Available signals in batch: {list(batch_signals.keys())}")
-
-            for signal_name, signal_data in batch_signals.items():
-                if signal_name not in models:
-                    continue
-
+        for batch_idx, batch in enumerate(train_dataloader):
+            verbose and print(f"Batch idx: {batch_idx}")
+                
+            for signal_name, data in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
+                
+                for x in data:
+                    x = x.to(device)
+                    
+                    x_recon, mu, logvar = model(x)
 
-                # Prepare data
-                if signal_data.dim() == 2:  # (batch, time)
-                    x = signal_data.to(device)
-                else:  # (batch, channels, time) -> flatten channels
-                    x = signal_data.view(-1, signal_data.size(-1)).to(device)
+                    # Compute loss
+                    total_loss, recon_loss, kl_loss = loss_function(beta_vae, x_recon, x, mu, logvar)
 
-                # Forward pass
-                reconstruction, mu, logvar, z = model(x)
-                total_loss, recon_loss, kl_loss = model.loss_function(
-                    reconstruction, x, mu, logvar
-                )
 
-                # Backward pass
-                optimizer.zero_grad()
-                total_loss.backward()
-                optimizer.step()
+                    # Backward pass
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    optimizer.step()
 
-                train_losses[signal_name] += total_loss.item()
-                train_recon_losses[signal_name] += recon_loss.item()
-                train_kl_losses[signal_name] += kl_loss.item()
-                train_counts[signal_name] += x.size(0)
+                    train_losses[signal_name] += total_loss.item()
+                    train_recon_losses[signal_name] += recon_loss.item()
+                    train_kl_losses[signal_name] += kl_loss.item()
+                    train_counts[signal_name] += 1
+    
 
         # Validation phase
         val_losses = defaultdict(float)
@@ -418,82 +361,73 @@ def train_beta_vae_models(
         for signal_name, model in models.items():
             model.eval()
 
-        if verbose:
-            print("\nValidation phase")
+        verbose and print("\nValidation phase")
 
         with torch.no_grad():
-            for batch_idx, batch_signals in enumerate(val_dataloader):
-                if verbose:
-                    print(f"Batch idx: {batch_idx}")
-                for signal_name, signal_data in batch_signals.items():
-                    if signal_name not in models:
-                        continue
-
+            for batch_idx, batch in enumerate(val_dataloader):
+                verbose and print(f"Batch idx: {batch_idx}")
+                
+                for signal_name, data in batch.items():
+           
                     model = models[signal_name]
 
-                    # Prepare data
-                    if signal_data.dim() == 2:
-                        x = signal_data.to(device)
-                    else:
-                        x = signal_data.view(-1, signal_data.size(-1)).to(device)
+                    for x in data:
+                        x = x.to(device)
+                        
+                        x_recon, mu, logvar = model(x)
 
-                    # Forward pass
-                    reconstruction, mu, logvar, z = model(x)
-                    total_loss, recon_loss, kl_loss = model.loss_function(
-                        reconstruction, x, mu, logvar
-                    )
+                        # Compute loss
+                        total_loss, recon_loss, kl_loss = loss_function(beta_vae, x_recon, x, mu, logvar)
 
-                    val_losses[signal_name] += total_loss.item()
-                    val_recon_losses[signal_name] += recon_loss.item()
-                    val_kl_losses[signal_name] += kl_loss.item()
-                    val_counts[signal_name] += x.size(0)
+                        val_losses[signal_name] += total_loss.item()
+                        val_recon_losses[signal_name] += recon_loss.item()
+                        val_kl_losses[signal_name] += kl_loss.item()
+                        val_counts[signal_name] += 1
 
         # Store loss curves and print epoch results
         for signal_name in models.keys():
-            if train_counts[signal_name] > 0:
+            if  train_counts[signal_name] > 0:
                 avg_train_loss = train_losses[signal_name] / train_counts[signal_name]
                 avg_train_recon = train_recon_losses[signal_name] / train_counts[signal_name]
                 avg_train_kl = train_kl_losses[signal_name] / train_counts[signal_name]
-                
-                avg_val_loss = (
-                    val_losses[signal_name] / val_counts[signal_name]
-                    if val_counts[signal_name] > 0
-                    else float("inf")
+            else: 
+                avg_train_loss = float("inf")
+                avg_train_recon = float("inf")
+                avg_train_kl = float("inf")
+            
+            if val_counts[signal_name] > 0:
+                avg_val_loss = avg_val_loss  = val_losses[signal_name] / val_counts[signal_name]
+                avg_val_recon = val_recon_losses[signal_name] / val_counts[signal_name]
+                avg_val_kl = val_kl_losses[signal_name] / val_counts[signal_name]
+            else:
+                avg_val_loss = float("inf")
+                avg_val_recon = float("inf")
+                avg_val_kl = float("inf")
+            
+
+            # Store loss curves
+            loss_curves[signal_name]['train_total'].append(avg_train_loss)
+            loss_curves[signal_name]['train_recon'].append(avg_train_recon)
+            loss_curves[signal_name]['train_kl'].append(avg_train_kl)
+            loss_curves[signal_name]['val_total'].append(avg_val_loss)
+            loss_curves[signal_name]['val_recon'].append(avg_val_recon)
+            loss_curves[signal_name]['val_kl'].append(avg_val_kl)
+
+            if verbose:
+                print(
+                    f"Signal {signal_name:30s} - Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
                 )
-                avg_val_recon = (
-                    val_recon_losses[signal_name] / val_counts[signal_name]
-                    if val_counts[signal_name] > 0
-                    else float("inf")
+
+            # Save best model
+            if avg_val_loss < best_losses[signal_name]:
+                best_losses[signal_name] = avg_val_loss
+                best_model_states[signal_name] = models[signal_name].state_dict()
+
+                # Save best model state
+                model_path = os.path.join(
+                    output_dir, f"best_beta_vae_{signal_name.replace('/', '_')}.pt"
                 )
-                avg_val_kl = (
-                    val_kl_losses[signal_name] / val_counts[signal_name]
-                    if val_counts[signal_name] > 0
-                    else float("inf")
-                )
-
-                # Store loss curves
-                loss_curves[signal_name]['train_total'].append(avg_train_loss)
-                loss_curves[signal_name]['train_recon'].append(avg_train_recon)
-                loss_curves[signal_name]['train_kl'].append(avg_train_kl)
-                loss_curves[signal_name]['val_total'].append(avg_val_loss)
-                loss_curves[signal_name]['val_recon'].append(avg_val_recon)
-                loss_curves[signal_name]['val_kl'].append(avg_val_kl)
-
-                if verbose:
-                    print(
-                        f"Signal {signal_name:30s} - Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
-                    )
-
-                # Save best model
-                if avg_val_loss < best_losses[signal_name]:
-                    best_losses[signal_name] = avg_val_loss
-                    best_model_states[signal_name] = models[signal_name].state_dict()
-
-                    # Save best model state
-                    model_path = os.path.join(
-                        output_dir, f"best_beta_vae_{signal_name.replace('/', '_')}.pt"
-                    )
-                    torch.save(best_model_states[signal_name], model_path)
+                torch.save(best_model_states[signal_name], model_path)
 
     return best_model_states, loss_curves
 
@@ -503,13 +437,12 @@ if __name__ == "__main__":
     # Initialize SETTINGS object
     SETTINGS = get_settings("scripts/pipelines/configs/config.json")
     
-    LOCAL_FLAG = SETTINGS.DATA.local
     mp.set_start_method("spawn", force=True)
 
     # For common pipeline
     OUTPUT_SUB_FOLDER = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_output/"
 
-    source_signal_list = SETTINGS.DATA.data_names + SETTINGS.DATA.target_names
+    source_signal_list = SETTINGS.DATA.data_names
 
     # Parameters for window segmentation (no x/y split for VAE)
     PARAMETERS_WINDOWS_SEGMENTER = {
@@ -531,9 +464,11 @@ if __name__ == "__main__":
 
     # Fit mean and std for signal transformation
     dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
+        train_shots,
         output_sub_dir=OUTPUT_SUB_FOLDER,
-        verbose=True,
+        verbose=False,
         use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
+        local = SETTINGS.DATA.local
     )
 
     # Get the signal transform map
@@ -550,7 +485,7 @@ if __name__ == "__main__":
     }
 
     # Shot-level transform for β-VAE
-    shot_transform = ComposeTransforms(
+    shot_transforms = ComposeTransforms(
         [
             TruncationTransform(),
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
@@ -562,10 +497,9 @@ if __name__ == "__main__":
     datasets_train_val_test = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": test_shots},
-        sig_tran_map=signal_transform_map,
-        shot_tran=shot_transform,
-        local_flag=LOCAL_FLAG,
-        verbose=True,
+        signal_transform_map=signal_transform_map,
+        shot_transforms=shot_transforms,
+        local_flag=SETTINGS.DATA.local
     )
 
     # Prepare dataloaders
@@ -573,37 +507,28 @@ if __name__ == "__main__":
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
-        num_workers=SETTINGS.TRAINING.num_workers,
-        verbose=True,
+        num_workers=SETTINGS.TRAINING.num_workers
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
     test_dataloader = dataloaders_train_val_test["test"]
 
     # Create β-VAE models
-    conv1d_vae_models = create_beta_vae_models(
+    conv1d_vae_models = create_conv1d_vae_models(
         train_dataloader, 
         SETTINGS.BETA_VAE.beta, 
-        SETTINGS.CONV1D_VAE.scaling_factor,
         verbose = False
-    ):
-
-    best_model_states, training_loss_curves = train_beta_vae_models(
-        beta_vae_models,
-        train_dataloader,
-        val_dataloader,
-        OUTPUT_SUB_FOLDER,
-        verbose=True
     )
 
-    visualize_beta_vae_results(
-        beta_vae_models,
-        train_dataloader,
-        val_dataloader,
-        OUTPUT_SUB_FOLDER,
-        training_loss_curves,
-        verbose=True,
-    )
+    # best_model_states, training_loss_curves = train_beta_vae_models(
+    #     beta_vae_models,
+    #     train_dataloader,
+    #     val_dataloader,
+    #     OUTPUT_SUB_FOLDER,
+    #     verbose=True
+    # )
+
+
 
     print("\n\n----------TRAINING COMPLETE----------")
     print(f"Trained β-VAE models for {len(best_model_states)} signals")
