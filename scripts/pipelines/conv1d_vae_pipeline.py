@@ -79,7 +79,8 @@ def fit_mean_and_std_for_signal_transform(
                                           output_dir, 
                                           verbose=False,
                                           use_existing=False, 
-                                          local=True):
+                                          local=True
+                                          ):
     """
     Fit or load mean and std for signal transformation.
 
@@ -199,7 +200,7 @@ def create_conv1d_vae_models(
     beta, 
     channels_factor=5,
     kernel_factor=10,
-    padding = "same",
+    padding = 0,
     verbose = False
     ):
     """Create conv1d-VAE models for each signal type"""
@@ -209,18 +210,19 @@ def create_conv1d_vae_models(
     
     models = {}
     for signal_name, signal_data in sample_batch.items():
-        input_length = signal_data.shape[-1]  # Last dimension is time
-        input_channels = signal_data.shape[-2] # Nr. of channels
+
+        input_length = signal_data[0].shape[-1]  # Last dimension is time
+        input_channels = signal_data[0].shape[-2] # Nr. of channels
 
         if verbose:
             print(
                 f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
             )
 
-        out_channel = max(1, int(in_channels/channels_factor))
-        latent_dim = max(1,out_channel)
+        out_channels = max(1, int(input_channels/channels_factor))
+        latent_dim = max(1,out_channels)
         kernel_size = max(1,int(input_length/kernel_factor))
-        stride = kernel_size
+        stride = int(kernel_size/2)
         
         
         vae_specs = {
@@ -235,7 +237,7 @@ def create_conv1d_vae_models(
                 {
                     "type": "conv1d",
                     "params": {
-                        "in_channels": in_channels,
+                        "in_channels": input_channels,
                         "out_channels": out_channels,
                         "kernel_size": kernel_size,
                         "stride": stride,
@@ -255,7 +257,7 @@ def create_conv1d_vae_models(
                     "type": "conv_transpose1d",
                     "params": {
                         "in_channels": out_channels,
-                        "out_channels": in_channels,
+                        "out_channels": input_channels,
                         "kernel_size": kernel_size,
                         "stride": stride,
                         "padding": padding
@@ -465,7 +467,7 @@ if __name__ == "__main__":
     # Fit mean and std for signal transformation
     dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
         train_shots,
-        output_sub_dir=OUTPUT_SUB_FOLDER,
+        OUTPUT_SUB_FOLDER,
         verbose=False,
         use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
         local = SETTINGS.DATA.local
@@ -520,16 +522,16 @@ if __name__ == "__main__":
         verbose = False
     )
 
-    # best_model_states, training_loss_curves = train_beta_vae_models(
-    #     beta_vae_models,
-    #     train_dataloader,
-    #     val_dataloader,
-    #     OUTPUT_SUB_FOLDER,
-    #     verbose=True
-    # )
+    best_model_states, training_loss_curves = train_beta_vae_models(
+        SETTINGS.BETA_VAE.beta,
+        conv1d_vae_models,
+        device,
+        train_dataloader,
+        val_dataloader,
+        OUTPUT_SUB_FOLDER,
+        verbose=True
+    )
 
-
-
-    print("\n\n----------TRAINING COMPLETE----------")
+    print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
     print(f"Trained β-VAE models for {len(best_model_states)} signals")
-    print(f"Models saved in: output/{OUTPUT_SUB_FOLDER}")
+    print(f"Models saved in: {OUTPUT_SUB_FOLDER}")

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scripts.pipelines.models.layer_factory import SequentialBuilder
+from scripts.pipelines.utils.layer_factory import SequentialBuilder
 
 
 class Conv1dVAE(nn.Module):
