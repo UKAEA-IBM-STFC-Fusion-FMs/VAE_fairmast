@@ -63,7 +63,7 @@ class Conv1dVAETransform:
             
             # Add signals
             for signal_name, signal_data in windowed_signal["x"].items():
-                all_signals[signal_name].append(torch.tensor(signal_data["values"]))
+                all_signals[signal_name].append(torch.tensor(signal_data["values"],dtype=torch.float32))
 
         # Sanity check to be removed later
         for name, val in all_signals.items():

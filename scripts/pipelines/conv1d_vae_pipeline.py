@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import pickle
@@ -21,7 +22,7 @@ if REPO_ROOT not in sys.path:
 
 from scripts.MAST_tools.MAST_dataset import MastDataset
 from scripts.pipelines.utils.utils import (
-    read_data_split_csv, ComposeTransforms
+    read_data_split_csv, ComposeTransforms, load_models
 )
 from scripts.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
 from scripts.pipelines.preprocessing.standardscaling_preprocessing import (
@@ -46,14 +47,13 @@ from scripts.pipelines.transforms.shot_level_transforms.truncation_transform imp
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
+from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
-
-print(f"\nNumber of Cores: {cpu_count()}\n")
 
 # Determine device to train on
 if torch.backends.mps.is_available():
@@ -278,8 +278,8 @@ def create_conv1d_vae_models(
 
     return models
 
-def train_beta_vae_models(
-    beta_vae,
+def train_conv1d_vae_models(
+    SETTINGS,
     models, 
     device,
     train_dataloader, 
@@ -313,6 +313,9 @@ def train_beta_vae_models(
             'val_kl': []
         }
 
+    for signal_name, model in models.items():
+        model.to(device)
+    
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         verbose and print(f"\nEpoch {epoch+1}\n")
 
@@ -320,8 +323,7 @@ def train_beta_vae_models(
         verbose and print("Training phase")
         for signal_name, model in models.items():
             model.train()
-            model.to(device)
-
+            
         train_losses = defaultdict(float)
         train_recon_losses = defaultdict(float)
         train_kl_losses = defaultdict(float)
@@ -340,7 +342,7 @@ def train_beta_vae_models(
                     x_recon, mu, logvar = model(x)
 
                     # Compute loss
-                    total_loss, recon_loss, kl_loss = loss_function(beta_vae, x_recon, x, mu, logvar)
+                    total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
 
                     # Backward pass
@@ -379,7 +381,7 @@ def train_beta_vae_models(
                         x_recon, mu, logvar = model(x)
 
                         # Compute loss
-                        total_loss, recon_loss, kl_loss = loss_function(beta_vae, x_recon, x, mu, logvar)
+                        total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
                         val_losses[signal_name] += total_loss.item()
                         val_recon_losses[signal_name] += recon_loss.item()
@@ -398,7 +400,7 @@ def train_beta_vae_models(
                 avg_train_kl = float("inf")
             
             if val_counts[signal_name] > 0:
-                avg_val_loss = avg_val_loss  = val_losses[signal_name] / val_counts[signal_name]
+                avg_val_loss  = val_losses[signal_name] / val_counts[signal_name]
                 avg_val_recon = val_recon_losses[signal_name] / val_counts[signal_name]
                 avg_val_kl = val_kl_losses[signal_name] / val_counts[signal_name]
             else:
@@ -430,7 +432,10 @@ def train_beta_vae_models(
                     output_dir, f"best_beta_vae_{signal_name.replace('/', '_')}.pt"
                 )
                 torch.save(best_model_states[signal_name], model_path)
-
+    
+    with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
+                json.dump(loss_curves, f, indent=4)
+                
     return best_model_states, loss_curves
 
 
@@ -473,13 +478,16 @@ if __name__ == "__main__":
         local = SETTINGS.DATA.local
     )
 
+    model_dictionary = load_models(SETTINGS.DATA.data_names, 
+                                   SETTINGS.LOCAL_PATHS.joblib_directory)
+    
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [
-                ForwardFillImputerTransform(),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
-                FillWithZerosImputerTransform(),
+                ImputerTransform(model_dictionary["imputer"][var], 
+                         SETTINGS.LOCAL_PATHS.average_values_file_path),
                 SamplingToReferenceTimeTransform(SETTINGS.BETA_VAE.ref_freq),
             ]
         )
@@ -522,8 +530,8 @@ if __name__ == "__main__":
         verbose = False
     )
 
-    best_model_states, training_loss_curves = train_beta_vae_models(
-        SETTINGS.BETA_VAE.beta,
+    best_model_states, training_loss_curves = train_conv1d_vae_models(
+        SETTINGS,
         conv1d_vae_models,
         device,
         train_dataloader,
