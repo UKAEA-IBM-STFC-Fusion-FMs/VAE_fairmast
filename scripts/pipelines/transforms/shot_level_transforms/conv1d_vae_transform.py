@@ -55,6 +55,9 @@ class Conv1dVAETransform:
         all_signals = defaultdict(list)
         window_ids = []
         # Loop trhough all window_index
+        if not list_samples or len(list_samples)==0:
+            print("Empty list_samples in conv1d_vae_transform.py")
+            return all_signals
         for windowed_signal in list_samples:
             
             window_id = windowed_signal['window_index']

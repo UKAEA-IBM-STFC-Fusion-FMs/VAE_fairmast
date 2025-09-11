@@ -6,7 +6,7 @@
     
     see transforms.SegmenterTransform for more details on the input data format.
 """      
-from collections import defaultdict
+from collections import defaultdict, Counter
 import torch
 
 def first_item(batch):
@@ -100,7 +100,7 @@ def beta_vae_collate_fn(batch):
     return batched_signals
 
 
-def conv1d_vae_collate_fn(batch):
+def conv1d_vae_collate_fn(batch, verbose = False):
     """_summary_
 
     Parameters
@@ -159,6 +159,8 @@ def conv1d_vae_collate_fn(batch):
     collated = defaultdict(lambda : defaultdict(list))
     
     for sample in batch:
+        if isinstance(sample, list):
+            continue
         for signal_name, list_of_tensors in sample.items():
             for nr, tensor in enumerate(list_of_tensors):
                 collated[signal_name][nr].append(tensor)
@@ -170,7 +172,25 @@ def conv1d_vae_collate_fn(batch):
         final_batch[signal_key] = []
         # Sort indices to maintain order
         for i in sorted(index_dict.keys()):
-            final_batch[signal_key].append(torch.stack(index_dict[i]))
+            
+            # Some tensors might have wrong shape
+            tensors = index_dict[i]
+            
+            # Count how many tensors have each shape
+            shape_counts = Counter([t.shape for t in tensors])
+            most_common_shape, _ = shape_counts.most_common(1)[0]
+            
+            # Keep only tensors with the most common shape
+            filtered = [t for t in tensors if t.shape == most_common_shape]
+            
+            if len(filtered) < len(tensors) and verbose:
+                print(
+                    f"Warning: dropped {len(tensors) - len(filtered)} out of {len(tensors)} tensor(s) "
+                    f"for signal {signal_key}, index {i} due to shape mismatch"
+                    f"{shape_counts}"
+                )
+                
+            final_batch[signal_key].append(torch.stack(filtered))
 
     return final_batch
             

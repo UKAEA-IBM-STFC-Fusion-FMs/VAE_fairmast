@@ -285,7 +285,8 @@ def run_model(
     current_process="training",
     criterion=nn.MSELoss(),
     optimiser=None,
-    log_file=None):
+    log_file=None,
+    verbose = True):
     """
     Train the NeuralNetwork model.
 
@@ -315,7 +316,7 @@ def run_model(
     loss_vs_epoch = []
     for epoch in range(num_epochs):
         
-        print(f"{current_process} epoch: {epoch}")
+        verbose and print(f"{current_process} epoch: {epoch}")
         
         if current_process == "training":
             model.train()
@@ -352,7 +353,9 @@ def run_model(
                 
                 x_tensor = x_tensor.to(device)
                 y_tensor = y_tensor.to(device)
-                 
+                
+                verbose and print(f"x shape {x.shape()}, y shape: {y.shape()}")
+                
                 output = model(x_tensor)
                 loss = criterion(output, y_tensor)
                 
@@ -366,7 +369,7 @@ def run_model(
 
                 running_loss += loss.item()
                     
-        print(f"Loss: {running_loss/len(data_loader):.2e}")
+        verbose and print(f"Epoch: {epoch}, {current_process} loss: {running_loss/len(data_loader):.2e}")
         loss_vs_epoch.append(running_loss/len(data_loader))    
         
     return loss_vs_epoch
@@ -443,7 +446,7 @@ if __name__== "__main__":
     transforms_data_shot_level = ComposeTransforms([
                 SegmenterTransform(
                     SETTINGS.TIME_SEGMENTATION.time_window_sec, 
-                    SETTINGS.TIME_SEGMENTATION.time_step,
+                    SETTINGS.TIME_SEGMENTATION.stride_sec,
                     SETTINGS.TIME_SEGMENTATION.offset)
             ]
         )
@@ -451,7 +454,7 @@ if __name__== "__main__":
     transforms_target_shot_level = ComposeTransforms([
                 SegmenterTransform(
                     SETTINGS.TIME_SEGMENTATION.offset,
-                    SETTINGS.TIME_SEGMENTATION.time_step,
+                    SETTINGS.TIME_SEGMENTATION.stride_sec,
                     offset=0.0)
             ]
         )
@@ -515,11 +518,12 @@ if __name__== "__main__":
         current_process,
         criterion,
         optimiser,
-        log_file=None
+        log_file=None,
+        verbose = True
         )
     
     current_process = "validating"
-    eval_loss = run_model(
+    val_loss = run_model(
         model,
         device,
         data_loader_validation,
@@ -550,6 +554,8 @@ if __name__== "__main__":
     
 
     print("Training completed successfully.")
+    print(f"Training loss: {train_loss}")
+    print(f"Validation loss: {val_loss}")
     # Save the model
     torch.save({
         'model_state_dict': model.state_dict(),
@@ -568,6 +574,6 @@ if __name__== "__main__":
         },
         'metrics': {
             'train_loss': train_loss,
-            'eval_loss': eval_loss
+            'eval_loss': val_loss
         }}, f"model{SETTINGS.NEURALNET.lr}.pth")
 
