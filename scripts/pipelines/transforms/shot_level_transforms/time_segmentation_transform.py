@@ -8,7 +8,7 @@ class SegmenterTransform(object):
     ----------
     time_window_sec : float
         The length of the time window in seconds to segment the x and y values.
-    time_step : float
+    stride_sec : float
         The step in seconds to move the time window.
     offset : float, optional
         The offset in seconds to start the time window from the end of the signal, by default 0.0.
@@ -17,7 +17,7 @@ class SegmenterTransform(object):
     def __init__(
         self,  
         time_window_sec, 
-        time_step, 
+        stride_sec, 
         offset
         ):
         
@@ -25,26 +25,29 @@ class SegmenterTransform(object):
         self.time_intervals_checks= False
         if not (
                 time_window_sec > 0 and \
-                time_step > 0 and \
+                stride_sec > 0 and \
                 offset >= 0 and \
-                time_step < time_window_sec 
+                stride_sec < time_window_sec 
             ):
             self.time_intervals_checks = True
             raise ValueError(
                 "Invalid parameters for time window, time step or offset. " +
-                "Ensure that time_window_sec > 0, time_step > 0, offset >= 0, " +
-                "time_step < time_window_sec and offset <= time_window_sec."
+                "Ensure that time_window_sec > 0, stride_sec > 0, offset >= 0, " +
+                "stride_sec < time_window_sec and offset <= time_window_sec. \n" +
+                f" Current time_window_sec {time_window_sec}\n"+
+                f" Current offset {offset}\n"+
+                f" Current stride_sec {stride_sec}\n"
             )
         
         self.time_window_sec = time_window_sec
-        self.time_step =  time_step
+        self.stride_sec =  stride_sec
         self.offset =  offset
 
     def __call__(self, shot):    
         return segment_shot(
                 shot,  
                 self.time_window_sec, 
-                self.time_step, 
+                self.stride_sec, 
                 self.offset
             )
 
@@ -53,7 +56,7 @@ def segment_data_in_time_windows(
     values,
     times,
     time_window, 
-    time_step,
+    stride_sec,
     offset=0.0
     ):
     """ Segment the "values" and "times" into smaller segments 
@@ -66,7 +69,7 @@ def segment_data_in_time_windows(
         The times corresponding to the values, shape: (time_steps,).
     time_window : float
         The length of the time window in seconds.
-    time_step : float
+    stride_sec : float
         The step in seconds to move the time window.
     offset : float, optional
         The offset in seconds to start the time window from the end of the signal, by default 0.0.
@@ -105,7 +108,7 @@ def segment_data_in_time_windows(
         segments_v.insert(0,val_segment)
         segments_t.insert(0,time_segment)
 
-        start_time -=  time_step
+        start_time -=  stride_sec
 
     return segments_v, segments_t
 
@@ -146,13 +149,13 @@ def create_map(shot):
 def segment_shot(
     shot,  
     time_window_sec, 
-    time_step, 
+    stride_sec, 
     offset):
     """Segment the dictionaries contained in sample into smaller 
        dictionaries each containing a segment of the original arrays.
        
        These segments are created by sliding a time window of length
-       time_window_sec over array values with a step of time_step. This algorithm is
+       time_window_sec over array values with a step of stride_sec. This algorithm is
        implemented in the function segment_data_in_time_windows.
        
        HINT: for forecasting purposes, the segments of y are 
@@ -164,7 +167,7 @@ def segment_shot(
         An item from the MastDataset single shot level transform
     time_window_sec : int
         The length of the time window in seconds to segment the x and y values.
-    time_step : int
+    stride_sec : int
         The step in seconds to move the time window.
     offset : int
         The offset in seconds to start the time window from the end of the signal.
@@ -209,7 +212,7 @@ def segment_shot(
                 values,
                 times, 
                 time_window_sec, 
-                time_step, 
+                stride_sec, 
                 offset
             )
             sample["values"] = segments_v
@@ -295,13 +298,13 @@ if __name__ == "__main__":
     target_shot = make_shot_dictionary(target_profile, target_names[0][1], store, target_names[0][0])
     
     time_window_sec =  0.01
-    time_step = 0.005
+    stride_sec = 0.005
     offset = 0.003
     
 
     # Working
-    list_x = segment_shot(data_shot, time_window_sec, time_step, offset)
-    list_y = segment_shot(target_shot, offset, time_step, offset=00)
+    list_x = segment_shot(data_shot, time_window_sec, stride_sec, offset)
+    list_y = segment_shot(target_shot, offset, stride_sec, offset=00)
        
     
     # Printing the first two segments of x and y

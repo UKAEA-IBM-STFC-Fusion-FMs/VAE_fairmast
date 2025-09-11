@@ -73,7 +73,7 @@ class TimeSettings:
             self.time_window_sec = config["time_settings"]["time_window_sec"]
             
             # # This is the time step in seconds. Time window is moved by this amount backwards in time.
-            self.time_step = config["time_settings"]["time_step"]
+            self.stride_sec = config["time_settings"]["stride_sec"]
 
             # This is the target offset in seconds. Signal is predicted in this time window.
             self.offset = config["time_settings"]["offset"]

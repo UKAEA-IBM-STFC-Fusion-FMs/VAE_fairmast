@@ -198,7 +198,6 @@ def initialize_dataloaders(
 def create_conv1d_vae_models(
     train_dataloader, 
     beta, 
-    channels_factor=5,
     kernel_factor=10,
     padding = 0,
     verbose = False
@@ -218,8 +217,9 @@ def create_conv1d_vae_models(
             print(
                 f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
             )
-
-        out_channels = max(1, int(input_channels/channels_factor))
+            
+        input_channels = 1
+        out_channels = 1
         latent_dim = max(1,out_channels)
         kernel_size = max(1,int(input_length/kernel_factor))
         stride = int(kernel_size/2)
@@ -478,17 +478,18 @@ if __name__ == "__main__":
         local = SETTINGS.DATA.local
     )
 
-    model_dictionary = load_models(SETTINGS.DATA.data_names, 
-                                   SETTINGS.LOCAL_PATHS.joblib_directory)
+    # model_dictionary = load_models(SETTINGS.DATA.data_names, 
+    #                                SETTINGS.LOCAL_PATHS.joblib_directory)
     
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
-            [
+            [   
+                ForwardFillImputerTransform(),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
-                ImputerTransform(model_dictionary["imputer"][var], 
-                         SETTINGS.LOCAL_PATHS.average_values_file_path),
-                SamplingToReferenceTimeTransform(SETTINGS.BETA_VAE.ref_freq),
+                #ImputerTransform(model_dictionary["imputer"][var], 
+                         #SETTINGS.LOCAL_PATHS.average_values_file_path),
+                FillWithZerosImputerTransform(),
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -497,7 +498,6 @@ if __name__ == "__main__":
     # Shot-level transform for β-VAE
     shot_transforms = ComposeTransforms(
         [
-            TruncationTransform(),
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
             Conv1dVAETransform(),
         ]
