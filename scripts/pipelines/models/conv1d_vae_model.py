@@ -80,8 +80,15 @@ class Conv1dVAE(nn.Module):
 
 def loss_function(beta, reconstruction, target, mu, logvar):
     """β-VAE loss function"""
-    masked_target = target[:, :, :reconstruction.shape[2]]
-    reconstruction_loss = F.mse_loss(reconstruction, masked_target, reduction='mean')        
+    try:
+        reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
+        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
+        total_loss = reconstruction_loss + beta * kl_loss
+    except:
+        reconstruction_loss = F.mse_loss(reconstruction, target[:, :, :reconstruction.shape[2]], reduction='mean')  
+        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
+        total_loss = reconstruction_loss + beta * kl_loss
+
     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
     total_loss = reconstruction_loss + beta * kl_loss
     return total_loss, reconstruction_loss, kl_loss
@@ -181,7 +188,6 @@ def build_decoder_specs_from_encoder_specs(encoder_layer_specs, input_channels, 
         input_channels, 
         input_length
         )
-    
     decoder_layer_specs = {"layers": []}
     
     for layer in dec_layers:
@@ -209,11 +215,11 @@ def build_decoder_specs_from_encoder_specs(encoder_layer_specs, input_channels, 
 def test_conv1d_vae():
     # Model hyperparameters
     beta = 1
-    in_channels = 10
+    in_channels = 3
     input_length = 100
     out_channels = 5
     latent_dim = 3
-    kernel_size = 10
+    kernel_size = 7
     stride = 5
     padding = 0
 
@@ -242,24 +248,6 @@ def test_conv1d_vae():
         ]
     }
 
-    # Decoder layer specs
-    # decoder_layer_specs = {
-    #     "layers": [
-    #         {
-    #             "type": "conv_transpose1d",
-    #             "params": {
-    #                 "in_channels": out_channels,
-    #                 "out_channels": in_channels,
-    #                 "kernel_size": kernel_size,
-    #                 "stride": stride,
-    #                 "padding": padding
-    #             }
-    #         },
-    #         {
-    #             "type": "relu"
-    #         }
-    #     ]
-    # }
     decoder_layer_specs = build_decoder_specs_from_encoder_specs(
         encoder_layer_specs,
         in_channels, 

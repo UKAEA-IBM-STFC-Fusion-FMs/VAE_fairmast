@@ -22,7 +22,7 @@ if REPO_ROOT not in sys.path:
 
 from scripts.MAST_tools.MAST_dataset import MastDataset
 from scripts.pipelines.utils.utils import (
-    read_data_split_csv, ComposeTransforms, load_models
+    read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
 from scripts.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
 from scripts.pipelines.preprocessing.standardscaling_preprocessing import (
@@ -51,7 +51,8 @@ from scripts.pipelines.transforms.signal_level_transforms.imputer_transform impo
 
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_vae_model import loss_function
+from scripts.pipelines.models.conv1d_encoder_specs import i_plasma_encoder_specs
+from scripts.pipelines.models.conv1d_vae_model import loss_function, build_decoder_specs_from_encoder_specs
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
@@ -196,10 +197,8 @@ def initialize_dataloaders(
     return dataloaders_
 
 def create_conv1d_vae_models(
+    SETTINGS,
     train_dataloader, 
-    beta, 
-    kernel_factor=10,
-    padding = 0,
     verbose = False
     ):
     """Create conv1d-VAE models for each signal type"""
@@ -220,54 +219,22 @@ def create_conv1d_vae_models(
             
         input_channels = 1
         out_channels = 1
-        latent_dim = max(1,out_channels)
-        kernel_size = max(1,int(input_length/kernel_factor))
-        stride = int(kernel_size/2)
-        
         
         vae_specs = {
-            "beta": beta, 
-            "latent_dim": latent_dim, 
+            "beta": SETTINGS.BETA_VAE.beta, 
+            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
             "input_length": input_length
         }
     
         # Encoder layer specs
-        encoder_layer_specs = {
-            "layers": [
-                {
-                    "type": "conv1d",
-                    "params": {
-                        "in_channels": input_channels,
-                        "out_channels": out_channels,
-                        "kernel_size": kernel_size,
-                        "stride": stride,
-                        "padding": padding
-                    }
-                },
-                {
-                    "type": "relu"
-                }
-            ]
-        }
+        encoder_layer_specs = i_plasma_encoder_specs(SETTINGS)
 
         # Decoder layer specs (new format)
-        decoder_layer_specs = {
-            "layers": [
-                {
-                    "type": "conv_transpose1d",
-                    "params": {
-                        "in_channels": out_channels,
-                        "out_channels": input_channels,
-                        "kernel_size": kernel_size,
-                        "stride": stride,
-                        "padding": padding
-                    }
-                },
-                {
-                    "type": "relu"
-                }
-            ]
-        }
+        decoder_layer_specs =  build_decoder_specs_from_encoder_specs(
+        encoder_layer_specs,
+        input_channels, 
+        input_length 
+    )
     
         model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
 
@@ -432,9 +399,15 @@ def train_conv1d_vae_models(
                     output_dir, f"best_beta_vae_{signal_name.replace('/', '_')}.pt"
                 )
                 torch.save(best_model_states[signal_name], model_path)
-    
+
     with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
-                json.dump(loss_curves, f, indent=4)
+        data = {
+            'vae': to_dict(SETTINGS.BETA_VAE),
+            'conv1d': to_dict(SETTINGS.CONV1D),
+            'training': to_dict(SETTINGS.TRAINING),
+            'Loss': loss_curves
+        }
+        json.dump(data, f, indent=4)
                 
     return best_model_states, loss_curves
 
@@ -525,8 +498,8 @@ if __name__ == "__main__":
 
     # Create β-VAE models
     conv1d_vae_models = create_conv1d_vae_models(
+        SETTINGS,
         train_dataloader, 
-        SETTINGS.BETA_VAE.beta, 
         verbose = False
     )
 

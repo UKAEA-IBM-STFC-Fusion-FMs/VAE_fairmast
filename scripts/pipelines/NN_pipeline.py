@@ -1,4 +1,5 @@
 import argparse
+import json
 import numpy as np
 import os
 import pandas as pd
@@ -275,6 +276,7 @@ def get_loss_per_signal(output, y_batch, y_tensor, log_file=None):
     
     
 def run_model(
+    output_dir,
     model,
     device, 
     data_loader,
@@ -326,7 +328,12 @@ def run_model(
             
         # Loop through base batches from the DataLoader
         running_loss = 0.0
+        batch_idx = 0
+        counter = 0
         for data_list, target_list in zip(data_loader, target_loader):
+            verbose and print(f"Batch idx = {batch_idx}")
+            batch_idx +=1
+            
             base_batch = collator(data_list, target_list)
             
             if batch_size is not None and min_batch_size is not None:
@@ -353,11 +360,10 @@ def run_model(
                 
                 x_tensor = x_tensor.to(device)
                 y_tensor = y_tensor.to(device)
-                
-                verbose and print(f"x shape {x.shape()}, y shape: {y.shape()}")
-                
+                                
                 output = model(x_tensor)
                 loss = criterion(output, y_tensor)
+                counter += 1
                 
                 if current_process == "testing":
                     get_loss_per_signal(output, y_batch, y_tensor, log_file)
@@ -369,8 +375,11 @@ def run_model(
 
                 running_loss += loss.item()
                     
-        verbose and print(f"Epoch: {epoch}, {current_process} loss: {running_loss/len(data_loader):.2e}")
-        loss_vs_epoch.append(running_loss/len(data_loader))    
+        verbose and print(f"Epoch: {epoch}, {current_process} loss: {running_loss/counter:.2e}")
+        loss_vs_epoch.append(running_loss/len(data_loader))   
+         
+    with open(os.path.join(output_dir, f'{current_process}_loss_curves.json'), 'w') as f:
+        json.dump(loss_vs_epoch, f, indent=4)
         
     return loss_vs_epoch
 
@@ -505,9 +514,11 @@ if __name__== "__main__":
     ########## END MODEL DEFINITION ########## 
     
     ########## MODEL TRAINING & VALIDATION ##########
-    output_filename=SETTINGS.LOCAL_PATHS.data_output_directory + "NeuralNetwork.txt"
+    output_dir= os.path.join(SETTINGS.LOCAL_PATHS.data_output_directory, "NeuralNetwork")
+    os.makedirs(output_dir, exist_ok=True)
     current_process = "training"
     train_loss = run_model(
+        output_dir,
         model,
         device,
         data_loader_train,
@@ -524,6 +535,7 @@ if __name__== "__main__":
     
     current_process = "validating"
     val_loss = run_model(
+        output_dir,
         model,
         device,
         data_loader_validation,

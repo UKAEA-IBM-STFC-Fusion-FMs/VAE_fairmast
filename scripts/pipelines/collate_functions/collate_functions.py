@@ -176,21 +176,13 @@ def conv1d_vae_collate_fn(batch, verbose = False):
             # Some tensors might have wrong shape
             tensors = index_dict[i]
             
-            # Count how many tensors have each shape
-            shape_counts = Counter([t.shape for t in tensors])
-            most_common_shape, _ = shape_counts.most_common(1)[0]
+            # Some tensor might have an extra entry due to the temporal window segmentation
+            tensor_ref_size = min(t.shape[-1] for t in tensors)
             
-            # Keep only tensors with the most common shape
-            filtered = [t for t in tensors if t.shape == most_common_shape]
-            
-            if len(filtered) < len(tensors) and verbose:
-                print(
-                    f"Warning: dropped {len(tensors) - len(filtered)} out of {len(tensors)} tensor(s) "
-                    f"for signal {signal_key}, index {i} due to shape mismatch"
-                    f"{shape_counts}"
-                )
+            # Crop tensors along the last dimension if necessary
+            cropped = [t[..., :tensor_ref_size] for t in tensors]
                 
-            final_batch[signal_key].append(torch.stack(filtered))
+            final_batch[signal_key].append(torch.stack(cropped))
 
     return final_batch
             

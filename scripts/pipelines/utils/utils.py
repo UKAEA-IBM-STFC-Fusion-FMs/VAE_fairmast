@@ -151,3 +151,8 @@ def load_models(data_names, data_dir):
         imputer_models[f"{source_name}-{signal_name}"] = joblib.load(imputer_model_path)
 
     return {"pca": pca_models, "imputer": imputer_models}
+
+
+def to_dict(obj):
+    # Convert attributes of a class instance into a dict
+    return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
