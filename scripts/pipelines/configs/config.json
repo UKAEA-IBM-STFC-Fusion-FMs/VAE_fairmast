@@ -1,24 +1,25 @@
 {
   "input": {
-    "data_names": [["magnetics","flux_loop_flux"]],
-    "target_names": [["magnetics","flux_loop_flux"]]
+    "data_names": [
+      ["pulse_schedule","i_plasma"]
+    ],
+    "target_names": [["pulse_schedule","i_plasma"]]
   },
   "time_settings":{
-    "time_window_sec": 0.025,
-    "time_step": 0.010,
-    "offset": 0.020,
-    "x_window_sec": 0.1,
-    "y_window_sec": 0.1,
+    "time_window_sec": 0.02,
+    "offset": 0.02,
+    "x_window_sec": 0.035,
+    "y_window_sec": 0.035,
     "dt_sec": 0.0, 
-    "stride_sec": 0.05,
+    "stride_sec": 0.005,
     "stride_unitary": true,
     "min_samples_per_window": 1
   },
   "training": {
-    "num_epochs": 5,
-    "num_train_samples": 150,
-    "num_val_samples": 150,
-    "dataloader_batch_size": 30,
+    "num_epochs": 10,
+    "num_train_samples": 100,
+    "num_val_samples": 100,
+    "dataloader_batch_size": 20,
     "training_batch_size":10,
     "min_batch_size": 4,
     "num_workers": 0
@@ -29,17 +30,22 @@
     "l2_size": 64
   },
   "beta-vae":{
-    "latent_dim":32,
-    "beta":0.0,
-    "lr": 1e-3,
+    "latent_dim":6,
+    "beta":0.001,
+    "lr": 0.5e-3,
     "ref_freq": 0.001,
     "existing_fitted_params": false
   },
+  "conv1d":{
+    "kernel":5,
+    "stride":3,
+    "padding":0
+  },
   "paths": {
     "data_split_csv_path": "metadata/2025-05-12/data_splits.csv",
-    "joblib_directory": "scripts/pipelines/data/input/",
+    "joblib_directory": "/home/ir-lore2/ImputerModels/",
     "average_values_file_path": "scripts/pipelines/data/input/averaged_arrays_N_100.json",
     "data_output_directory": "scripts/pipelines/data/output/"
   },
-  "local": false
+  "local": true
 }

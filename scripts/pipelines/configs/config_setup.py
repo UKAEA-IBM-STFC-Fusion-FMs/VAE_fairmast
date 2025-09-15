@@ -33,6 +33,7 @@ class Settings:
         self.LOCAL_PATHS = LocalPaths(config)
         self.DATA = DataInput(config)
         self.BETA_VAE = BetaVae(config)
+        self.CONV1D = Conv1D(config)
 
 
 # ======================================================================================================================
@@ -134,7 +135,18 @@ class DataInput:
             print(f"Missing key in training configuration: {e}")
             raise
 
-
+# ======================================================================================================================
+class Conv1D:
+    def __init__(self, config):
+        try:
+            # Data lists
+            self.kernel = config["conv1d"]["kernel"]
+            self.stride = config["conv1d"]["stride"]
+            self.padding = config["conv1d"]["padding"]
+        except KeyError as e:
+            print(f"Missing key in training configuration: {e}")
+            raise
+    
 # ======================================================================================================================
 if __name__ == "__main__":
     import json

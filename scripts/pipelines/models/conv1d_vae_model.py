@@ -139,7 +139,7 @@ def build_decoder_layers_from_encoder_specs(encoder_layer_specs, input_channels,
     _,_,enc_len,enc_c = compute_conv_output_dim(input_channels, input_length, encoder_layer_specs)
     # enc_len[0] original input length, enc_len[i] output length from i-th conv1d layer
     # enc_c[0] original nr of input channels, enc_c[i] output nr. channels from i-th conv1d layer
-    
+    print(f"enc_len {enc_len}")
     # Pass 2: build decoder layers in reverse
     dec_layers = []
 
@@ -177,7 +177,12 @@ def build_decoder_layers_from_encoder_specs(encoder_layer_specs, input_channels,
            
     return dec_layers
 
-def build_decoder_specs_from_encoder_specs(encoder_layer_specs, input_channels, input_length):
+def build_decoder_specs_from_encoder_specs(
+    encoder_layer_specs, 
+    input_channels, 
+    input_length,
+    remove_last_activation = True
+    ):
     """
     encoder_layer_specs: dictionary specifying encoder layers.
     input_channels: original number of channels.
@@ -210,6 +215,11 @@ def build_decoder_specs_from_encoder_specs(encoder_layer_specs, input_channels, 
             # Add ReLU spec after each ConvTranspose1d
             decoder_layer_specs["layers"].append({"type": "relu"})
     
+    # For standardized targets, remove last relu 
+    if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] == "relu":
+        decoder_layer_specs["layers"].pop()
+
+        
     return decoder_layer_specs
 
 def test_conv1d_vae():

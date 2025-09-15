@@ -8,7 +8,7 @@ def i_plasma_encoder_specs(
                 "type": "conv1d",
                 "params": {
                     "in_channels": 1,
-                    "out_channels": 18,
+                    "out_channels": 4,
                     "kernel_size": SETTINGS.CONV1D.kernel,
                     "stride": SETTINGS.CONV1D.stride,
                     "padding": SETTINGS.CONV1D.padding
@@ -20,8 +20,8 @@ def i_plasma_encoder_specs(
             {
                 "type": "conv1d",
                 "params": {
-                    "in_channels": 18,
-                    "out_channels": 18,
+                    "in_channels": 4,
+                    "out_channels": 4,
                     "kernel_size": SETTINGS.CONV1D.kernel,
                     "stride": SETTINGS.CONV1D.stride,
                     "padding": SETTINGS.CONV1D.padding
@@ -30,19 +30,19 @@ def i_plasma_encoder_specs(
             {
                 "type": "relu"
             },
-             {
+            {
                 "type": "conv1d",
                 "params": {
-                    "in_channels": 18,
-                    "out_channels": 18,
+                    "in_channels": 4,
+                    "out_channels": 4,
                     "kernel_size": SETTINGS.CONV1D.kernel,
                     "stride": SETTINGS.CONV1D.stride,
                     "padding": SETTINGS.CONV1D.padding
                 }
             },
             {
-                "type": "sigmoid"
-            }     
+                "type": "relu"
+            }  
         ]
     }
     
