@@ -51,7 +51,7 @@ from scripts.pipelines.transforms.signal_level_transforms.imputer_transform impo
 
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_encoder_specs import i_plasma_encoder_specs
+from scripts.pipelines.models.conv1d_encoder_specs import encoder_specs
 from scripts.pipelines.models.conv1d_vae_model import loss_function, build_decoder_specs_from_encoder_specs
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
@@ -227,7 +227,8 @@ def create_conv1d_vae_models(
         }
     
         # Encoder layer specs
-        encoder_layer_specs = i_plasma_encoder_specs(SETTINGS)
+        print(f"signal_name {signal_name}")
+        encoder_layer_specs = encoder_specs(SETTINGS, signal_name.split("-")[-1])
 
         # Decoder layer specs (new format)
         decoder_layer_specs =  build_decoder_specs_from_encoder_specs(
