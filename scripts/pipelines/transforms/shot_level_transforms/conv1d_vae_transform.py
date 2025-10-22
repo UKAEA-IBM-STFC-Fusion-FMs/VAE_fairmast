@@ -45,13 +45,11 @@ class Conv1dVAETransform:
 
         Returns
         -------
-        vae_samples : dict
-            dict of signal_name: [signal_values1, ..., signal_values_idx].
-            signal_name.shape() = [nr_channels(signal_name), time_length(signal_name)]
-            HINT: len(all_signals) = nr. of time windows, is the same for all signals 
-            in the same shot. However, it can vary across different shots. However,
-            [nr_channels(signal_name), time_length(signal_name)] is the same across shots. 
+        all_signals : dict
+            "signal_name": [signal_values_idx_1, ..., signal_values_idx_n].
+            The list contains tensors, one for each temporal window
         """
+
         all_signals = defaultdict(list)
         window_ids = []
         # Loop trhough all window_index
@@ -75,7 +73,7 @@ class Conv1dVAETransform:
         for nr, w in enumerate(window_ids):
             if nr != int(w):
                 print("Error, non sequential window_ids")
-                
+
         return all_signals
 
         

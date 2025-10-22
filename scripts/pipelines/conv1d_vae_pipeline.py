@@ -216,10 +216,7 @@ def create_conv1d_vae_models(
             print(
                 f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
             )
-            
-        input_channels = 1
-        out_channels = 1
-        
+                    
         vae_specs = {
             "beta": SETTINGS.BETA_VAE.beta, 
             "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
@@ -232,11 +229,11 @@ def create_conv1d_vae_models(
 
         # Decoder layer specs (new format)
         decoder_layer_specs =  build_decoder_specs_from_encoder_specs(
-        encoder_layer_specs,
-        input_channels, 
-        input_length 
-    )
-    
+            encoder_layer_specs,
+            input_channels, 
+            input_length 
+        )
+
         model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
 
         models[signal_name] = model
@@ -415,13 +412,32 @@ def train_conv1d_vae_models(
 
 if __name__ == "__main__":
 
+
+    import time
+
+    start_time = time.time()
+
     # Initialize SETTINGS object
     SETTINGS = get_settings("scripts/pipelines/configs/config.json")
     
+    # HPC settings for CPUs only
+    num_workers = SETTINGS.TRAINING.num_workers
+    
+    # if device.type == 'cpu':
+        
+    #     total_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+    #     threads_per_worker = max(1, total_cpus // (num_workers + 1))
+    #     torch.set_num_threads(threads_per_worker)
+    #     torch.set_num_interop_threads(1)  # Optional: reduces overhead
+
+    #     print(f"Nr of SLURM_CPUS_PER_TASK {os.environ.get('SLURM_CPUS_PER_TASK', 1)}")
+    #     print(f"num_workers {num_workers} + (main)")
+        
+        
     mp.set_start_method("spawn", force=True)
 
     # For common pipeline
-    OUTPUT_SUB_FOLDER = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_output/"
+    OUTPUT_SUB_FOLDER = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae/"
 
     source_signal_list = SETTINGS.DATA.data_names
 
@@ -485,13 +501,13 @@ if __name__ == "__main__":
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local
     )
-
-    # Prepare dataloaders
+    
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
-        num_workers=SETTINGS.TRAINING.num_workers
+        num_workers=num_workers,
+        shuffle=True
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
@@ -503,7 +519,7 @@ if __name__ == "__main__":
         train_dataloader, 
         verbose = False
     )
-
+    
     best_model_states, training_loss_curves = train_conv1d_vae_models(
         SETTINGS,
         conv1d_vae_models,
@@ -513,7 +529,13 @@ if __name__ == "__main__":
         OUTPUT_SUB_FOLDER,
         verbose=True
     )
-
+      
     print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
     print(f"Trained β-VAE models for {len(best_model_states)} signals")
     print(f"Models saved in: {OUTPUT_SUB_FOLDER}")
+    
+    end_time = time.time()
+    
+    elapsed = end_time - start_time
+
+    print(f"Elapsed time: {elapsed:.4f} seconds")

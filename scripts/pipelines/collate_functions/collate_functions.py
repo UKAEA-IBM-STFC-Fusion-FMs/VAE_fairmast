@@ -113,8 +113,7 @@ def conv1d_vae_collate_fn(batch, verbose = False):
         ...
     }
     
-    For each signal, there is a list of tensors that collects all 
-    temporal windows. 
+    For each signal, there is a list of tensors one for each temporal window. 
 
     Returns
     -------
@@ -132,8 +131,8 @@ def conv1d_vae_collate_fn(batch, verbose = False):
             ]
     }
     
-    
-    if batch = [
+    EXAMPLE: 
+    batch = [
         {
             "S1": [torch.tensor([1]), torch.tensor([2])],
             "S2": [torch.tensor([10]), torch.tensor([20])]

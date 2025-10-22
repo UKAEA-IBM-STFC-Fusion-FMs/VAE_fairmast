@@ -177,8 +177,7 @@ def segment_shot(
         of the original dictionary, for all the signals in the original shot. 
         For instance, the first element of the list will contain:
         {       
-                "shot_id": shot_id
-                "source_name-signal_name": [
+                "transformed_signals": [
                        {
                            "signal_name": signal["names"], 
                             "values": values_segment, 
@@ -228,7 +227,7 @@ def segment_shot(
     x_list = []
     for idx in range(len(x_map)):
         x_mini_dict = {
-            "sources_signals": x_map[idx]
+            "transformed_signals": x_map[idx]
         }
         x_list.append(x_mini_dict)
         
@@ -244,9 +243,20 @@ if __name__ == "__main__":
     import os
     import sys
     
-    sys.path.append("scripts/MAST_tools")
-    from MAST_dataset import MastDataset
-    from  signal_utils import MASTSignalManager
+    REPO_ROOT = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__) if "__file__" in globals() else os.getcwd(),
+            "..",
+            "..",
+        )
+    )
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    mother_dir = os.path.dirname(REPO_ROOT)  # one level up
+    sys.path.append(mother_dir)
+
+    from  MAST_tools.MAST_dataset import MastDataset
+    from  MAST_tools.signal_utils import MASTSignalManager
     import numpy as np
     
     sig = MASTSignalManager()
@@ -314,7 +324,7 @@ if __name__ == "__main__":
     x1=list_x[-2]
     y1=list_y[-2]
     
-    print(f"x0 times: {x0['sources_signals'][0]['time']}")
-    print(f"x1 times: {x1['sources_signals'][0]['time']}")
-    print(f"y0 times: {y0['sources_signals'][0]['time']}")
-    print(f"y1 times: {y1['sources_signals'][0]['time']}")
+    print(f"x0 times: {x0['transformed_signals'][0]['time']}")
+    print(f"x1 times: {x1['transformed_signals'][0]['time']}")
+    print(f"y0 times: {y0['transformed_signals'][0]['time']}")
+    print(f"y1 times: {y1['transformed_signals'][0]['time']}")

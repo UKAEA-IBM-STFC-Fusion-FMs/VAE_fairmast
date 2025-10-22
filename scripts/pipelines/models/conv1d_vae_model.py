@@ -16,12 +16,12 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 from scripts.pipelines.utils.layer_factory import SequentialBuilder
-
+from scripts.pipelines.models.conv1d_encoder_specs import FullyConnectedEncode
 
 class Conv1dVAE(nn.Module):
     def __init__(self, encoder_layer_specs, decoder_layer_specs, vae_specs):
         super().__init__()
-        
+
         try:
             # Extract specs
             first_layer = encoder_layer_specs["layers"][0]
@@ -42,7 +42,8 @@ class Conv1dVAE(nn.Module):
         self.conv_out_channels, self.conv_out_length,_,_ = compute_conv_output_dim(
             self.in_channels,
             self.input_length, 
-            encoder_layer_specs)
+            encoder_layer_specs
+            )
         conv_out_dim = self.conv_out_channels * self.conv_out_length 
         
         # =============== VAE =====================
@@ -56,6 +57,9 @@ class Conv1dVAE(nn.Module):
     def encode(self, x):
         encoded = self.encoder(x)
         encoded = torch.flatten(encoded, start_dim=1)
+        # Add a fully connected layer to the conv1d encoder
+        FCE = SequentialBuilder(FullyConnectedEncode(encoded.shape[1],encoded.shape[1]))
+        encoded = FCE(encoded)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
         return mu, logvar
@@ -139,7 +143,7 @@ def build_decoder_layers_from_encoder_specs(encoder_layer_specs, input_channels,
     _,_,enc_len,enc_c = compute_conv_output_dim(input_channels, input_length, encoder_layer_specs)
     # enc_len[0] original input length, enc_len[i] output length from i-th conv1d layer
     # enc_c[0] original nr of input channels, enc_c[i] output nr. channels from i-th conv1d layer
-    print(f"enc_len {enc_len}")
+    print(f"encoded layers length {enc_len}")
     # Pass 2: build decoder layers in reverse
     dec_layers = []
 
