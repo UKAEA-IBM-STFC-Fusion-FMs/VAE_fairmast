@@ -34,6 +34,7 @@ class Settings:
         self.DATA = DataInput(config)
         self.BETA_VAE = BetaVae(config)
         self.CONV1D = Conv1D(config)
+        self.ENCODER = EncoderSettings(config)
 
 
 # ======================================================================================================================
@@ -51,6 +52,19 @@ class BetaVae:
             raise
 
 
+# ======================================================================================================================
+class EncoderSettings:
+    def __init__(self, config):
+        try:
+            # Model parameters
+            self.conv1d_in_channels = config["encoder_specs"]["conv1d_in_channels"]
+            self.conv1d_out_channels = config["encoder_specs"]["conv1d_out_channels"]
+            self.activation_fn = config["encoder_specs"]["activation_fn"]
+            self.add_dense_layer =  config["encoder_specs"]["add_dense_layer"]
+        except KeyError as e:
+            print(f"Missing key in training configuration: {e}")
+            raise
+        
 # ======================================================================================================================
 class NNSettings:
     def __init__(self, config):

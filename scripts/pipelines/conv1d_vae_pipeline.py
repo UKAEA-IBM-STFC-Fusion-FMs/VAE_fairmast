@@ -1,14 +1,16 @@
+import argparse
+from collections import defaultdict
 import json
-import os
-import sys
-import pickle
-from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
+from multiprocessing import cpu_count
 import numpy as np
+import os
+import pickle
+import sys
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
-from collections import defaultdict
+
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -51,8 +53,8 @@ from scripts.pipelines.transforms.signal_level_transforms.imputer_transform impo
 
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_encoder_specs import encoder_specs
-from scripts.pipelines.models.conv1d_vae_model import loss_function, build_decoder_specs_from_encoder_specs
+from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
+from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
@@ -225,21 +227,21 @@ def create_conv1d_vae_models(
     
         # Encoder layer specs
         print(f"signal_name {signal_name}")
-        encoder_layer_specs = encoder_specs(SETTINGS, signal_name.split("-")[-1])
-
-        # Decoder layer specs (new format)
-        decoder_layer_specs =  build_decoder_specs_from_encoder_specs(
-            encoder_layer_specs,
+        encoder_layer_specs, encoded_signal_shape, decoder_layer_specs = build_conv1d_encoder_decoder(
+            SETTINGS, 
             input_channels, 
-            input_length 
+            input_length
         )
 
-        model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
+        model = Conv1dVAE(encoder_layer_specs, 
+                          encoded_signal_shape,
+                          decoder_layer_specs, 
+                          vae_specs)
 
         models[signal_name] = model
 
         if verbose:
-            print(f"Created BetaVAE for {signal_name}")
+            print(f"Created conv1dVAE for {signal_name}")
 
     return models
 
@@ -394,7 +396,7 @@ def train_conv1d_vae_models(
 
                 # Save best model state
                 model_path = os.path.join(
-                    output_dir, f"best_beta_vae_{signal_name.replace('/', '_')}.pt"
+                    output_dir, f"best_conv1d_vae_{signal_name.replace('/', '_')}.pt"
                 )
                 torch.save(best_model_states[signal_name], model_path)
 
@@ -411,34 +413,33 @@ def train_conv1d_vae_models(
 
 
 if __name__ == "__main__":
-
-
-    import time
-
-    start_time = time.time()
-
-    # Initialize SETTINGS object
-    SETTINGS = get_settings("scripts/pipelines/configs/config.json")
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config_file_path",
+        default = "scripts/pipelines/configs/config.json",
+        type=str,
+        help="Path to configuration file for the pipeline.")
+    
+    args = parser.parse_args()
+    
+    config_file_path = args.config_file_path
+    cofig_file_name = os.path.basename(config_file_path)
+    
+    # Load configuration from JSON file
+    if not os.path.exists(config_file_path):
+        raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
+    else:
+         SETTINGS = get_settings(config_file_path)  
+    
     
     # HPC settings for CPUs only
     num_workers = SETTINGS.TRAINING.num_workers
-    
-    # if device.type == 'cpu':
-        
-    #     total_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
-    #     threads_per_worker = max(1, total_cpus // (num_workers + 1))
-    #     torch.set_num_threads(threads_per_worker)
-    #     torch.set_num_interop_threads(1)  # Optional: reduces overhead
-
-    #     print(f"Nr of SLURM_CPUS_PER_TASK {os.environ.get('SLURM_CPUS_PER_TASK', 1)}")
-    #     print(f"num_workers {num_workers} + (main)")
-        
-        
     mp.set_start_method("spawn", force=True)
 
-    # For common pipeline
-    OUTPUT_SUB_FOLDER = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae/"
-
+    # Output data folder
+    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + cofig_file_name + "/"
+    print( f"output_directory = {output_directory}")
     source_signal_list = SETTINGS.DATA.data_names
 
     # Parameters for window segmentation (no x/y split for VAE)
@@ -462,7 +463,7 @@ if __name__ == "__main__":
     # Fit mean and std for signal transformation
     dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
         train_shots,
-        OUTPUT_SUB_FOLDER,
+        output_directory,
         verbose=False,
         use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
         local = SETTINGS.DATA.local
@@ -526,16 +527,11 @@ if __name__ == "__main__":
         device,
         train_dataloader,
         val_dataloader,
-        OUTPUT_SUB_FOLDER,
+        output_directory,
         verbose=True
     )
       
     print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
     print(f"Trained β-VAE models for {len(best_model_states)} signals")
-    print(f"Models saved in: {OUTPUT_SUB_FOLDER}")
+    print(f"Models saved in: {output_directory}")
     
-    end_time = time.time()
-    
-    elapsed = end_time - start_time
-
-    print(f"Elapsed time: {elapsed:.4f} seconds")

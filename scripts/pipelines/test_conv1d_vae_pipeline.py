@@ -51,8 +51,8 @@ from scripts.pipelines.transforms.signal_level_transforms.imputer_transform impo
 
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_encoder_specs import encoder_specs
-from scripts.pipelines.models.conv1d_vae_model import loss_function, build_decoder_specs_from_encoder_specs
+from scripts.pipelines.models.conv1d_vae_model import loss_function
+from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
@@ -216,7 +216,7 @@ def create_conv1d_vae_models(
             print(
                 f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
             )
-        
+                    
         vae_specs = {
             "beta": SETTINGS.BETA_VAE.beta, 
             "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
@@ -225,26 +225,27 @@ def create_conv1d_vae_models(
     
         # Encoder layer specs
         print(f"signal_name {signal_name}")
-        encoder_layer_specs = encoder_specs(SETTINGS, signal_name.split("-")[-1])
-
-        # Decoder layer specs (new format)
-        decoder_layer_specs =  build_decoder_specs_from_encoder_specs(
-        encoder_layer_specs,
-        input_channels, 
-        input_length 
+        encoder_layer_specs, encoded_signal_shape, decoder_layer_specs = build_conv1d_encoder_decoder(
+            SETTINGS, 
+            input_channels, 
+            input_length
         )
-    
-        model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
+
+        model = Conv1dVAE(encoder_layer_specs, 
+                          encoded_signal_shape,
+                          decoder_layer_specs, 
+                          vae_specs)
 
         models[signal_name] = model
 
         if verbose:
-            print(f"Created BetaVAE for {signal_name}")
+            print(f"Created conv1dVAE for {signal_name}")
 
     return models
     
-def test_model(source, signal_name, model_path, SETTINGS):
-    
+def test_model(source, signal_name, output_dir, SETTINGS):
+    model_path = os.path.join(output_dir, "best_conv1d_vae_magnetics-" + signal_name + ".pt")
+     
     if not os.path.exists(model_path):
         print(f"{model_path} not found")
         return
@@ -370,7 +371,6 @@ def test_model(source, signal_name, model_path, SETTINGS):
         json.dump(data, f, indent=4)
     
     try:
-        breakpoint()
         if x_best_input is not None and x_best_recon is not None:
             plt.figure(figsize=(10, 4))
             plt.plot(x_best_input.cpu().flatten().numpy().tolist(), label="Original", lw=2)
@@ -379,7 +379,7 @@ def test_model(source, signal_name, model_path, SETTINGS):
             plt.legend()
             plt.tight_layout()
             plt.show()
-            plt.savefig("best_reconstruction.pdf", dpi=300, bbox_inches='tight')
+            plt.savefig(output_dir+ "best_reconstruction.pdf", dpi=300, bbox_inches='tight')
         else:
             print("No valid reconstruction found.") 
     except Exception as e:
@@ -403,7 +403,7 @@ def test_model(source, signal_name, model_path, SETTINGS):
         fig.colorbar(im1, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
         plt.tight_layout()
         plt.show()
-        plt.savefig("best_reconstruction_image.pdf", dpi=300, bbox_inches='tight')
+        plt.savefig(output_dir+"best_reconstruction_image.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
         print(f"{e}")
 
@@ -411,10 +411,8 @@ def test_model(source, signal_name, model_path, SETTINGS):
 if __name__ == "__main__":
     SETTINGS = get_settings("scripts/pipelines/configs/config.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_flf2/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config.json/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
-    
-    model_path = os.path.join(output_dir, "best_beta_vae_magnetics-" + signal_name + ".pt")
 
-    test_model(source, signal_name, model_path, SETTINGS)
+    test_model(source, signal_name, output_dir, SETTINGS)
