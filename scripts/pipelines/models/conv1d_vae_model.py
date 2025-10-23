@@ -18,12 +18,12 @@ from scripts.pipelines.utils.layer_factory import SequentialBuilder
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedEncode
 
 class Conv1dVAE(nn.Module):
-    def __init__(self, encoder_layer_specs, encoded_signal_shape, decoder_layer_specs, vae_specs):
+    def __init__(self, conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs, vae_specs):
         super().__init__()
 
         try:
             # Extract specs
-            first_layer = encoder_layer_specs["layers"][0]
+            first_layer = conv1d_encoder_layer_specs["layers"][0]
             if first_layer["type"] != "conv1d":
                 raise ValueError("First encoder layer must be conv1d")
             
@@ -36,7 +36,7 @@ class Conv1dVAE(nn.Module):
         
         # =============== Encoder =====================
         
-        self.encoder = SequentialBuilder(encoder_layer_specs)
+        self.conv1d_encoder = SequentialBuilder(conv1d_encoder_layer_specs)
         
         # Find shape after encoding
         self.conv_out_channels = encoded_signal_shape[0]
@@ -44,16 +44,15 @@ class Conv1dVAE(nn.Module):
         conv_out_dim = encoded_signal_shape[0]*encoded_signal_shape[1]
         
         # =============== VAE =====================
-        print(f"conv_out_dim {conv_out_dim}")
         self.fc_mu = nn.Linear(conv_out_dim, self.latent_dim)
         self.fc_logvar = nn.Linear(conv_out_dim, self.latent_dim)
 
         # =============== Decoder =====================
         self.fc_decode = nn.Linear(self.latent_dim, conv_out_dim)
-        self.decoder = SequentialBuilder(decoder_layer_specs)
+        self.conv1d_decoder = SequentialBuilder(conv1d_decoder_layer_specs)
         
     def encode(self, x):
-        encoded = self.encoder(x)
+        encoded = self.conv1d_encoder(x)
         encoded = torch.flatten(encoded, start_dim=1)
         # Add a fully connected layer to the conv1d encoder
         FCE = SequentialBuilder(FullyConnectedEncode(encoded.shape[1],encoded.shape[1]))
@@ -70,7 +69,7 @@ class Conv1dVAE(nn.Module):
     def decode(self, z):
         decoded = self.fc_decode(z)
         decoded = decoded.view(decoded.size(0), self.conv_out_channels, self.conv_out_length)
-        x_recon = self.decoder(decoded)
+        x_recon = self.conv1d_decoder(decoded)
         return x_recon
 
     def forward(self, x):
@@ -95,69 +94,3 @@ def loss_function(beta, reconstruction, target, mu, logvar):
     total_loss = reconstruction_loss + beta * kl_loss
     return total_loss, reconstruction_loss, kl_loss
 
-
-def test_conv1d_vae():
-    # Model hyperparameters
-    beta = 1
-    in_channels = 3
-    input_length = 100
-    out_channels = 5
-    latent_dim = 3
-    kernel_size = 7
-    stride = 5
-    padding = 0
-
-    vae_specs = {
-        "beta": beta, 
-        "latent_dim": latent_dim, 
-        "input_length": input_length
-    }
-    
-    # Encoder layer specs
-    encoder_layer_specs = {
-        "layers": [
-            {
-                "type": "conv1d",
-                "params": {
-                    "in_channels": in_channels,
-                    "out_channels": out_channels,
-                    "kernel_size": kernel_size,
-                    "stride": stride,
-                    "padding": padding
-                }
-            },
-            {
-                "type": "relu"
-            }
-        ]
-    }
-
-    decoder_layer_specs = build_decoder_specs_from_encoder_specs(
-        encoder_layer_specs,
-        in_channels, 
-        input_length 
-    )
-
-    # Create model
-    model = Conv1dVAE(encoder_layer_specs, decoder_layer_specs, vae_specs)
-
-    # Dummy input
-    x = torch.randn(4, in_channels, input_length)
-
-    # Forward pass
-    x_recon, mu, logvar = model(x)
-
-    # Compute loss
-    loss, recon_loss, kl_loss = loss_function(beta, x_recon, x, mu, logvar)
-
-    # Print results
-    print("Input shape:", x.shape)
-    print("Reconstructed shape:", x_recon.shape)
-    print("Latent dim:", mu.shape[1])
-    print("Loss:", loss.item())
-    print("Reconstruction Loss:", recon_loss.item())
-    print("KL Divergence Loss:", kl_loss.item())
-
-
-if __name__ == "__main__":
-    test_conv1d_vae()

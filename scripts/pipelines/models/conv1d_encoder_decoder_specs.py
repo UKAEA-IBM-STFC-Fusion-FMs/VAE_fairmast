@@ -4,10 +4,73 @@ import torch.nn as nn
 
 
 def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
-    encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
-    decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS,encoder_specs, input_channels, input_length, remove_last_activation = True)
+    """Build encoder and decoder specs.
+    The encoder architecture can be writte manually or by using the _build_encoder_layer_specs
+    which reads it directly from the config.json file.
+
+    Parameters
+    ----------
+    SETTINGS : dict
+        settings from config.json
+    input_channels : int
+        Nr of channels in the input signal
+    input_length : _type_
+        Length along the time dimension of the input signal
+
+    Returns
+    -------
+    dictionaries
+        encoder specs as dictionary, 
+        encoded signal shape [int, int],
+        decoder specs as dictionary.
+
+    Raises
+    ------
+    ValueError
+        If signal after encoder has length <=1
+    """
+    # encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
     
-    return encoder_specs, encoded_signal_shape, decoder_specs
+    conv1d_encoder_specs = {
+            "layers": [
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 15,
+                        "out_channels": 64,
+                        "kernel_size": SETTINGS.CONV1D.kernel,
+                        "stride": SETTINGS.CONV1D.stride,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                },
+                {
+                    "type": "relu"
+                },
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 64,
+                        "out_channels": 128,
+                        "kernel_size": SETTINGS.CONV1D.kernel,
+                        "stride": SETTINGS.CONV1D.stride,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                },
+                {
+                    "type": "relu"
+                }
+            ]
+        }
+
+    last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
+    encoded_signal_shape = [last_nr_channels, last_signal_length]
+    
+    if  last_signal_length <=1:
+        raise ValueError("Signal after stack of conv1d has length <=1")
+
+    conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS, conv1d_encoder_specs, input_channels, input_length, remove_last_activation = True)
+    
+    return conv1d_encoder_specs, encoded_signal_shape, conv1d_decoder_specs
     
     
 def _build_encoder_layer_specs(SETTINGS, input_length):
@@ -176,7 +239,7 @@ def _build_decoder_specs_from_encoder_specs(
                 "params": {
                     "in_channels": layer.in_channels,
                     "out_channels": layer.out_channels,
-                    "kernel_size": layer.kernel_size[0],   # tuple → int
+                    "kernel_size": layer.kernel_size[0], 
                     "stride": layer.stride[0],
                     "padding": layer.padding[0],
                     "dilation": layer.dilation[0],

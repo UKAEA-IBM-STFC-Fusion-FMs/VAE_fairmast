@@ -227,15 +227,19 @@ def create_conv1d_vae_models(
     
         # Encoder layer specs
         print(f"signal_name {signal_name}")
-        encoder_layer_specs, encoded_signal_shape, decoder_layer_specs = build_conv1d_encoder_decoder(
-            SETTINGS, 
-            input_channels, 
-            input_length
-        )
+        try:
+            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                SETTINGS, 
+                input_channels, 
+                input_length
+            )
+        except ValueError as e:
+            print(f"Building encoder error: {e}")
+            return models
 
-        model = Conv1dVAE(encoder_layer_specs, 
+        model = Conv1dVAE(conv1d_encoder_layer_specs, 
                           encoded_signal_shape,
-                          decoder_layer_specs, 
+                          conv1d_decoder_layer_specs, 
                           vae_specs)
 
         models[signal_name] = model
@@ -279,9 +283,7 @@ def train_conv1d_vae_models(
             'val_recon': [],
             'val_kl': []
         }
-
-    for signal_name, model in models.items():
-        model.to(device)
+     
     
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         verbose and print(f"\nEpoch {epoch+1}\n")
@@ -289,6 +291,7 @@ def train_conv1d_vae_models(
         # Training phase
         verbose and print("Training phase")
         for signal_name, model in models.items():
+            model.to(device)
             model.train()
             
         train_losses = defaultdict(float)
@@ -520,18 +523,21 @@ if __name__ == "__main__":
         train_dataloader, 
         verbose = False
     )
-    
-    best_model_states, training_loss_curves = train_conv1d_vae_models(
-        SETTINGS,
-        conv1d_vae_models,
-        device,
-        train_dataloader,
-        val_dataloader,
-        output_directory,
-        verbose=True
-    )
-      
-    print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
-    print(f"Trained β-VAE models for {len(best_model_states)} signals")
-    print(f"Models saved in: {output_directory}")
+    if conv1d_vae_models:
+        best_model_states, training_loss_curves = train_conv1d_vae_models(
+            SETTINGS,
+            conv1d_vae_models,
+            device,
+            train_dataloader,
+            val_dataloader,
+            output_directory,
+            verbose=True
+        )
+        
+        print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
+        print(f"Trained β-VAE models for {len(best_model_states)} signals")
+        print(f"Models saved in: {output_directory}")
+    else:
+        print("NO TRAINING: models dictionary is empty.")
+
     
