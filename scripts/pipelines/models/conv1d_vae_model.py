@@ -35,7 +35,6 @@ class Conv1dVAE(nn.Module):
             raise ValueError(f"Missing required specification: {e}")
         
         # =============== Encoder =====================
-        
         self.conv1d_encoder = SequentialBuilder(conv1d_encoder_layer_specs)
         
         # Find shape after encoding
@@ -43,20 +42,25 @@ class Conv1dVAE(nn.Module):
         self.conv_out_length  = encoded_signal_shape[1]
         conv_out_dim = encoded_signal_shape[0]*encoded_signal_shape[1]
         
+        # Add Fully Connected Layer to encoder
+        self.FCLencoder = SequentialBuilder(FullyConnectedEncode(conv_out_dim,conv_out_dim))
+        
+        
         # =============== VAE =====================
         self.fc_mu = nn.Linear(conv_out_dim, self.latent_dim)
         self.fc_logvar = nn.Linear(conv_out_dim, self.latent_dim)
+        
 
         # =============== Decoder =====================
         self.fc_decode = nn.Linear(self.latent_dim, conv_out_dim)
+        self.FCLdecoder = SequentialBuilder(FullyConnectedEncode(self.latent_dim, conv_out_dim))
         self.conv1d_decoder = SequentialBuilder(conv1d_decoder_layer_specs)
         
     def encode(self, x):
         encoded = self.conv1d_encoder(x)
         encoded = torch.flatten(encoded, start_dim=1)
-        # Add a fully connected layer to the conv1d encoder
-        FCE = SequentialBuilder(FullyConnectedEncode(encoded.shape[1],encoded.shape[1]))
-        encoded = FCE(encoded)
+        encoded = self.FCLencoder(encoded)
+
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
         return mu, logvar
@@ -67,7 +71,8 @@ class Conv1dVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        decoded = self.fc_decode(z)
+        # decoded = self.fc_decode(z)
+        decoded =  self.FCLdecoder(z)
         decoded = decoded.view(decoded.size(0), self.conv_out_channels, self.conv_out_length)
         x_recon = self.conv1d_decoder(decoded)
         return x_recon

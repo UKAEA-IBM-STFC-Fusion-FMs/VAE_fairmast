@@ -1,8 +1,8 @@
 {   
     "general":
     {
-        "nr_shots": 100, 
-        "processes":2,
+        "nr_shots": 300, 
+        "processes":4,
         "local": true
     },
 
@@ -10,29 +10,20 @@
     {
         "max_components": 10,
         "source_signal_names": [
-            "magnetics-flux_loop_flux", 
-            "magnetics-b_field_tor_probe_saddle_voltage", 
-            "magnetics-b_field_pol_probe_ccbv_field"]
+            "pulse_schedule-i_plasma"
+        ]
     },
 
     "sigfill":{
         "list_of_signals": [
-            ["magnetics-flux_loop_flux", 15],
-            ["magnetics-b_field_pol_probe_ccbv_field", 40],
-            ["magnetics-b_field_pol_probe_obr_field", 18],
-            ["magnetics-b_field_pol_probe_obv_field", 18],
-            ["magnetics-b_field_tor_probe_saddle_voltage", 12],
-            ["pf_active-coil_current", 14],
-            ["pf_active-coil_voltage", 14],
-            ["equilibrium-x_point_r", 4],
-            ["equilibrium-x_point_z", 4]
+            ["pulse_schedule","i_plasma", 1]
         ]
     },
     
     "paths":
     {
         "signal list_file": "scripts/benchmarking/data_processing/data/input/list_of_signals.txt",
-        "output_path": "scripts/benchmarking/data_processing/data/output/tmp/",
+        "output_path": "scripts/benchmarking/data_processing/data/output/NewModels/",
         "data_split_file": "metadata/2025-05-12/data_splits.csv"
     }
 }
