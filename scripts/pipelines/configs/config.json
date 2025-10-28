@@ -8,7 +8,7 @@
   "time_settings":{
     "time_window_sec": 0.02,
     "offset": 0.0,
-    "x_window_sec": 0.0035,
+    "x_window_sec": 0.0032,
     "y_window_sec": 0.0002,
     "dt_sec": 0.0, 
     "stride_sec": 0.0015,
@@ -16,13 +16,16 @@
     "min_samples_per_window": 1
   },
   "training": {
-    "num_epochs": 5,
-    "num_train_samples": 40,
-    "num_val_samples": 40,
-    "dataloader_batch_size": 10,
-    "training_batch_size":10,
+    "num_epochs": 10,
+    "patience":5,
+    "min_delta":3e-3,
+    "slope_threshold": 1e-3,
+    "num_train_samples": 9252,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 50,
+    "training_batch_size":48,
     "min_batch_size": 4,
-    "num_workers": 0
+    "num_workers": 6
   },
   "nn_model":{
     "lr": 0.001,

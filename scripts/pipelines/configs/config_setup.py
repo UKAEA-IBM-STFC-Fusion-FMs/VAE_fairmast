@@ -111,6 +111,9 @@ class TrainingSettings:
         # Training parameters
         try:
             self.num_epochs = config["training"]["num_epochs"]
+            self.patience =  config["training"]["patience"]
+            self.min_delta =  config["training"]["min_delta"]
+            self.slope_threshold  =  config["training"]["slope_threshold"]
             self.dataloader_batch_size = config["training"]["dataloader_batch_size"]
             self.train_batch_size = config["training"]["training_batch_size"]
             self.min_batch_size = config["training"]["min_batch_size"]

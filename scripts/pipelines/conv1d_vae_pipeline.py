@@ -10,7 +10,7 @@ import sys
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
-
+import time
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -59,12 +59,12 @@ from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform imp
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
 # Determine device to train on
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-elif torch.cuda.is_available():
+if torch.cuda.is_available():
     device = torch.device("cuda")
+    print(f"--------------- RUNNING ON GPUs ---------------")
 else:
     device = torch.device("cpu")
+    print(f"--------------- RUNNING ON CPUs ---------------")
 
 
 def get_train_test_val_shots(max_index=None):
@@ -178,7 +178,8 @@ def initialize_dataloaders(
         batch_size,
         num_workers,
         shuffle=True,
-        drop_last=False
+        drop_last=False,
+        persistent_workers=True
     ):
     
     dataloaders_ = {"train": None, "val": None, "test": None}
@@ -249,6 +250,32 @@ def create_conv1d_vae_models(
 
     return models
 
+def stop_early(val_losses, patience=5, min_delta=1e-3, slope_threshold=1e-4):
+    """
+    Stop early if validation loss has plateaued or the trend slope is very small.
+
+    Args:
+        val_losses: list of floats (validation losses)
+        patience: number of recent epochs to check
+        min_delta: required improvement to consider progress
+        slope_threshold: minimum slope magnitude to consider ongoing learning
+    """
+    if len(val_losses) < patience + 1:
+        return False
+
+    # Check for no meaningful improvement (patience logic)
+    best_prev = min(val_losses[:-patience])
+    best_recent = min(val_losses[-patience:])
+    no_progress = (best_prev - best_recent) < min_delta
+
+    # Check if trend has flattened (slope logic)
+    y = np.array(val_losses[-patience:])
+    x = np.arange(len(y))
+    slope = np.polyfit(x, y, 1)[0]  # linear regression slope
+    flat_trend = abs(slope) < slope_threshold
+
+    return no_progress and flat_trend
+
 def train_conv1d_vae_models(
     SETTINGS,
     models, 
@@ -301,7 +328,7 @@ def train_conv1d_vae_models(
 
         for batch_idx, batch in enumerate(train_dataloader):
             verbose and print(f"Batch idx: {batch_idx}")
-                
+
             for signal_name, data in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
@@ -325,7 +352,6 @@ def train_conv1d_vae_models(
                     train_kl_losses[signal_name] += kl_loss.item()
                     train_counts[signal_name] += 1
     
-
         # Validation phase
         val_losses = defaultdict(float)
         val_recon_losses = defaultdict(float)
@@ -402,7 +428,14 @@ def train_conv1d_vae_models(
                     output_dir, f"best_conv1d_vae_{signal_name.replace('/', '_')}.pt"
                 )
                 torch.save(best_model_states[signal_name], model_path)
-
+                
+        print(f"Validation losses {loss_curves[signal_name]['val_total']}")
+        if stop_early(loss_curves[signal_name]['val_total'],
+                    SETTINGS.TRAINING.patience,
+                    SETTINGS.TRAINING.min_delta,
+                    SETTINGS.TRAINING.slope_threshold):
+            break
+    
     with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
         data = {
             'vae': to_dict(SETTINGS.BETA_VAE),
@@ -523,7 +556,9 @@ if __name__ == "__main__":
         train_dataloader, 
         verbose = False
     )
+    
     if conv1d_vae_models:
+        start = time.time()
         best_model_states, training_loss_curves = train_conv1d_vae_models(
             SETTINGS,
             conv1d_vae_models,
@@ -533,6 +568,7 @@ if __name__ == "__main__":
             output_directory,
             verbose=True
         )
+        print(f"ELapsed time {time.time() - start}")
         
         print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
         print(f"Trained β-VAE models for {len(best_model_states)} signals")

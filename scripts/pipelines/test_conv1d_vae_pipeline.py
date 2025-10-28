@@ -57,13 +57,13 @@ from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform imp
 from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
 
 # Determine device to train on
-if torch.backends.mps.is_available():
-    device = torch.device("mps")
-elif torch.cuda.is_available():
+if torch.cuda.is_available():
     device = torch.device("cuda")
+    print(f"--------------- RUNNING ON GPUs ---------------")
 else:
     device = torch.device("cpu")
-
+    print(f"--------------- RUNNING ON CPUs ---------------")
+    
 
 def get_train_test_val_shots(max_index=None):
     train_sh, test_sh, val_sh = read_data_split_csv()
@@ -343,7 +343,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(test_dataloader):
             print(f"Batch idx {batch_idx}")
-            if batch_idx == 10:
+            if batch_idx == 30:
                 break
             
             for signal_name, data in batch.items():
