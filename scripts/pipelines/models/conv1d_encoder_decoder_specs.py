@@ -50,6 +50,19 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
                     "type": "conv1d",
                     "params": {
                         "in_channels": 64,
+                        "out_channels": 96,
+                        "kernel_size": SETTINGS.CONV1D.kernel,
+                        "stride": SETTINGS.CONV1D.stride,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                },
+                {
+                    "type": "relu"
+                },
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 96,
                         "out_channels": 128,
                         "kernel_size": SETTINGS.CONV1D.kernel,
                         "stride": SETTINGS.CONV1D.stride,

@@ -56,7 +56,7 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -264,9 +264,9 @@ def stop_early(val_losses, patience=5, min_delta=1e-3, slope_threshold=1e-4):
         return False
 
     # Check for no meaningful improvement (patience logic)
-    best_prev = min(val_losses[:-patience])
-    best_recent = min(val_losses[-patience:])
-    no_progress = (best_prev - best_recent) < min_delta
+    # best_prev = min(val_losses[:-patience])
+    # best_recent = min(val_losses[-patience:])
+    # no_progress = (best_prev - best_recent) < min_delta
 
     # Check if trend has flattened (slope logic)
     y = np.array(val_losses[-patience:])
@@ -274,7 +274,7 @@ def stop_early(val_losses, patience=5, min_delta=1e-3, slope_threshold=1e-4):
     slope = np.polyfit(x, y, 1)[0]  # linear regression slope
     flat_trend = abs(slope) < slope_threshold
 
-    return no_progress and flat_trend
+    return flat_trend
 
 def train_conv1d_vae_models(
     SETTINGS,
@@ -325,32 +325,42 @@ def train_conv1d_vae_models(
         train_recon_losses = defaultdict(float)
         train_kl_losses = defaultdict(float)
         train_counts =  defaultdict(float)
-
+        
+        start = time.time()
         for batch_idx, batch in enumerate(train_dataloader):
             verbose and print(f"Batch idx: {batch_idx}")
-
-            for signal_name, data in batch.items():
+            verbose and print(f"Elapsed time DataLoader {time.time()-start}")
+            
+            device_average_process_time = 0
+            
+            for signal_name, groups in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
                 
-                for x in data:
-                    x = x.to(device)
+                start_device = time.time()
+                for group_idx, stacked_tensor in groups.items():
+                    x = stacked_tensor.to(device)
                     
                     x_recon, mu, logvar = model(x)
 
                     # Compute loss
                     total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
-
                     # Backward pass
                     optimizer.zero_grad()
                     total_loss.backward()
                     optimizer.step()
-
+                    
                     train_losses[signal_name] += total_loss.item()
                     train_recon_losses[signal_name] += recon_loss.item()
                     train_kl_losses[signal_name] += kl_loss.item()
                     train_counts[signal_name] += 1
+                    
+                    device_average_process_time += (time.time()-start_device)
+                    start_device = time.time()
+            verbose and print(f"Device processing time per single data {device_average_process_time/train_counts[signal_name]:.4f}")  
+            verbose and print(f"Device processing time all data in batch {device_average_process_time:.2f}")      
+            start = time.time()
     
         # Validation phase
         val_losses = defaultdict(float)
@@ -367,12 +377,12 @@ def train_conv1d_vae_models(
             for batch_idx, batch in enumerate(val_dataloader):
                 verbose and print(f"Batch idx: {batch_idx}")
                 
-                for signal_name, data in batch.items():
+                for signal_name, groups in batch.items():
            
                     model = models[signal_name]
 
-                    for x in data:
-                        x = x.to(device)
+                    for group_idx, stacked_tensor in groups.items():
+                        x = stacked_tensor.to(device)
                         
                         x_recon, mu, logvar = model(x)
 
@@ -436,14 +446,14 @@ def train_conv1d_vae_models(
                     SETTINGS.TRAINING.slope_threshold):
             break
     
-    with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
-        data = {
-            'vae': to_dict(SETTINGS.BETA_VAE),
-            'conv1d': to_dict(SETTINGS.CONV1D),
-            'training': to_dict(SETTINGS.TRAINING),
-            'Loss': loss_curves
-        }
-        json.dump(data, f, indent=4)
+        with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
+            data = {
+                'vae': to_dict(SETTINGS.BETA_VAE),
+                'conv1d': to_dict(SETTINGS.CONV1D),
+                'training': to_dict(SETTINGS.TRAINING),
+                'Loss': loss_curves
+            }
+            json.dump(data, f, indent=4)
                 
     return best_model_states, loss_curves
 
@@ -474,7 +484,7 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
 
     # Output data folder
-    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + cofig_file_name + "/"
+    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + cofig_file_name.removesuffix(".json") + "/"
     print( f"output_directory = {output_directory}")
     source_signal_list = SETTINGS.DATA.data_names
 
@@ -539,6 +549,7 @@ if __name__ == "__main__":
         local_flag=SETTINGS.DATA.local
     )
     
+    conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.dataloader_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,

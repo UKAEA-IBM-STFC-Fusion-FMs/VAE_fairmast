@@ -100,7 +100,7 @@ def beta_vae_collate_fn(batch):
     return batched_signals
 
 
-def conv1d_vae_collate_fn(batch, verbose = False):
+def conv1d_vae_collate_fn_old(batch, verbose = False):
     """_summary_
 
     Parameters
@@ -184,4 +184,88 @@ def conv1d_vae_collate_fn(batch, verbose = False):
             final_batch[signal_key].append(torch.stack(cropped))
 
     return final_batch
+         
+def nested_defaultdict():
+    return defaultdict(list)
+       
+class Conv1dVAECollate():
+    """_summary_
+
+    Parameters
+    ----------
+    batch : list of samples
+
+    sample = {
+        "signal1": [Tensor(nr_features1, time-length1), Tensor(nr_features1, time-length1), ...],  # one per time window
+        "signal2": [Tensor(nr_features2, time-length2), Tensor(nr_features2, time-length2), ...],
+        ...
+    }
+    
+    For each signal, there is a list of tensors one for each temporal window. 
+
+    Returns
+    -------
+    defaultdict
+    
+    collated = {
+        "signal1": {
+            0: Tensor(targeted_number_tensors, nr_features1, time-length1),
+            1: Tensor(targeted_number_tensors, nr_features1, time-length1),
+            ...
+        },
+        "signal2": {
+            0: Tensor(targeted_number_tensors, nr_features2, time-length2),
+            1: Tensor(targeted_number_tensors, nr_features2, time-length2),
+            ...
+        },
+        ...
+    }
+
+    
+    If the temporal window does not contain the same number of tensors as 
+    given by targeted_number_tensors, tensors from the next time window are
+    appended.
+    """
+    
+    def __init__(self, targeted_number_tensors, verbose = False):
+        self.targeted_number_tensors = targeted_number_tensors
+        self.verbose = verbose
+    
+
+    def __call__(self, batch):
+        
+        collated = defaultdict(nested_defaultdict)
+        
+        sample = next(iter(batch))
+        index = {}
+        for signal_name in sample.keys():
+            index[signal_name] = 0
             
+        for sample in batch:
+        
+            for signal_name, list_of_tensors in sample.items():
+                
+                tensors = []
+                for tensor in list_of_tensors:
+                    tensors.append(tensor)
+                    
+                    if len(tensors) == self.targeted_number_tensors:
+                        collated[signal_name][index[signal_name]] = torch.stack(tensors) 
+                        index[signal_name] += 1
+                        tensors = []
+                        
+                # Collate remaining tensors
+                if tensors:
+                    collated[signal_name][index[signal_name]] = torch.stack(tensors)
+
+        # Check if any signal has no groups formed
+        empty_signals = [s for s, groups in collated.items() if len(groups) == 0]
+        if empty_signals:
+            if self.verbose:
+                print(f"Warning: No groups formed for signals: {empty_signals}. Consider lowering targeted_number_tensors.")
+            raise ValueError(f"Collate failed: not enough tensors to form a single group for signals: {empty_signals}")
+
+        return collated
+
+
+    

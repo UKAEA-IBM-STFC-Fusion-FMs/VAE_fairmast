@@ -120,7 +120,7 @@ class WindowSegmenterTransform:
         stride_sec=None,
         dt_sec=0.0,
         min_samples_per_window=1,
-        drop_incomplete_windows=True,
+        drop_incomplete_windows=False,
         verbose=False,
         stride_unitary=False,
     ):
@@ -287,15 +287,20 @@ class WindowSegmenterTransform:
             mask = (times >= t_start) & (times < t_end)
             idx = np.nonzero(mask)[0]
 
-            if len(idx) < self.min_samples:
-                if self.drop_incomplete:
-                    return None
-                else:
-                    sliced_vals = np.full((values.shape[0], self.min_samples), np.nan)
-                    sliced_time = np.linspace(t_start, t_end, self.min_samples)
-            else:
-                sliced_vals = values[..., idx[0]:idx[-1]+1]
-                sliced_time = times[idx[0]:idx[-1]+1]
+            # if len(idx) < self.min_samples:
+            #     if self.drop_incomplete:
+            #         return None
+            #     else:
+            #         sliced_vals = np.full((values.shape[0], self.min_samples), np.nan)
+            #         sliced_time = np.linspace(t_start, t_end, self.min_samples)
+            # else:
+            
+            sliced_vals = values[..., idx[0]:idx[-1]+1]
+            sliced_time = times[idx[0]:idx[-1]+1]
+            
+            if len(idx) >  self.min_samples:
+                sliced_vals = values[..., :self.min_samples]
+                sliced_time = times[..., :self.min_samples]
 
             signal_slices[key] = {
                 "time": sliced_time,

@@ -316,8 +316,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
-        batch_size= 1,
-        num_workers=0,
+        batch_size= 20,
+        num_workers=2,
         shuffle=True
     )
     test_dataloader = dataloaders_train_val_test["test"]
@@ -343,8 +343,6 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(test_dataloader):
             print(f"Batch idx {batch_idx}")
-            if batch_idx == 30:
-                break
             
             for signal_name, data in batch.items():
                 for x in data:
@@ -411,7 +409,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 if __name__ == "__main__":
     SETTINGS = get_settings("scripts/pipelines/configs/config.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config.json/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 
