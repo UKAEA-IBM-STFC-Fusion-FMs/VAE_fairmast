@@ -242,6 +242,8 @@ class Conv1dVAECollate():
             index[signal_name] = 0
             
         for sample in batch:
+            if isinstance(sample, list):
+                continue
         
             for signal_name, list_of_tensors in sample.items():
                 

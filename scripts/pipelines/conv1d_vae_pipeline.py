@@ -205,48 +205,52 @@ def create_conv1d_vae_models(
     verbose = False
     ):
     """Create conv1d-VAE models for each signal type"""
-
-    # Get sample batch to determine signal shapes
+    
+    # Initalize models
+    models = {}
+    
+    # Get sample batch to determine signal shapes  
     sample_batch = next(iter(train_dataloader))
     
-    models = {}
-    for signal_name, signal_data in sample_batch.items():
+    for signal_name, groups in sample_batch.items():
+        for group_idx, signal_data in groups.items():
 
-        input_length = signal_data[0].shape[-1]  # Last dimension is time
-        input_channels = signal_data[0].shape[-2] # Nr. of channels
+            input_length = signal_data[0].shape[-1]  # Last dimension is time
+            input_channels = signal_data[0].shape[-2] # Nr. of channels
 
-        if verbose:
-            print(
-                f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
-            )
+            if verbose:
+                print(
+                    f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
+                )
                     
-        vae_specs = {
-            "beta": SETTINGS.BETA_VAE.beta, 
-            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-            "input_length": input_length
-        }
+            vae_specs = {
+                "beta": SETTINGS.BETA_VAE.beta, 
+                "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
+                "input_length": input_length
+            }
     
-        # Encoder layer specs
-        print(f"signal_name {signal_name}")
-        try:
-            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                SETTINGS, 
-                input_channels, 
-                input_length
-            )
-        except ValueError as e:
-            print(f"Building encoder error: {e}")
-            return models
+            # Encoder layer specs
+            print(f"signal_name {signal_name}")
+            try:
+                conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                    SETTINGS, 
+                    input_channels, 
+                    input_length
+                )
+            except ValueError as e:
+                print(f"Building encoder error: {e}")
+                return models
 
-        model = Conv1dVAE(conv1d_encoder_layer_specs, 
-                          encoded_signal_shape,
-                          conv1d_decoder_layer_specs, 
-                          vae_specs)
+            model = Conv1dVAE(conv1d_encoder_layer_specs, 
+                                encoded_signal_shape,
+                                conv1d_decoder_layer_specs, 
+                                vae_specs)
 
-        models[signal_name] = model
+            models[signal_name] = model
 
-        if verbose:
-            print(f"Created conv1dVAE for {signal_name}")
+            if verbose:
+                print(f"Created conv1dVAE for {signal_name}")
+            break
 
     return models
 
