@@ -20,7 +20,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scripts.MAST_tools.MAST_dataset import MastDataset
+from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from scripts.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
@@ -54,7 +54,7 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import conv1d_vae_collate_fn
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -167,7 +167,9 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
             )
-            
+    datasets_["train"] = CachedDataset(datasets_["train"])
+    datasets_["val"]   = CachedDataset(datasets_["val"])
+    datasets_["test"]  = CachedDataset(datasets_["test"])   
     return datasets_
 
 def initialize_dataloaders(
@@ -313,16 +315,18 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         local_flag=SETTINGS.DATA.local
     )
     
+    signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
+    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.dataloader_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
-        batch_size= 20,
-        num_workers=2,
-        shuffle=True
+        batch_size= SETTINGS.TRAINING.dataloader_batch_size,
+        num_workers=num_workers,
+        shuffle=False
     )
     test_dataloader = dataloaders_train_val_test["test"]
 
-    # Create β-VAE models
+    # Create conv1d-VAE models
     model = create_conv1d_vae_models(
         SETTINGS,
         test_dataloader, 
@@ -343,11 +347,12 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(test_dataloader):
             print(f"Batch idx {batch_idx}")
-            
-            for signal_name, data in batch.items():
-                for x in data:
+            if batch_idx >10:
+                break
+            for signal_name, groups in batch.items():
+                for group_idx, stacked_tensor in groups.items():
                     
-                    x = x.to(device)
+                    x = stacked_tensor.to(device)
                     x_recon, mu, logvar = model(x)
 
                     # Compute loss
@@ -375,17 +380,16 @@ def test_model(source, signal_name, output_dir, SETTINGS):
             plt.plot(x_best_recon.cpu().flatten().numpy().tolist(), label="Reconstructed", lw=2, linestyle="--")
             plt.title(f"Best Reconstruction")
             plt.legend()
-            plt.tight_layout()
             plt.show()
             plt.savefig(output_dir+ "best_reconstruction.pdf", dpi=300, bbox_inches='tight')
         else:
             print("No valid reconstruction found.") 
     except Exception as e:
         print(f"{e}")
-        
+    
     try:
-        x_in = x_best_input[0].detach().cpu().numpy()   # shape: (n_channels, n_length)
-        x_re = x_best_recon[0].detach().cpu().numpy()  # shape: (n_channels, n_length)
+        x_in = x_best_input.squeeze(0)   # shape: (n_channels, n_length)
+        x_re = x_best_recon.squeeze(0)  # shape: (n_channels, n_length)
         
         fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
 
@@ -399,7 +403,6 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         axes[1].set_xlabel("Time")
 
         fig.colorbar(im1, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
-        plt.tight_layout()
         plt.show()
         plt.savefig(output_dir+"best_reconstruction_image.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
@@ -407,9 +410,9 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
 
 if __name__ == "__main__":
-    SETTINGS = get_settings("scripts/pipelines/configs/config.json")
+    SETTINGS = get_settings("scripts/pipelines/configs/config_pipeline5.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config_pipeline5/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 

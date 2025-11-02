@@ -22,7 +22,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scripts.MAST_tools.MAST_dataset import MastDataset
+from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from scripts.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
@@ -169,7 +169,9 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
             )
-            
+    datasets_["train"] = CachedDataset(datasets_["train"])
+    datasets_["val"]   = CachedDataset(datasets_["val"])
+    datasets_["test"]  = CachedDataset(datasets_["test"])     
     return datasets_
 
 def initialize_dataloaders(
@@ -474,7 +476,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     config_file_path = args.config_file_path
-    cofig_file_name = os.path.basename(config_file_path)
+    config_file_name = os.path.basename(config_file_path)
     
     # Load configuration from JSON file
     if not os.path.exists(config_file_path):
@@ -488,7 +490,7 @@ if __name__ == "__main__":
     mp.set_start_method("spawn", force=True)
 
     # Output data folder
-    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + cofig_file_name.removesuffix(".json") + "/"
+    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + config_file_name.removesuffix(".json") + "/"
     print( f"output_directory = {output_directory}")
     source_signal_list = SETTINGS.DATA.data_names
 
@@ -528,8 +530,6 @@ if __name__ == "__main__":
             [   
                 ForwardFillImputerTransform(),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
-                #ImputerTransform(model_dictionary["imputer"][var], 
-                         #SETTINGS.LOCAL_PATHS.average_values_file_path),
                 FillWithZerosImputerTransform(),
             ]
         )
@@ -553,25 +553,41 @@ if __name__ == "__main__":
         local_flag=SETTINGS.DATA.local
     )
     
-    conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.dataloader_batch_size)
+    signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
+    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.dataloader_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=True
+        shuffle=False
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
     test_dataloader = dataloaders_train_val_test["test"]
 
-    # Create β-VAE models
+    # Create conv1d-VAE models
     conv1d_vae_models = create_conv1d_vae_models(
         SETTINGS,
         train_dataloader, 
         verbose = False
     )
     
+    # Save model architectures
+    with open(os.path.join(output_directory, "models"),'w') as f:
+       json.dump(
+            {k: str(v) for k, v in conv1d_vae_models.items()},
+                f,
+                indent=4
+            )
+    
+    # Save config file 
+    try:
+        with open(config_file_path, 'rb') as src, open(os.path.join(output_directory,config_file_name), 'wb') as dst:
+            dst.write(src.read())
+    except Exception as e:
+        breakpoint()
+        
     if conv1d_vae_models:
         start = time.time()
         best_model_states, training_loss_curves = train_conv1d_vae_models(

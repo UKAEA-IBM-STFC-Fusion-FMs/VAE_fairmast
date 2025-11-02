@@ -115,3 +115,32 @@ class MastDataset(Dataset):
             return shot
 
     # ------------------------------------------------------------------------------------------------------------------
+
+
+class CachedDataset(Dataset):
+    def __init__(self, base_dataset):
+        """
+        base_dataset: any torch Dataset (e.g. torchvision, custom, etc.)
+        """
+        self.base_dataset = base_dataset
+        self.cache = [None] * len(base_dataset)
+        self._is_cached = [False] * len(base_dataset)
+    
+    def __getitem__(self, idx):
+        # If not cached, load it once
+        if not self._is_cached[idx]:
+            item = self.base_dataset[idx]
+
+            # # Optional: pin to memory for faster GPU transfer
+            # if isinstance(item, torch.Tensor):
+            #     item = item.pin_memory()
+            # elif isinstance(item, (list, tuple)):
+            #     item = tuple(x.pin_memory() if isinstance(x, torch.Tensor) else x for x in item)
+
+            self.cache[idx] = item
+            self._is_cached[idx] = True
+
+        return self.cache[idx]
+
+    def __len__(self):
+        return len(self.base_dataset)

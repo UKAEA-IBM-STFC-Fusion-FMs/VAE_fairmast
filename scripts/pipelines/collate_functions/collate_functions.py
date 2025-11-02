@@ -227,18 +227,16 @@ class Conv1dVAECollate():
     appended.
     """
     
-    def __init__(self, targeted_number_tensors, verbose = False):
+    def __init__(self, signals, targeted_number_tensors, verbose = False):
         self.targeted_number_tensors = targeted_number_tensors
         self.verbose = verbose
-    
+        self.signals = signals
 
     def __call__(self, batch):
-        
         collated = defaultdict(nested_defaultdict)
         
-        sample = next(iter(batch))
         index = {}
-        for signal_name in sample.keys():
+        for signal_name in self.signals:
             index[signal_name] = 0
             
         for sample in batch:
@@ -268,6 +266,3 @@ class Conv1dVAECollate():
             raise ValueError(f"Collate failed: not enough tensors to form a single group for signals: {empty_signals}")
 
         return collated
-
-
-    

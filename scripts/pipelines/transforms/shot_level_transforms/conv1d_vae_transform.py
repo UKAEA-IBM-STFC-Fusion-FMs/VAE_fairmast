@@ -49,7 +49,6 @@ class Conv1dVAETransform:
             "signal_name": [signal_values_idx_1, ..., signal_values_idx_n].
             The list contains tensors, one for each temporal window
         """
-
         all_signals = defaultdict(list)
         window_ids = []
         # Loop trhough all window_index
