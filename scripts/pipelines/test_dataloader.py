@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import sys
@@ -9,6 +10,10 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 from collections import defaultdict
+import psutil
+import time
+import subprocess
+import random
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -56,23 +61,22 @@ from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_e
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
-from scripts.pipelines.beta_vae_pipeline import visualize_beta_vae_results
 # Determine device to train on
-if torch.cuda.is_available():
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
     device = torch.device("cuda")
-    print(f"--------------- RUNNING ON GPUs ---------------")
 else:
     device = torch.device("cpu")
-    print(f"--------------- RUNNING ON CPUs ---------------")
     
 
 def get_train_test_val_shots(max_index=None):
     train_sh, test_sh, val_sh = read_data_split_csv()
 
     if max_index:
-        train_sh = train_sh[0:max_index]
-        val_sh = val_sh[0:max_index]
-        test_sh = test_sh[0:max_index]
+        train_sh = train_sh[:max_index]
+        val_sh = val_sh[:max_index]
+        test_sh = test_sh[:max_index]
 
     return train_sh, test_sh, val_sh
 
@@ -168,9 +172,9 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
             )
-    datasets_["train"] = CachedDataset(datasets_["train"])
-    datasets_["val"]   = CachedDataset(datasets_["val"])
-    datasets_["test"]  = CachedDataset(datasets_["test"])   
+    # datasets_["train"] = CachedDataset(datasets_["train"])
+    # datasets_["val"]   = CachedDataset(datasets_["val"])
+    # datasets_["test"]  = CachedDataset(datasets_["test"])
     return datasets_
 
 def initialize_dataloaders(
@@ -179,7 +183,8 @@ def initialize_dataloaders(
         batch_size,
         num_workers,
         shuffle=True,
-        drop_last=False
+        drop_last=False,
+        persistent_workers=True
     ):
     
     dataloaders_ = {"train": None, "val": None, "test": None}
@@ -199,73 +204,77 @@ def initialize_dataloaders(
 
     return dataloaders_
 
-def create_conv1d_vae_models(
+def time_access(dataset, indices):
+    start = time.time()
+    for i in range(len(indices)):
+        if i%10 ==0:
+            print(i)
+        _ = dataset[i]
+    return time.time() - start
+
+def test_dataset_speed_access(dataset, indices):
+    t_seq = time_access(dataset,indices)
+    random.shuffle(indices)
+    t_rand = time_access(dataset,indices)
+
+    print(f"Sequential read time: {t_seq:.2f}s")
+    print(f"Random read time: {t_rand:.2f}s")
+
+
+def test_dataloader(
     SETTINGS,
     train_dataloader, 
-    verbose = False
-    ):
-    """Create conv1d-VAE models for each signal type"""
+    device,
+    verbose=True):
     
-    # Initalize models
-    models = {}
+    times_vs_epoch = []
+    for epoch in range(SETTINGS.TRAINING.num_epochs):
+        verbose and print(f"\nEpoch {epoch+1}\n")
+        
+        average = 0.0
+        counter = 0
+        times = []
+        start = time.time()
+        for batch_idx, batch in enumerate(train_dataloader):
+            elapsed = time.time()- start
+            print(f"Batch idx: {batch_idx}, DatLoader Elapsed Time {elapsed}")
+            times.append(elapsed)
+            # time.sleep(5)
+            counter +=1
+            average += elapsed
+            start = time.time()
+        print(f"Average time epoch {epoch}: {elapsed/counter}")
+        times_vs_epoch.append(times)
+    return times_vs_epoch
+
+if __name__ == "__main__":
     
-    # Get sample batch to determine signal shapes  
-    sample_batch = next(iter(train_dataloader))
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config_file_path",
+        default = "scripts/pipelines/configs/config.json",
+        type=str,
+        help="Path to configuration file for the pipeline.")
     
-    for signal_name, groups in sample_batch.items():
-        for group_idx, signal_data in groups.items():
-
-            input_length = signal_data.shape[-1]  # Last dimension is time
-            input_channels = signal_data.shape[-2] # Nr. of channels
-
-            if verbose:
-                print(
-                    f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
-                )
-                    
-            vae_specs = {
-                "beta": SETTINGS.BETA_VAE.beta, 
-                "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-                "input_length": input_length
-            }
+    args = parser.parse_args()
     
-            # Encoder layer specs
-            print(f"signal_name {signal_name}")
-            try:
-                conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                    SETTINGS, 
-                    input_channels, 
-                    input_length
-                )
-            except ValueError as e:
-                print(f"Building encoder error: {e}")
-                return models
-
-            model = Conv1dVAE(conv1d_encoder_layer_specs, 
-                                encoded_signal_shape,
-                                conv1d_decoder_layer_specs, 
-                                vae_specs)
-
-            models[signal_name] = model
-
-            if verbose:
-                print(f"Created conv1dVAE for {signal_name}")
-            break
-
-    return models
+    config_file_path = args.config_file_path
+    cofig_file_name = os.path.basename(config_file_path)
     
-def test_model(source, signal_name, output_dir, SETTINGS):
-    model_path = os.path.join(output_dir, "best_conv1d_vae_magnetics-" + signal_name + ".pt")
-     
-    if not os.path.exists(model_path):
-        print(f"{model_path} not found")
-        return
+    # Load configuration from JSON file
+    if not os.path.exists(config_file_path):
+        raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
     else:
-        output_directory = os.path.dirname(model_path)
-
+         SETTINGS = get_settings(config_file_path)  
+    
+    
     # HPC settings for CPUs only
     num_workers = SETTINGS.TRAINING.num_workers
+    mp.set_start_method("spawn", force=True)
 
+    # Output data folder
+    output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + cofig_file_name.removesuffix(".json")+ "/"
+    print( f"output_directory = {output_directory}")
     source_signal_list = SETTINGS.DATA.data_names
 
     # Parameters for window segmentation (no x/y split for VAE)
@@ -283,7 +292,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
     # Create sets of shot IDs for training, validation and testing
     train_shots, test_shots, val_shots = get_train_test_val_shots(
-        SETTINGS.TRAINING.num_val_samples
+        SETTINGS.TRAINING.num_train_samples
     )
 
     # Fit mean and std for signal transformation
@@ -291,16 +300,21 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         train_shots,
         output_directory,
         verbose=False,
-        use_existing=True,
+        use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
         local = SETTINGS.DATA.local
     )
 
+    # model_dictionary = load_models(SETTINGS.DATA.data_names, 
+    #                                SETTINGS.LOCAL_PATHS.joblib_directory)
+    
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
                 ForwardFillImputerTransform(),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
+                #ImputerTransform(model_dictionary["imputer"][var], 
+                         #SETTINGS.LOCAL_PATHS.average_values_file_path),
                 FillWithZerosImputerTransform(),
             ]
         )
@@ -311,7 +325,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(),
+            Conv1dVAETransform()
         ]
     )
 
@@ -324,6 +338,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         local_flag=SETTINGS.DATA.local
     )
     
+    shuffle = True
     signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
     conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.dataloader_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
@@ -331,158 +346,39 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=False # Keep it False since the order need to be deterministic for later analysis
+        shuffle=shuffle
     )
-    test_dataloader = dataloaders_train_val_test["test"]
+    
+    train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
-    
-    # Create conv1d-VAE models
-    model = create_conv1d_vae_models(
-        SETTINGS,
-        val_dataloader, 
-        verbose = False
-    )
 
-    model = model[source + "-" + signal_name]
-    state_dict = torch.load(model_path, map_location=torch.device('cpu'))
-    model.load_state_dict(state_dict)
-    model.to(device)
-    model.eval()
+    if 0:
+        start = time.time()
+        iterator = iter(train_dataloader)
+        print(f"Iterator creation time: {time.time() - start:.4f} seconds")
+        for i in range(20):
+            try:
+                start = time.time()
+                batch = next(iterator)
+                print(f"Batch {i} load time: {time.time() - start:.4f} seconds")
+            except Exception:
+                break
 
-    loss_vs_batch = []
-    best_loss = float("inf")
-    best_batch_idx  = -1
-    best_group_idx = -1
-    
-    this_signal = "magnetics-flux_loop_flux"
-    with torch.no_grad(): 
-        for batch_idx, batch in enumerate(val_dataloader):
-            print(f"Batch idx {batch_idx}")
-
-            for signal_name, groups in batch.items():
-                # Do it for only one signal
-                if signal_name !=  this_signal:
-                    continue
-                
-                for group_idx, stacked_tensor in groups.items():
-                    
-                    x = stacked_tensor.to(device)
-                    x_recon, mu, logvar = model(x)
-
-                    # Compute loss
-                    total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
-                    loss_vs_batch.append(total_loss.item())  
-                    
-                    if total_loss.item() < best_loss:
-                        best_loss = total_loss.item()
-                        best_batch_idx  = batch_idx
-                        best_group_idx = group_idx
-
-    
-    print(f"Best shot id and group idx= {best_batch_idx}, {best_group_idx}")
-    
-    
-    # Recover best batch
-    batch_size = SETTINGS.TRAINING.dataloader_batch_size
-    start_idx = best_batch_idx * batch_size
-    end_idx = start_idx + batch_size
-
-    # fetch items directly from dataset
-    dataset = datasets_train_val_test["val"]
-    batch_items = []
-    for i in range(start_idx, end_idx):
-        try:
-            batch_items.append(dataset[i])
-        except Exception as e:
-            # dataset might not include all items in range(start_idx, end_idx)
-            break
- 
-    recovered_batch = conv1d_vae_collate_fn(batch_items)
-    
-    x_best_input = None
-    x_best_recon = None
-    best_loss = float("inf")
-
-    with torch.no_grad():
-        for signal_name, groups in recovered_batch.items():
-            
-            # Do it for only one signal
-            if signal_name !=  this_signal:
-                continue
-            
-            for group_idx, stacked_tensor in groups.items():
-                if group_idx != best_group_idx:
-                    continue
-                
-                x = stacked_tensor.to(device)
-                # Iterate over each tensor in the stack
-                for i in range(x.shape[0]):
-                    x_i = x[i].unsqueeze(0)  # Add batch dimension
-                    x_recon_i, mu_i, logvar_i = model(x_i)
-
-                    total_loss, recon_loss, kl_loss = loss_function(
-                        SETTINGS.BETA_VAE.beta, x_recon_i, x_i, mu_i, logvar_i
-                    )
-                    loss_value = total_loss.item()
-                    
-                    if loss_value < best_loss:
-                        best_loss = loss_value
-                        x_best_input = x_i
-                        x_best_recon = x_recon_i
-    try:
-        with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
-            data = {
-                'loss_vs_batch':  loss_vs_batch,
-                'best_loss': best_loss,
-                'input' : x_best_input.cpu().flatten().numpy().tolist(),
-                'reconstructed': x_best_recon.cpu().flatten().numpy().tolist()
-            }
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"{e}")
+    if 1:
+        times_vs_epoch = test_dataloader(SETTINGS, train_dataloader, device)
         
-    try:
-        if x_best_input is not None and x_best_recon is not None:
-            plt.figure(figsize=(10, 4))
-            plt.plot(x_best_input.cpu().flatten().numpy().tolist(), label="Original", lw=2)
-            plt.plot(x_best_recon.cpu().flatten().numpy().tolist(), label="Reconstructed", lw=2, linestyle="--")
-            plt.title(f"Best Reconstruction")
-            plt.legend()
-            plt.show()
-            plt.savefig(output_dir+ "best_reconstruction.pdf", dpi=300, bbox_inches='tight')
-        else:
-            print("No valid reconstruction found.") 
-    except Exception as e:
-        print(f"{e}")
-    
-    try:
-        x_in = x_best_input.squeeze(0)   # shape: (n_channels, n_length)
-        x_re = x_best_recon.squeeze(0)  # shape: (n_channels, n_length)
+        fig, ax = plt.subplots()
         
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
-
-        im0 = axes[0].imshow(x_in, aspect='auto', cmap='viridis', origin='lower')
-        axes[0].set_title("Original")
-        axes[0].set_xlabel("Time")
-        axes[0].set_ylabel("Channel")
-
-        im1 = axes[1].imshow(x_re, aspect='auto', cmap='viridis', origin='lower')
-        axes[1].set_title(f"Reconstructed (loss={best_loss:.4f})")
-        axes[1].set_xlabel("Time")
-
-        fig.colorbar(im1, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
+        for times in times_vs_epoch:
+            x = np.arange(len(times))
+            y = np.array(times)
+            ax.plot(x, y, linestyle='-',color='blue', marker='o')
+        
+        ax.set_ylabel('Sec')
+        ax.set_xlabel('Batch')
+        ax.set_title(f'Batch size {SETTINGS.TRAINING.dataloader_batch_size}')
         plt.show()
-        plt.savefig(output_dir+"best_reconstruction_image.pdf", dpi=300, bbox_inches='tight')
-    except Exception as e:
-        print(f"{e}")
-
-
-if __name__ == "__main__":
-    
-    SETTINGS = get_settings("scripts/pipelines/configs/config_pipeline9.json")
-    
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config_pipeline9/"
-
-    source, signal_name = SETTINGS.DATA.data_names[0]
-
-    test_model(source, signal_name, output_dir, SETTINGS)
+        fig.savefig(f'DataLoaderTime_{SETTINGS.TRAINING.num_train_samples}_shuffl_{shuffle}.pdf')
+            
+    if 0:
+        test_dataset_speed_access(datasets_train_val_test['train'],train_shots)  

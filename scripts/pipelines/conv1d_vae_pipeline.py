@@ -2,7 +2,6 @@ import argparse
 from collections import defaultdict
 import json
 import matplotlib.pyplot as plt
-from multiprocessing import cpu_count
 import numpy as np
 import os
 import pickle
@@ -58,15 +57,6 @@ from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
-# Determine device to train on
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    print(f"--------------- RUNNING ON GPUs ---------------")
-else:
-    device = torch.device("cpu")
-    print(f"--------------- RUNNING ON CPUs ---------------")
-
-
 def get_train_test_val_shots(max_index=None):
     train_sh, test_sh, val_sh = read_data_split_csv()
 
@@ -80,6 +70,7 @@ def get_train_test_val_shots(max_index=None):
 def fit_mean_and_std_for_signal_transform( 
                                           train_shots,
                                           output_dir, 
+                                          source_signal_list,
                                           verbose=False,
                                           use_existing=False, 
                                           local=True
@@ -203,7 +194,7 @@ def initialize_dataloaders(
 
 def create_conv1d_vae_models(
     SETTINGS,
-    train_dataloader, 
+    dataloader, 
     verbose = False
     ):
     """Create conv1d-VAE models for each signal type"""
@@ -212,7 +203,7 @@ def create_conv1d_vae_models(
     models = {}
     
     # Get sample batch to determine signal shapes  
-    sample_batch = next(iter(train_dataloader))
+    sample_batch = next(iter(dataloader))
     
     for signal_name, groups in sample_batch.items():
         for group_idx, signal_data in groups.items():
@@ -256,7 +247,7 @@ def create_conv1d_vae_models(
 
     return models
 
-def stop_early(val_losses, patience=5, min_delta=1e-3, slope_threshold=1e-4):
+def stop_early(val_losses, patience=5, slope_threshold=1e-4):
     """
     Stop early if validation loss has plateaued or the trend slope is very small.
 
@@ -268,11 +259,6 @@ def stop_early(val_losses, patience=5, min_delta=1e-3, slope_threshold=1e-4):
     """
     if len(val_losses) < patience + 1:
         return False
-
-    # Check for no meaningful improvement (patience logic)
-    # best_prev = min(val_losses[:-patience])
-    # best_recent = min(val_losses[-patience:])
-    # no_progress = (best_prev - best_recent) < min_delta
 
     # Check if trend has flattened (slope logic)
     y = np.array(val_losses[-patience:])
@@ -448,7 +434,6 @@ def train_conv1d_vae_models(
         print(f"Validation losses {loss_curves[signal_name]['val_total']}")
         if stop_early(loss_curves[signal_name]['val_total'],
                     SETTINGS.TRAINING.patience,
-                    SETTINGS.TRAINING.min_delta,
                     SETTINGS.TRAINING.slope_threshold):
             break
     
@@ -464,7 +449,16 @@ def train_conv1d_vae_models(
     return best_model_states, loss_curves
 
 
-if __name__ == "__main__":
+def main():
+    mp.set_start_method("spawn", force=True)
+
+    # Determine device to train on
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"--------------- RUNNING ON GPUs ---------------")
+    else:
+        device = torch.device("cpu")
+        print(f"--------------- RUNNING ON CPUs ---------------")
     
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -482,12 +476,15 @@ if __name__ == "__main__":
     if not os.path.exists(config_file_path):
         raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
     else:
-         SETTINGS = get_settings(config_file_path)  
+        try:
+            SETTINGS = get_settings(config_file_path) 
+        except Exception as e:
+            print(f"Error in loading configuration {e}")
+            return 
     
     
     # HPC settings for CPUs only
     num_workers = SETTINGS.TRAINING.num_workers
-    mp.set_start_method("spawn", force=True)
 
     # Output data folder
     output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + config_file_name.removesuffix(".json") + "/"
@@ -516,6 +513,7 @@ if __name__ == "__main__":
     dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
         train_shots,
         output_directory,
+        source_signal_list = source_signal_list,
         verbose=False,
         use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
         local = SETTINGS.DATA.local
@@ -564,17 +562,17 @@ if __name__ == "__main__":
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
-    test_dataloader = dataloaders_train_val_test["test"]
+    # test_dataloader = dataloaders_train_val_test["test"]
 
     # Create conv1d-VAE models
     conv1d_vae_models = create_conv1d_vae_models(
         SETTINGS,
-        train_dataloader, 
+        val_dataloader, 
         verbose = False
     )
     
     # Save model architectures
-    with open(os.path.join(output_directory, "models"),'w') as f:
+    with open(os.path.join(output_directory, "models.json"),'w') as f:
        json.dump(
             {k: str(v) for k, v in conv1d_vae_models.items()},
                 f,
@@ -586,7 +584,7 @@ if __name__ == "__main__":
         with open(config_file_path, 'rb') as src, open(os.path.join(output_directory,config_file_name), 'wb') as dst:
             dst.write(src.read())
     except Exception as e:
-        breakpoint()
+        print(f"Error copying config file: {e}")
         
     if conv1d_vae_models:
         start = time.time()
@@ -607,4 +605,5 @@ if __name__ == "__main__":
     else:
         print("NO TRAINING: models dictionary is empty.")
 
-    
+if __name__ == "__main__":
+    main()

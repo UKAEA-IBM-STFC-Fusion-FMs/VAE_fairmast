@@ -29,39 +29,49 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     ValueError
         If signal after encoder has length <=1
     """
-    conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
-    print(f"ENCODER SPECS {conv1d_encoder_specs}")
+    # conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
+    # print(f"ENCODER SPECS {conv1d_encoder_specs}")
     
-    # conv1d_encoder_specs = {
-    #         "layers": [
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 15,
-    #                     "out_channels": 64,
-    #                     "kernel_size": SETTINGS.CONV1D.kernel,
-    #                     "stride": SETTINGS.CONV1D.stride,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 64,
-    #                     "out_channels": 128,
-    #                     "kernel_size": SETTINGS.CONV1D.kernel,
-    #                     "stride": SETTINGS.CONV1D.stride,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             }
-    #         ]
-    #     }
+    conv1d_encoder_specs = {
+            "layers": [
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 15,
+                        "out_channels": 128,
+                        "kernel_size": 4,
+                        "stride": 1,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                },
+                {
+                    "type": "relu"
+                },
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 128,
+                        "out_channels": 128,
+                        "kernel_size": 3,
+                        "stride": 2,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                },
+                {
+                    "type": "relu"
+                },
+                {
+                    "type": "conv1d",
+                    "params": {
+                        "in_channels": 128,
+                        "out_channels": 256,
+                        "kernel_size": 4,
+                        "stride": 1,
+                        "padding": SETTINGS.CONV1D.padding
+                    }
+                }
+            ]
+        }
 
     last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
     encoded_signal_shape = [last_nr_channels, last_signal_length]

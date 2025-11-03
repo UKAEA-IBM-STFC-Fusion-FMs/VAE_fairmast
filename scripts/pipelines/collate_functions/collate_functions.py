@@ -238,7 +238,7 @@ class Conv1dVAECollate():
         index = {}
         for signal_name in self.signals:
             index[signal_name] = 0
-            
+
         for sample in batch:
             if isinstance(sample, list):
                 continue

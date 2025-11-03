@@ -86,15 +86,10 @@ class Conv1dVAE(nn.Module):
 
 def loss_function(beta, reconstruction, target, mu, logvar):
     """β-VAE loss function"""
-    try:
-        reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
-        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
-        total_loss = reconstruction_loss + beta * kl_loss
-    except:
-        print(f"reco and target have different shapes {reconstruction.shape}, {target.shape}")
-        reconstruction_loss = F.mse_loss(reconstruction, target[:, :, :reconstruction.shape[2]], reduction='mean')  
-        kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
-        total_loss = reconstruction_loss + beta * kl_loss
+    reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
+    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
+    total_loss = reconstruction_loss + beta * kl_loss
+
 
     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
     total_loss = reconstruction_loss + beta * kl_loss
