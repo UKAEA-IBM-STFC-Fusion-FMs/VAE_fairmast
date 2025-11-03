@@ -217,8 +217,8 @@ def create_conv1d_vae_models(
     for signal_name, groups in sample_batch.items():
         for group_idx, signal_data in groups.items():
 
-            input_length = signal_data[0].shape[-1]  # Last dimension is time
-            input_channels = signal_data[0].shape[-2] # Nr. of channels
+            input_length = signal_data.shape[-1]  # Last dimension is time
+            input_channels = signal_data.shape[-2] # Nr. of channels
 
             if verbose:
                 print(

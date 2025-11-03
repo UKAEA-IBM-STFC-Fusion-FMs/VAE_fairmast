@@ -56,6 +56,7 @@ from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_e
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
+from scripts.pipelines.beta_vae_pipeline import visualize_beta_vae_results
 # Determine device to train on
 if torch.cuda.is_available():
     device = torch.device("cuda")
@@ -204,44 +205,52 @@ def create_conv1d_vae_models(
     verbose = False
     ):
     """Create conv1d-VAE models for each signal type"""
-
-    # Get sample batch to determine signal shapes
+    
+    # Initalize models
+    models = {}
+    
+    # Get sample batch to determine signal shapes  
     sample_batch = next(iter(train_dataloader))
     
-    models = {}
-    for signal_name, signal_data in sample_batch.items():
+    for signal_name, groups in sample_batch.items():
+        for group_idx, signal_data in groups.items():
 
-        input_length = signal_data[0].shape[-1]  # Last dimension is time
-        input_channels = signal_data[0].shape[-2] # Nr. of channels
+            input_length = signal_data.shape[-1]  # Last dimension is time
+            input_channels = signal_data.shape[-2] # Nr. of channels
 
-        if verbose:
-            print(
-                f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
-            )
+            if verbose:
+                print(
+                    f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
+                )
                     
-        vae_specs = {
-            "beta": SETTINGS.BETA_VAE.beta, 
-            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-            "input_length": input_length
-        }
+            vae_specs = {
+                "beta": SETTINGS.BETA_VAE.beta, 
+                "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
+                "input_length": input_length
+            }
     
-        # Encoder layer specs
-        print(f"signal_name {signal_name}")
-        encoder_layer_specs, encoded_signal_shape, decoder_layer_specs = build_conv1d_encoder_decoder(
-            SETTINGS, 
-            input_channels, 
-            input_length
-        )
+            # Encoder layer specs
+            print(f"signal_name {signal_name}")
+            try:
+                conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                    SETTINGS, 
+                    input_channels, 
+                    input_length
+                )
+            except ValueError as e:
+                print(f"Building encoder error: {e}")
+                return models
 
-        model = Conv1dVAE(encoder_layer_specs, 
-                          encoded_signal_shape,
-                          decoder_layer_specs, 
-                          vae_specs)
+            model = Conv1dVAE(conv1d_encoder_layer_specs, 
+                                encoded_signal_shape,
+                                conv1d_decoder_layer_specs, 
+                                vae_specs)
 
-        models[signal_name] = model
+            models[signal_name] = model
 
-        if verbose:
-            print(f"Created conv1dVAE for {signal_name}")
+            if verbose:
+                print(f"Created conv1dVAE for {signal_name}")
+            break
 
     return models
     
@@ -325,11 +334,13 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         shuffle=False # Keep it False since the order need to be deterministic for later analysis
     )
     test_dataloader = dataloaders_train_val_test["test"]
-
+    val_dataloader = dataloaders_train_val_test["val"]
+    
     # Create conv1d-VAE models
+    breakpoint()
     model = create_conv1d_vae_models(
         SETTINGS,
-        test_dataloader, 
+        val_dataloader, 
         verbose = False
     )
 
@@ -346,7 +357,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     
     this_signal = "magnetics-flux_loop_flux"
     with torch.no_grad(): 
-        for batch_idx, batch in enumerate(test_dataloader):
+        for batch_idx, batch in enumerate(val_dataloader):
             print(f"Batch idx {batch_idx}")
 
             for signal_name, groups in batch.items():
@@ -378,7 +389,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     end_idx = start_idx + batch_size
 
     # fetch items directly from dataset
-    dataset = datasets_train_val_test["test"]
+    dataset = datasets_train_val_test["val"]
     batch_items = []
     for i in range(start_idx, end_idx):
         try:
