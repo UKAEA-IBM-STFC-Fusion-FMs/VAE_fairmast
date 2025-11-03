@@ -322,7 +322,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=False
+        shuffle=False # Keep it False since the order need to be deterministic for later analysis
     )
     test_dataloader = dataloaders_train_val_test["test"]
 
@@ -341,15 +341,19 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
     loss_vs_batch = []
     best_loss = float("inf")
-    x_best_input = None
-    x_best_recon = None
+    best_batch_idx  = -1
+    best_group_idx = -1
     
+    this_signal = "magnetics-flux_loop_flux"
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(test_dataloader):
             print(f"Batch idx {batch_idx}")
-            if batch_idx >10:
-                break
+
             for signal_name, groups in batch.items():
+                # Do it for only one signal
+                if signal_name !=  this_signal:
+                    continue
+                
                 for group_idx, stacked_tensor in groups.items():
                     
                     x = stacked_tensor.to(device)
@@ -358,21 +362,75 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                     # Compute loss
                     total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
                     loss_vs_batch.append(total_loss.item())  
-     
+                    
                     if total_loss.item() < best_loss:
                         best_loss = total_loss.item()
-                        x_best_input = x
-                        x_best_recon = x_recon
+                        best_batch_idx  = batch_idx
+                        best_group_idx = group_idx
 
-    with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
-        data = {
-            'loss_vs_batch':  loss_vs_batch,
-            'best_loss': best_loss,
-            'input' : x_best_input.cpu().flatten().numpy().tolist(),
-            'reconstructed': x_best_recon.cpu().flatten().numpy().tolist()
-        }
-        json.dump(data, f, indent=4)
     
+    print(f"Best shot id and group idx= {best_batch_idx}, {best_group_idx}")
+    
+    
+    # Recover best batch
+    batch_size = SETTINGS.TRAINING.dataloader_batch_size
+    start_idx = best_batch_idx * batch_size
+    end_idx = start_idx + batch_size
+
+    # fetch items directly from dataset
+    dataset = datasets_train_val_test["test"]
+    batch_items = []
+    for i in range(start_idx, end_idx):
+        try:
+            batch_items.append(dataset[i])
+        except Exception as e:
+            # dataset might not include all items in range(start_idx, end_idx)
+            break
+ 
+    recovered_batch = conv1d_vae_collate_fn(batch_items)
+    
+    x_best_input = None
+    x_best_recon = None
+    best_loss = float("inf")
+
+    with torch.no_grad():
+        for signal_name, groups in recovered_batch.items():
+            
+            # Do it for only one signal
+            if signal_name !=  this_signal:
+                continue
+            
+            for group_idx, stacked_tensor in groups.items():
+                if group_idx != best_group_idx:
+                    continue
+                
+                x = stacked_tensor.to(device)
+                # Iterate over each tensor in the stack
+                for i in range(x.shape[0]):
+                    x_i = x[i].unsqueeze(0)  # Add batch dimension
+                    x_recon_i, mu_i, logvar_i = model(x_i)
+
+                    total_loss, recon_loss, kl_loss = loss_function(
+                        SETTINGS.BETA_VAE.beta, x_recon_i, x_i, mu_i, logvar_i
+                    )
+                    loss_value = total_loss.item()
+                    
+                    if loss_value < best_loss:
+                        best_loss = loss_value
+                        x_best_input = x_i
+                        x_best_recon = x_recon_i
+    try:
+        with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
+            data = {
+                'loss_vs_batch':  loss_vs_batch,
+                'best_loss': best_loss,
+                'input' : x_best_input.cpu().flatten().numpy().tolist(),
+                'reconstructed': x_best_recon.cpu().flatten().numpy().tolist()
+            }
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        print(f"{e}")
+        
     try:
         if x_best_input is not None and x_best_recon is not None:
             plt.figure(figsize=(10, 4))
@@ -410,9 +468,10 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
 
 if __name__ == "__main__":
-    SETTINGS = get_settings("scripts/pipelines/configs/config_pipeline5.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config_pipeline5/"
+    SETTINGS = get_settings("scripts/pipelines/configs/config_pipeline7.json")
+    
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config_pipeline7/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 
