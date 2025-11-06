@@ -253,7 +253,45 @@ def create_conv1d_vae_models(
             break
 
     return models
+   
+
+def plot_histograms(
+    properties,
+    Nbins,
+    color,
+    x_label,
+    y_label,
+    title_prefix,
+    file_name,
+    num_rows=3,
+    num_cols=5,
+    x_max = None,
+    x_min = None
+):
+    num_features = len(properties)
+    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(15, 10))
+    axes = axes.flatten()  # Flatten to 1D for easy iteration
+
+    for i in range(num_features):
+        ax = axes[i]
+        if x_min is not None and x_max is not None:
+                ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
+                ax.set_xlim(x_min, x_max)
+        else:
+            ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7)
+        # ax.set_title(f"{title_prefix} {i+1}")
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend([f"Channel {i+1}"])
     
+    # Hide unused subplots if grid > num_features
+    for j in range(num_features, len(axes)):
+        axes[j].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.close()
+ 
 def test_model(source, signal_name, output_dir, SETTINGS):
     model_path = os.path.join(output_dir, "best_conv1d_vae_magnetics-" + signal_name + ".pt")
      
@@ -277,7 +315,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
         "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
         "stride_unitary": SETTINGS.TIME_SEGMENTATION.stride_unitary,
-        "min_samples_per_window": SETTINGS.TIME_SEGMENTATION.min_samples_per_window,
+        "tergeted_time_stamp_per_window": SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window,
         "verbose": False,
     }
 
@@ -329,7 +367,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     )
     
     signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
-    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.training_batch_size)
+    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.train_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
@@ -354,8 +392,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     model.eval()
 
     loss_vs_batch = []
-    correlations_ = None
-    rel_errors = None
+    correlations_ = []
+    rel_errors = []
     x_best_input = None
     x_best_recon = None
     best_loss = float("inf")
@@ -365,14 +403,26 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     this_signal = "magnetics-flux_loop_flux"
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
-            print(f"Batch idx {batch_idx}")
+            
+            # Check if the signal exists in the batch
+            if this_signal not in batch:
+                print(f"Signal '{this_signal}' not found in batch {batch_idx}")
+                continue
 
+            print(f"Batch idx {batch_idx}")
+            
+            if batch_idx==1:
+                break
+            
             for signal_name, groups in batch.items():
                 # Do it for only one signal
                 if signal_name !=  this_signal:
                     continue
                 
                 for group_idx, stacked_tensor in groups.items():
+
+                    # if group_idx !=10:
+                    #     continue
                     
                     x = stacked_tensor.to(device)
                     x_recon, mu, logvar = model(x)
@@ -384,32 +434,43 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                     if total_loss.item() < best_loss:
                         best_loss = total_loss.item()
                         
-                    if correlations_ is None:
-                        correlations_ = [[] for _ in range(x.shape[1])]
-                    correl = correlations(x, x_recon).tolist()
-                    for i, corr in enumerate(zip(*correl)):
-                        correlations_[i].extend(corr)
-                    
-                    if rel_errors is None:
-                        rel_errors  = [[] for _ in range(x.shape[1])]
+                    num_channels = x.shape[1]
+                    if not correlations_:
+                        correlations_ = [[] for _ in range(num_channels)]
+                    if not rel_errors:
+                        rel_errors = [[] for _ in range(num_channels)]
+
+                    # Compute correlations
+                    correl = correlations(x, x_recon)
+                    if isinstance(correl, torch.Tensor):
+                        correl = correl.cpu().tolist()
+                    for i, corr_values in enumerate(zip(*correl)):
+                        correlations_[i].extend(corr_values)
+
+                    # Compute relative errors
                     errors, minimum, min_index = absolute_relative_errors(x, x_recon)
-                    errors = errors.tolist()
-                    for i, error in enumerate(zip(*errors)):
-                        rel_errors[i].extend(error)
-                    
-                    
+                    if isinstance(errors, torch.Tensor):
+                        errors = errors.cpu().tolist()
+                    for i, error_values in enumerate(zip(*errors)):
+                        rel_errors[i].extend(error_values)
+            
+                    #Track best reconstruction
                     if minimum < minimum_error:
                         minimum_error = minimum
-                        x_best_input = x[min_index]
-                        x_best_recon = x_recon[min_index]
-                        
+                        if 0 <= min_index < x.shape[0]:
+                            x_best_input = x[min_index].cpu()
+                            x_best_recon = x_recon[min_index].cpu()
+                        else:
+                            print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
+
+                      
     try:
         with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
             data = {
                 'loss_vs_batch':  loss_vs_batch,
                 'best_loss': best_loss,
-                'input' : x_best_input.cpu().flatten().numpy().tolist(),
-                'reconstructed': x_best_recon.cpu().flatten().numpy().tolist()
+                'input' : x_best_input.flatten().numpy().tolist(),
+                'reconstructed': x_best_recon.flatten().numpy().tolist()
             }
             json.dump(data, f, indent=4)
     except Exception as e:
@@ -418,12 +479,12 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     try:
         if x_best_input is not None and x_best_recon is not None:
             plt.figure(figsize=(10, 4))
-            plt.plot(x_best_input.cpu().flatten().numpy().tolist(), label="Original", lw=2)
-            plt.plot(x_best_recon.cpu().flatten().numpy().tolist(), label="Reconstructed", lw=2, linestyle="--")
-            plt.title(f"Best Reconstruction")
+            plt.plot(x_best_input.flatten().numpy().tolist(), label="Original", lw=2)
+            plt.plot(x_best_recon.flatten().numpy().tolist(), label="Reconstructed", lw=2, linestyle="--")
+            plt.title(f"{this_signal} Reconstruction")
             plt.legend()
             plt.show()
-            plt.savefig(output_dir+ "best_reconstruction.pdf", dpi=300, bbox_inches='tight')
+            plt.savefig(output_dir+ f"{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
         else:
             print("No valid reconstruction found.") 
     except Exception as e:
@@ -441,16 +502,96 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         axes[0].set_ylabel("Channel")
 
         im1 = axes[1].imshow(x_re, aspect='auto', cmap='viridis', origin='lower')
-        axes[1].set_title(f"Reconstructed (loss={best_loss:.4f})")
+        axes[1].set_title(f"{this_signal} Reconstructed (relative error={minimum_error:.4f})")
         axes[1].set_xlabel("Time")
 
         fig.colorbar(im1, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
         plt.show()
-        plt.savefig(output_dir+"best_reconstruction_image.pdf", dpi=300, bbox_inches='tight')
+        plt.savefig(output_dir+f"{this_signal}_image_reconstruction.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
         print(f"{e}")
 
+    plot_histograms(
+        correlations_,
+        100,
+        'blue',
+        x_label="Correlations",
+        y_label="frequency",
+        title_prefix=f'',
+        file_name=f'{output_dir}{this_signal}_correlations.pdf')
+    
+    plot_histograms(
+        rel_errors,
+        100,
+        'red',
+        x_label="Relative absolute errors",
+        y_label="frequency",
+        title_prefix=f'',
+        file_name= f'{output_dir}{this_signal}_rel_errors.pdf',
+        x_max = 1,
+        x_min = 0)
+    
+    signal = this_signal
+    file_path = output_dir
+    
+    with open(os.path.join(file_path, "loss_curves.json"), 'r') as file:
+        data = json.load(file)
 
+    # Validation loss values
+    val_loss = data["Loss"][signal]["val_total"]
+    val_recon_loss = data["Loss"][signal]["val_recon"]
+    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"])*data["vae"]["beta"]
+    train_loss = data["Loss"][signal]["train_total"]
+    train_recon_loss = data["Loss"][signal]["train_recon"]
+    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"])*data["vae"]["beta"]
+
+    # Epochs
+    epochs = list(range(1, len(val_loss) + 1))
+
+    patience = 5
+    y = np.array(val_loss[-patience:])
+    x = np.arange(len(y))
+    slope = np.polyfit(x, y, 1)[0] 
+    print(f"Fit slope of {patience} last validation losses : {slope}")
+        
+    # Create scatter plot
+    fig, ax = plt.subplots()
+    ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation total" )
+    ax.plot(epochs, val_recon_loss, linestyle='dashed', color='blue', label="Validation recon")
+    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * beta ({data['vae']['beta']})")
+    ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training total")
+    ax.plot(epochs, train_recon_loss, linestyle='dashed',color='red', label="Training recon")
+    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * beta ({data['vae']['beta']})")
+    ax.legend()
+    ax.set_yscale('log')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.set_title(signal + 'Conv1d_VAE')
+    ax.grid(True)
+
+    # Show plot
+    plt.show()
+    fig.savefig(file_path + '/losses_vs_batch.pdf')
+
+
+    loss = loss_vs_batch
+    min_loss = min(loss)
+    max_loss = max(loss)
+
+    try:
+        bins = np.arange(min_loss, 0.1 + 1e-4, 1e-4)
+    except Exception as e:
+        print(f"Error creating bins: {e}")
+        bins = 100  # fallback to default number of bins
+
+    fig, ax = plt.subplots()
+    ax.hist(loss, bins=bins)
+    ax.set_xlabel('Validation total loss')
+    ax.set_yscale('log')
+    ax.set_title(signal + 'Conv1d_VAE')
+    plt.show()
+    fig.savefig(file_path + f"/{this_signal}_TotalLoss.pdf")
+    
 def correlations(data, reco, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
