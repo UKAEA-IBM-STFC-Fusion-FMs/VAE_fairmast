@@ -295,13 +295,17 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         local = SETTINGS.DATA.local
     )
 
+    model_dictionary = load_models(SETTINGS.DATA.data_names, 
+                                   SETTINGS.LOCAL_PATHS.joblib_directory)
+    
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
                 ForwardFillImputerTransform(),
+                ImputerTransform(model_dictionary["imputer"][var], 
+                         SETTINGS.LOCAL_PATHS.average_values_file_path),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
-                FillWithZerosImputerTransform(),
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -325,7 +329,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     )
     
     signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
-    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.dataloader_batch_size)
+    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.training_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
@@ -477,11 +481,67 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         print(f"{e}")
 
 
+def correlations(data, reco):
+    """Compute time correlations for each feature 
+    in data-reco pairs
+
+    Parameters
+    ----------
+    data : tensor
+        [batch, features, time]
+    reco : _type_
+        [batch, features, time]
+
+    Returns
+    -------
+    Tensor or time correlations
+        [batch, features]
+    """
+    # Subtract mean along time axis
+    input_diff = data - data.mean(dim=-1, keepdim=True)
+    reco_diff = reco - reco.mean(dim=-1, keepdim=True)
+
+    # Compute numerator and denominator along time axis
+    numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
+   
+    denominator = torch.sqrt(torch.sum(input_diff ** 2, dim=-1) * torch.sum(reco_diff ** 2, dim=-1))  # [batch, features]
+
+    corr = numerator / denominator  # [batch, features]
+    
+    return corr
+
+def absolute_relative_errors(data, reco, eps = 1e-8):
+    """Compute mean absolute relative error for each feature 
+    in data-reco pairs
+
+    Parameters
+    ----------
+    data : tensor
+        [batch, features, time]
+    reco : _type_
+        [batch, features, time]
+
+    Returns
+    -------
+    Tensor or average absolute errors
+        [batch, features]
+    """
+
+    # Compute absolute relative error along time axis
+    abs_rel_error = torch.abs(data - reco) / (torch.abs(data) + eps)  # [batch, features, time]
+
+    # Mean over time dimension
+    features_abs_rel_error = abs_rel_error.mean(dim=-1)  # [batch, features]
+    samples_abs_rel_error = features_abs_rel_error.mean(dim =-1)
+    min_vals, min_indices = torch.min(samples_abs_rel_error, dim = 0) 
+
+    return mean_abs_rel_error, min_vals, min_indices
+
 if __name__ == "__main__":
     
-    SETTINGS = get_settings("scripts/pipelines/configs/config_pipeline9.json")
+    SETTINGS = get_settings("scripts/pipelines/configs/config4.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config_pipeline9/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config4/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 

@@ -123,6 +123,7 @@ class WindowSegmenterTransform:
         drop_incomplete_windows=False,
         verbose=False,
         stride_unitary=False,
+        tergeted_time_stamp_per_window = None
     ):
 
         self.x_keys = x_keys
@@ -135,6 +136,7 @@ class WindowSegmenterTransform:
         self.drop_incomplete = drop_incomplete_windows
         self.verbose = verbose
         self.stride_unitary = stride_unitary
+        self.tergeted_time_stamp_per_window = tergeted_time_stamp_per_window
 
     # ------------------------------------------------------------------------------------------------------------------
     def __call__(self, shot: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -298,9 +300,9 @@ class WindowSegmenterTransform:
             sliced_vals = values[..., idx[0]:idx[-1]+1]
             sliced_time = times[idx[0]:idx[-1]+1]
             
-            if len(idx) >  self.min_samples:
-                sliced_vals = values[..., :self.min_samples]
-                sliced_time = times[..., :self.min_samples]
+            if len(idx) >  self.tergeted_time_stamp_per_window:
+                sliced_vals = values[..., :self.tergeted_time_stamp_per_window]
+                sliced_time = times[..., :self.tergeted_time_stamp_per_window]
 
             signal_slices[key] = {
                 "time": sliced_time,

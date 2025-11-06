@@ -69,6 +69,9 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
                         "stride": 1,
                         "padding": SETTINGS.CONV1D.padding
                     }
+                },
+                {
+                    "type": "relu"
                 }
             ]
         }

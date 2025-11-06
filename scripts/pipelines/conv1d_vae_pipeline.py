@@ -57,15 +57,16 @@ from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 
-def get_train_test_val_shots(max_index=None):
+def get_train_test_val_shots(
+    max_index_for_train=None,
+    max_index_for_val = None):
     train_sh, test_sh, val_sh = read_data_split_csv()
 
-    if max_index:
-        train_sh = train_sh[0:max_index]
-        val_sh = val_sh[0:max_index]
-        test_sh = test_sh[0:max_index]
+    if max_index_for_train:
+        train_set = train_sh[0:max_index_for_train]
+        val_set = val_sh[0:max_index_for_val]
 
-    return train_sh, test_sh, val_sh
+    return train_set, val_set
 
 def fit_mean_and_std_for_signal_transform( 
                                           train_shots,
@@ -148,8 +149,8 @@ def initialize_datasets(
         local_flag=False
     ):
     
-    datasets_ = {"train": None, "val": None, "test": None}
-    data_set_types = ["train", "val", "test"]
+    datasets_ = {"train": None, "val": None}
+    data_set_types = ["train", "val"]
     
     for data_set_type in data_set_types:
         if shots[data_set_type]:
@@ -161,8 +162,7 @@ def initialize_datasets(
                 shot_level_transform=shot_transforms,
             )
     datasets_["train"] = CachedDataset(datasets_["train"])
-    datasets_["val"]   = CachedDataset(datasets_["val"])
-    datasets_["test"]  = CachedDataset(datasets_["test"])     
+    datasets_["val"]   = CachedDataset(datasets_["val"])    
     return datasets_
 
 def initialize_dataloaders(
@@ -175,9 +175,9 @@ def initialize_dataloaders(
         persistent_workers=True
     ):
     
-    dataloaders_ = {"train": None, "val": None, "test": None}
+    dataloaders_ = {"train": None, "val": None}
 
-    data_set_types = ["train", "val", "test"]
+    data_set_types = ["train", "val"]
     
     for data_set_type in data_set_types:
         if datasets[data_set_type]:
@@ -500,13 +500,14 @@ def main():
         "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
         "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
         "stride_unitary": SETTINGS.TIME_SEGMENTATION.stride_unitary,
-        "min_samples_per_window": SETTINGS.TIME_SEGMENTATION.min_samples_per_window,
+        "tergeted_time_stamp_per_window": SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window,
         "verbose": False,
     }
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, test_shots, val_shots = get_train_test_val_shots(
-        SETTINGS.TRAINING.num_train_samples
+    train_shots, val_shots = get_train_test_val_shots(
+        SETTINGS.TRAINING.num_train_samples,
+        SETTINGS.TRAINING.num_val_samples
     )
 
     # Fit mean and std for signal transformation
@@ -519,16 +520,17 @@ def main():
         local = SETTINGS.DATA.local
     )
 
-    # model_dictionary = load_models(SETTINGS.DATA.data_names, 
-    #                                SETTINGS.LOCAL_PATHS.joblib_directory)
+    model_dictionary = load_models(SETTINGS.DATA.data_names, 
+                                   SETTINGS.LOCAL_PATHS.joblib_directory)
     
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
                 ForwardFillImputerTransform(),
+                ImputerTransform(model_dictionary["imputer"][var], 
+                         SETTINGS.LOCAL_PATHS.average_values_file_path),
                 StdScalingTransform(dict_mean[var], dict_std[var]),
-                FillWithZerosImputerTransform(),
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -545,14 +547,14 @@ def main():
     # Prepare datasets
     datasets_train_val_test = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots, "test": test_shots},
+        shots={"train": train_shots, "val": val_shots},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local
     )
     
     signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
-    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.dataloader_batch_size)
+    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.training_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
@@ -562,7 +564,6 @@ def main():
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]
-    # test_dataloader = dataloaders_train_val_test["test"]
 
     # Create conv1d-VAE models
     conv1d_vae_models = create_conv1d_vae_models(

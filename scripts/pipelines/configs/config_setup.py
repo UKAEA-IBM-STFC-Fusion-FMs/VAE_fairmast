@@ -108,7 +108,7 @@ class TimeSettings:
         self.y_window_sec = self._get_key(time_specs, "y_window_sec")
         self.dt_sec = self._get_key(time_specs, "dt_sec")
         self.stride_unitary = self._get_key(time_specs, "stride_unitary")
-        self.min_samples_per_window = self._get_key(time_specs, "min_samples_per_window")
+        self.tergeted_time_stamp_per_window = self._get_key(time_specs, "tergeted_time_stamp_per_window")
 
     def _get_key(self, section, key):
         if key in section:
