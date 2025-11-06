@@ -354,9 +354,13 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     model.eval()
 
     loss_vs_batch = []
+    correlations_ = None
+    rel_errors = None
+    x_best_input = None
+    x_best_recon = None
     best_loss = float("inf")
-    best_batch_idx  = -1
-    best_group_idx = -1
+    minimum_error = float("inf")
+
     
     this_signal = "magnetics-flux_loop_flux"
     with torch.no_grad(): 
@@ -379,60 +383,26 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                     
                     if total_loss.item() < best_loss:
                         best_loss = total_loss.item()
-                        best_batch_idx  = batch_idx
-                        best_group_idx = group_idx
-
-    
-    print(f"Best shot id and group idx= {best_batch_idx}, {best_group_idx}")
-    
-    
-    # Recover best batch
-    batch_size = SETTINGS.TRAINING.dataloader_batch_size
-    start_idx = best_batch_idx * batch_size
-    end_idx = start_idx + batch_size
-
-    # fetch items directly from dataset
-    dataset = datasets_train_val_test["val"]
-    batch_items = []
-    for i in range(start_idx, end_idx):
-        try:
-            batch_items.append(dataset[i])
-        except Exception as e:
-            # dataset might not include all items in range(start_idx, end_idx)
-            break
- 
-    recovered_batch = conv1d_vae_collate_fn(batch_items)
-    
-    x_best_input = None
-    x_best_recon = None
-    best_loss = float("inf")
-
-    with torch.no_grad():
-        for signal_name, groups in recovered_batch.items():
-            
-            # Do it for only one signal
-            if signal_name !=  this_signal:
-                continue
-            
-            for group_idx, stacked_tensor in groups.items():
-                if group_idx != best_group_idx:
-                    continue
-                
-                x = stacked_tensor.to(device)
-                # Iterate over each tensor in the stack
-                for i in range(x.shape[0]):
-                    x_i = x[i].unsqueeze(0)  # Add batch dimension
-                    x_recon_i, mu_i, logvar_i = model(x_i)
-
-                    total_loss, recon_loss, kl_loss = loss_function(
-                        SETTINGS.BETA_VAE.beta, x_recon_i, x_i, mu_i, logvar_i
-                    )
-                    loss_value = total_loss.item()
+                        
+                    if correlations_ is None:
+                        correlations_ = [[] for _ in range(x.shape[1])]
+                    correl = correlations(x, x_recon).tolist()
+                    for i, corr in enumerate(zip(*correl)):
+                        correlations_[i].extend(corr)
                     
-                    if loss_value < best_loss:
-                        best_loss = loss_value
-                        x_best_input = x_i
-                        x_best_recon = x_recon_i
+                    if rel_errors is None:
+                        rel_errors  = [[] for _ in range(x.shape[1])]
+                    errors, minimum, min_index = absolute_relative_errors(x, x_recon)
+                    errors = errors.tolist()
+                    for i, error in enumerate(zip(*errors)):
+                        rel_errors[i].extend(error)
+                    
+                    
+                    if minimum < minimum_error:
+                        minimum_error = minimum
+                        x_best_input = x[min_index]
+                        x_best_recon = x_recon[min_index]
+                        
     try:
         with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
             data = {
@@ -481,7 +451,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         print(f"{e}")
 
 
-def correlations(data, reco):
+def correlations(data, reco, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
 
@@ -504,14 +474,14 @@ def correlations(data, reco):
     # Compute numerator and denominator along time axis
     numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
    
-    denominator = torch.sqrt(torch.sum(input_diff ** 2, dim=-1) * torch.sum(reco_diff ** 2, dim=-1))  # [batch, features]
+    denominator = torch.sqrt(torch.sum(input_diff ** 2, dim=-1) * torch.sum(reco_diff ** 2, dim=-1))  + eps # [batch, features]
 
     corr = numerator / denominator  # [batch, features]
     
     return corr
 
 def absolute_relative_errors(data, reco, eps = 1e-8):
-    """Compute mean absolute relative error for each feature 
+    """Compute time-averaged absolute relative error for each feature 
     in data-reco pairs
 
     Parameters
@@ -523,19 +493,24 @@ def absolute_relative_errors(data, reco, eps = 1e-8):
 
     Returns
     -------
-    Tensor or average absolute errors
+    Tensor
+    time averaged absolute relative errors for each features in data-reco pairs
         [batch, features]
+    Tensor [batch]
+        minimum in the time- and features- averaged absolute relative error
+    int
+        index of the minimum in [batch]
     """
 
-    # Compute absolute relative error along time axis
     abs_rel_error = torch.abs(data - reco) / (torch.abs(data) + eps)  # [batch, features, time]
 
     # Mean over time dimension
-    features_abs_rel_error = abs_rel_error.mean(dim=-1)  # [batch, features]
-    samples_abs_rel_error = features_abs_rel_error.mean(dim =-1)
-    min_vals, min_indices = torch.min(samples_abs_rel_error, dim = 0) 
+    time_averaged_rel_errors = abs_rel_error.mean(dim=-1)  # [batch, features]
+    rel_error_per_sample = time_averaged_rel_errors.mean(dim =-1) # [batch]
+    
+    min_vals, min_index = torch.min(rel_error_per_sample, dim = 0) 
 
-    return mean_abs_rel_error, min_vals, min_indices
+    return time_averaged_rel_errors, min_vals.item(), min_index.item()
 
 if __name__ == "__main__":
     
