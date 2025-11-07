@@ -45,14 +45,11 @@ class Conv1dVAE(nn.Module):
         # Add Fully Connected Layer to encoder
         self.FCLencoder = SequentialBuilder(FullyConnectedEncode(conv_out_dim,conv_out_dim))
         
-        
         # =============== VAE =====================
         self.fc_mu = nn.Linear(conv_out_dim, self.latent_dim)
         self.fc_logvar = nn.Linear(conv_out_dim, self.latent_dim)
-        
 
         # =============== Decoder =====================
-        self.fc_decode = nn.Linear(self.latent_dim, conv_out_dim)
         self.FCLdecoder = SequentialBuilder(FullyConnectedEncode(self.latent_dim, conv_out_dim))
         self.conv1d_decoder = SequentialBuilder(conv1d_decoder_layer_specs)
         
@@ -71,7 +68,6 @@ class Conv1dVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        # decoded = self.fc_decode(z)
         decoded =  self.FCLdecoder(z)
         decoded = decoded.view(decoded.size(0), self.conv_out_channels, self.conv_out_length)
         x_recon = self.conv1d_decoder(decoded)
@@ -89,9 +85,6 @@ def loss_function(beta, reconstruction, target, mu, logvar):
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
     total_loss = reconstruction_loss + beta * kl_loss
-
-
-    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
-    total_loss = reconstruction_loss + beta * kl_loss
+    
     return total_loss, reconstruction_loss, kl_loss
 
