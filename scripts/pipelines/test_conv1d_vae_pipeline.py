@@ -269,7 +269,7 @@ def plot_histograms(
     x_min = None
 ):
     num_features = len(properties)
-    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(15, 10))
+    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(18, 12))
     axes = axes.flatten()  # Flatten to 1D for easy iteration
 
     for i in range(num_features):
@@ -282,7 +282,7 @@ def plot_histograms(
         # ax.set_title(f"{title_prefix} {i+1}")
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend([f"Channel {i+1}"])
+        ax.legend([f"Ch. {i+1}: {len(properties[i])} items"])
     
     # Hide unused subplots if grid > num_features
     for j in range(num_features, len(axes)):
@@ -394,6 +394,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     loss_vs_batch = []
     correlations_ = []
     rel_errors = []
+    rmse = []
     x_best_input = None
     x_best_recon = None
     best_loss = float("inf")
@@ -411,8 +412,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
             print(f"Batch idx {batch_idx}")
             
-            if batch_idx==1:
-                break
+            # if batch_idx==1:
+            #     break
             
             for signal_name, groups in batch.items():
                 # Do it for only one signal
@@ -420,9 +421,9 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                     continue
                 
                 for group_idx, stacked_tensor in groups.items():
-
-                    # if group_idx !=10:
-                    #     continue
+                    
+                    # if group_idx ==1:
+                    #     break
                     
                     x = stacked_tensor.to(device)
                     x_recon, mu, logvar = model(x)
@@ -453,7 +454,10 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                         errors = errors.cpu().tolist()
                     for i, error_values in enumerate(zip(*errors)):
                         rel_errors[i].extend(error_values)
-            
+
+                    # Compute RMSE
+                    rmse.extend(get_RMSE(x,x_recon).tolist())
+                    
                     #Track best reconstruction
                     if minimum < minimum_error:
                         minimum_error = minimum
@@ -562,7 +566,6 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training total")
     ax.plot(epochs, train_recon_loss, linestyle='dashed',color='red', label="Training recon")
     ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * beta ({data['vae']['beta']})")
-    ax.legend()
     ax.set_yscale('log')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
@@ -573,7 +576,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     plt.show()
     fig.savefig(file_path + '/losses_vs_batch.pdf')
 
-
+    # Total loss
     loss = loss_vs_batch
     min_loss = min(loss)
     max_loss = max(loss)
@@ -588,10 +591,29 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     ax.hist(loss, bins=bins)
     ax.set_xlabel('Validation total loss')
     ax.set_yscale('log')
-    ax.set_title(signal + 'Conv1d_VAE')
+    ax.set_title(signal + "total loss")
+    ax.legend([f'Batches: {len(loss)}'])
     plt.show()
     fig.savefig(file_path + f"/{this_signal}_TotalLoss.pdf")
+
+    # RMSE
+    fig, ax = plt.subplots()
+    min_rmse = min(rmse)
+    max_rmse = max(rmse)
+    bins = np.arange(min_loss, max_rmse + 1e-2, 1e-2)
+
+    fig, ax = plt.subplots()
+    ax.hist(rmse, bins=bins)
+    ax.set_xlabel('RMSE')
+    ax.set_yscale('log')
+    ax.legend([f'Items: {len(rmse)}'])
+    ax.set_title(signal + "RMSE")
+    plt.show()
+    fig.savefig(file_path + f"/{this_signal}_RMSE.pdf")
     
+def get_RMSE(data, reco, eps = 1e-8):
+    return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
+
 def correlations(data, reco, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
