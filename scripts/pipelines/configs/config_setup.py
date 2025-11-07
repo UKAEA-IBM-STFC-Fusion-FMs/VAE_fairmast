@@ -129,7 +129,7 @@ class TrainingSettings:
         self.patience = self._get_key(training_specs, "patience")
         self.slope_threshold = self._get_key(training_specs, "slope_threshold")
         self.dataloader_batch_size = self._get_key(training_specs, "dataloader_batch_size")
-        self.train_batch_size = self._get_key(training_specs, "training_batch_size")
+        self.train_batch_size = self._get_key(training_specs, "train_batch_size")
         self.min_batch_size = self._get_key(training_specs, "min_batch_size")
         self.num_workers = self._get_key(training_specs, "num_workers")
         self.num_train_samples = self._get_key(training_specs, "num_train_samples")
