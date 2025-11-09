@@ -29,9 +29,13 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     ValueError
         If signal after encoder has length <=1
     """
+    
+    # Build conv1d encoder
     conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
     print(f"ENCODER SPECS {conv1d_encoder_specs}")
     
+    # Uncomment this to hardcode conv1d_encoder_specs
+    # Template:
     # conv1d_encoder_specs = {
     #         "layers": [
     #             {
@@ -40,71 +44,6 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     #                     "in_channels": 15,
     #                     "out_channels": 128,
     #                     "kernel_size": 4,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 128,
-    #                     "out_channels": 128,
-    #                     "kernel_size": 4,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 128,
-    #                     "out_channels": 256,
-    #                     "kernel_size": 3,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 256,
-    #                     "out_channels": 256,
-    #                     "kernel_size": 3,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 256,
-    #                     "out_channels": 256,
-    #                     "kernel_size": 3,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             },
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 256,
-    #                     "out_channels": 512,
-    #                     "kernel_size": 3,
     #                     "stride": 1,
     #                     "padding": SETTINGS.CONV1D.padding
     #                 }
@@ -140,7 +79,8 @@ def _build_encoder_layer_specs(SETTINGS, input_length):
     """
     
     
-    if not (len(out_channels_list) == len(kernel_list) == len(stride_list) == len(padding_list)):
+    if not (len( SETTINGS.ENCODER.conv1d_out_channels) == len(SETTINGS.CONV1D.kernel) \
+        == len(SETTINGS.CONV1D.stride) == len(SETTINGS.CONV1D.padding)):
         raise ValueError(
             f"Mismatch in layer specs: "
             f"out_channels={len(out_channels_list)}, "
@@ -172,18 +112,6 @@ def _build_encoder_layer_specs(SETTINGS, input_length):
         in_channels = out_channels
         
     nr_channels, length, _, _ = _compute_conv_output_dim(in_channels, input_length, {"layers": layers})
-    
-    # if  SETTINGS.ENCODER.add_dense_layer:
-    #     l1 = nr_channels * length
-    #     layers.extend([
-    #         {
-    #             "type": "linear",
-    #             "params": {
-    #                 "in_features": l1,
-    #                 "out_features": l1
-    #             }
-    #         },
-    #     ])
 
     encoder_layer_specs = {"layers": layers}
     shape = [nr_channels, length]
