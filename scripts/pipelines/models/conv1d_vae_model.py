@@ -53,13 +53,20 @@ class Conv1dVAE(nn.Module):
         self.fc_logvar = nn.Linear(self.FCLlayer_size, self.latent_dim)
 
         # =============== Decoder =====================
-        self.FCLdecoder = SequentialBuilder(FullyConnectedEncode(self.latent_dim, self.FCLlayer_size))
+        self.FCLdecoder = SequentialBuilder(
+            FullyConnectedEncode(self.latent_dim, self.FCLlayer_size)
+            )
+        self.FCLdecoder2 = SequentialBuilder(
+            FullyConnectedEncode(self.FCLlayer_size, self.conv_out_dim)
+            )
+
         self.conv1d_decoder = SequentialBuilder(conv1d_decoder_layer_specs)
         
     def encode(self, x):
         encoded = self.conv1d_encoder(x)
         encoded = torch.flatten(encoded, start_dim=1)
-        encoded = self.FCLencoder(encoded)
+        encoded = self.FCLencoder(encoded) # Fully connected layer
+        
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
         return mu, logvar
@@ -70,9 +77,12 @@ class Conv1dVAE(nn.Module):
         return mu + eps * std
 
     def decode(self, z):
-        decoded =  self.FCLdecoder(z)
-        decoded = nn.Linear( self.FCLlayer_size, self.conv_out_dim)
+        # From latent space to input space
+        decoded = self.FCLdecoder(z) # Fully connected layer 1
+        decoded = self.FCLdecoder2(decoded) # Fully connected layer 2
+        # Re-shape
         decoded = decoded.view(decoded.size(0), self.conv_out_channels, self.conv_out_length)
+        # Conv1d_decoder
         x_recon = self.conv1d_decoder(decoded)
         return x_recon
 

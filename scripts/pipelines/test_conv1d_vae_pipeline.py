@@ -677,9 +677,9 @@ def absolute_relative_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    SETTINGS = get_settings("scripts/pipelines/configs/config4.json")
+    SETTINGS = get_settings("scripts/pipelines/configs/config10_part2.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config4/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config10_part2/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 

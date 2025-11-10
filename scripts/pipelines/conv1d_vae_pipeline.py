@@ -572,7 +572,15 @@ def main():
         verbose = False
     )
     
-    # Save model architectures
+    # # Use this block to load a saved model
+    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_best/best_conv1d_vae_magnetics-flux_loop_flux.pt"
+    # state_dict = torch.load(model_path, map_location=torch.device('cpu'))
+    # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(state_dict)
+    # for model in conv1d_vae_models.values():
+    #     model.to(device)
+
+    
+    #Save model architectures
     with open(os.path.join(output_directory, "models.json"),'w') as f:
        json.dump(
             {k: str(v) for k, v in conv1d_vae_models.items()},
