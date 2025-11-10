@@ -18,7 +18,13 @@ from scripts.pipelines.utils.layer_factory import SequentialBuilder
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedEncode
 
 class Conv1dVAE(nn.Module):
-    def __init__(self, conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs, vae_specs):
+    def __init__(self, 
+                 conv1d_encoder_layer_specs, 
+                 encoded_signal_shape, 
+                 conv1d_decoder_layer_specs, 
+                 vae_specs
+                 ):
+        
         super().__init__()
 
         try:

@@ -11,11 +11,11 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     Parameters
     ----------
     SETTINGS : dict
-        settings from config.json
+        settings from config.json.
     input_channels : int
-        Nr of channels in the input signal
-    input_length : _type_
-        Length along the time dimension of the input signal
+        Nr of channels in the input signal.
+    input_length : int
+        Length along the time dimension of the input signal.
 
     Returns
     -------
@@ -66,12 +66,14 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     
     
 def _build_encoder_layer_specs(SETTINGS, input_length):
-    """Dynamically builds the encoder layers specs based on the SETTINGS.encoder_specs input:
+    """Dynamically builds the encoder layers specs based on the SETTINGS:
 
     Parameters
     ----------
-    SETTINGS : Dictionary from json file.
-    input_length: int, length of the input signal.
+    SETTINGS : 
+        Dictionary from json file.
+    input_length: int 
+        length of the input signal.
 
     Returns
     -------
