@@ -25,20 +25,7 @@ from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from scripts.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
-from scripts.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
-from scripts.pipelines.preprocessing.standardscaling_preprocessing import (
-    get_mean_shot,
-    get_std_shot,
-)
-from scripts.pipelines.transforms.signal_level_transforms.fill_with_zeros_imputer_transform import (
-    FillWithZerosImputerTransform,
-)
-from scripts.pipelines.transforms.signal_level_transforms.forward_fill_imputer_transform import (
-    ForwardFillImputerTransform,
-)
-from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform,
-)
+
 from scripts.pipelines.transforms.signal_level_transforms.sampling_reference_time_transform import (
     SamplingToReferenceTimeTransform,
 )
@@ -67,79 +54,6 @@ def get_train_test_val_shots(
         val_set = val_sh[0:max_index_for_val]
 
     return train_set, val_set
-
-def fit_mean_and_std_for_signal_transform( 
-                                          train_shots,
-                                          output_dir, 
-                                          source_signal_list,
-                                          verbose=False,
-                                          use_existing=False, 
-                                          local=True
-                                          ):
-    """
-    Fit or load mean and std for signal transformation.
-
-    Args:
-        output_sub_dir: Directory to save/load fitted parameters
-        verbose: Print verbose output
-        use_existing: If True, try to load existing fitted parameters instead of re-fitting
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    mean_path = os.path.join(output_dir, "dict_mean_shot.pkl")
-    std_path = os.path.join(output_dir, "dict_std_shot.pkl")
-
-    # Try to load existing files if requested
-    if use_existing and os.path.exists(mean_path) and os.path.exists(std_path):
-        if verbose:
-            print("\n\n----------LOADING EXISTING FITTED PARAMETERS----------\n")
-            print(f"Loading fitted parameters from: {output_dir}")
-
-        try:
-            with open(mean_path, "rb") as f:
-                dict_mean_ = pickle.load(f)
-            with open(std_path, "rb") as f:
-                dict_std_ = pickle.load(f)
-
-            if verbose:
-                print(f"Successfully loaded mean and std dictionaries")
-                print(f"Mean dict keys: {list(dict_mean_.keys())}")
-                print(f"Std dict keys: {list(dict_std_.keys())}")
-
-            return dict_mean_, dict_std_
-
-        except Exception as e:
-            if verbose:
-                print(f"Error loading existing fitted parameters: {e}")
-                print("Falling back to re-fitting")
-
-    if verbose:
-        print("\n\n----------TRANSFORM FITTING----------\n")
-
-    preprocessing_train_dataset = MastDataset(
-        local=local,
-        shots_list=yamane_sampled_shot_list(train_shots, error=0.05),
-        source_signal_list=source_signal_list,
-        signal_level_transform_map=None,
-        shot_level_transform=None,
-    )
-
-    if verbose:
-        print(f"len(preprocessing_train_dataset): {len(preprocessing_train_dataset)}")
-
-    dict_mean_ = get_mean_shot(preprocessing_train_dataset)
-    dict_std_ = get_std_shot(preprocessing_train_dataset)
-
-    # Save fitted parameters
-    if verbose:
-        print(f"Output folder to save fitted mean and std dicts: {output_dir}")
-
-    with open(mean_path, "wb") as f:
-        pickle.dump(dict_mean_, f)
-    with open(std_path, "wb") as f:
-        pickle.dump(dict_std_, f)
-
-    return dict_mean_, dict_std_
 
 def initialize_datasets(
         sources_and_signals, 
@@ -488,7 +402,11 @@ def main():
 
     # Output data folder
     output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_" + config_file_name.removesuffix(".json") + "/"
-    print( f"output_directory = {output_directory}")
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
+        print( f"output_directory = {output_directory}")
+    
+    # Signal names
     source_signal_list = SETTINGS.DATA.data_names
 
     # Parameters for window segmentation (no x/y split for VAE)
@@ -510,27 +428,12 @@ def main():
         SETTINGS.TRAINING.num_val_samples
     )
 
-    # Fit mean and std for signal transformation
-    dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
-        train_shots,
-        output_directory,
-        source_signal_list = source_signal_list,
-        verbose=False,
-        use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
-        local = SETTINGS.DATA.local
-    )
-
-    model_dictionary = load_models(SETTINGS.DATA.data_names, 
-                                   SETTINGS.LOCAL_PATHS.joblib_directory)
     
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                ForwardFillImputerTransform(),
-                ImputerTransform(model_dictionary["imputer"][var], 
-                         SETTINGS.LOCAL_PATHS.average_values_file_path),
-                StdScalingTransform(dict_mean[var], dict_std[var]),
+                ImputerTransform()
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]

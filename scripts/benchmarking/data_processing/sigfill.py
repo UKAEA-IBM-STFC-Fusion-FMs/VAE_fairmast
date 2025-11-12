@@ -619,7 +619,25 @@ def concatenate_signals(
     Returns
     -------
     np.ndarray or None
-        Concatenated data extracted from shot_ids
+        Concatenated data extracted from shot_ids. 
+        
+    Original data have shape [n_features, time]. The data are transposed 
+    and then concatenated along the features dimension. 
+    shot 1:
+           feature 1 (time1), feature 2 (time1), feature 3 (time1) .... feature n (time1)
+           feature 1 (time2), feature 2 (time2), feature 3 (time2) .... feature n (time2)
+
+    shot 2:
+           feature 1 (time1), feature 2 (time1), feature 3 (time1) .... feature n (time1)
+           feature 1 (time2), feature 2 (time2), feature 3 (time2) .... feature n (time2)
+
+    .
+    .
+    .
+    shot N:
+           feature 1 (time1), feature 2 (time1), feature 3 (time1) .... feature n (time1)
+           feature 1 (time2), feature 2 (time2), feature 3 (time2) .... feature n (time2)
+    
     """
     # Instanciate MASTStorageManager
     store_manager = MASTStorageManager()

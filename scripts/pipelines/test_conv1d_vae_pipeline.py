@@ -76,77 +76,6 @@ def get_train_test_val_shots(max_index=None):
 
     return train_sh, test_sh, val_sh
 
-def fit_mean_and_std_for_signal_transform( 
-                                          train_shots,
-                                          output_dir, 
-                                          verbose=False,
-                                          use_existing=False, 
-                                          local=True
-                                          ):
-    """
-    Fit or load mean and std for signal transformation.
-
-    Args:
-        output_sub_dir: Directory to save/load fitted parameters
-        verbose: Print verbose output
-        use_existing: If True, try to load existing fitted parameters instead of re-fitting
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    mean_path = os.path.join(output_dir, "dict_mean_shot.pkl")
-    std_path = os.path.join(output_dir, "dict_std_shot.pkl")
-
-    # Try to load existing files if requested
-    if use_existing and os.path.exists(mean_path) and os.path.exists(std_path):
-        if verbose:
-            print("\n\n----------LOADING EXISTING FITTED PARAMETERS----------\n")
-            print(f"Loading fitted parameters from: {output_dir}")
-
-        try:
-            with open(mean_path, "rb") as f:
-                dict_mean_ = pickle.load(f)
-            with open(std_path, "rb") as f:
-                dict_std_ = pickle.load(f)
-
-            if verbose:
-                print(f"Successfully loaded mean and std dictionaries")
-                print(f"Mean dict keys: {list(dict_mean_.keys())}")
-                print(f"Std dict keys: {list(dict_std_.keys())}")
-
-            return dict_mean_, dict_std_
-
-        except Exception as e:
-            if verbose:
-                print(f"Error loading existing fitted parameters: {e}")
-                print("Falling back to re-fitting")
-
-    if verbose:
-        print("\n\n----------TRANSFORM FITTING----------\n")
-
-    preprocessing_train_dataset = MastDataset(
-        local=local,
-        shots_list=yamane_sampled_shot_list(train_shots, error=0.05),
-        source_signal_list=source_signal_list,
-        signal_level_transform_map=None,
-        shot_level_transform=None,
-    )
-
-    if verbose:
-        print(f"len(preprocessing_train_dataset): {len(preprocessing_train_dataset)}")
-
-    dict_mean_ = get_mean_shot(preprocessing_train_dataset)
-    dict_std_ = get_std_shot(preprocessing_train_dataset)
-
-    # Save fitted parameters
-    if verbose:
-        print(f"Output folder to save fitted mean and std dicts: {output_dir}")
-
-    with open(mean_path, "wb") as f:
-        pickle.dump(dict_mean_, f)
-    with open(std_path, "wb") as f:
-        pickle.dump(dict_std_, f)
-
-    return dict_mean_, dict_std_
 
 def initialize_datasets(
         sources_and_signals, 
@@ -269,7 +198,7 @@ def plot_histograms(
     x_min = None
 ):
     num_features = len(properties)
-    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(18, 12))
+    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
     axes = axes.flatten()  # Flatten to 1D for easy iteration
 
     for i in range(num_features):
@@ -324,26 +253,12 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         SETTINGS.TRAINING.num_val_samples
     )
 
-    # Fit mean and std for signal transformation
-    dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
-        train_shots,
-        output_directory,
-        verbose=False,
-        use_existing=True,
-        local = SETTINGS.DATA.local
-    )
-
-    model_dictionary = load_models(SETTINGS.DATA.data_names, 
-                                   SETTINGS.LOCAL_PATHS.joblib_directory)
     
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                ForwardFillImputerTransform(),
-                ImputerTransform(model_dictionary["imputer"][var], 
-                         SETTINGS.LOCAL_PATHS.average_values_file_path),
-                StdScalingTransform(dict_mean[var], dict_std[var]),
+                ImputerTransform(),
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -395,8 +310,16 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     correlations_ = []
     rel_errors = []
     rmse = []
+    best_rel_error = None
+    worst_rel_error =None
     x_best_input = None
     x_best_recon = None
+    x_worst_input = None
+    x_worst_recon = None
+    x_input_N = []
+    x_recon_N = []
+    N=10 # Tensors to plot
+    max_error = float("-inf")
     best_loss = float("inf")
     minimum_error = float("inf")
 
@@ -449,7 +372,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                         correlations_[i].extend(corr_values)
 
                     # Compute relative errors
-                    errors, minimum, min_index = absolute_relative_errors(x, x_recon)
+                    errors, minimum, min_index, maximum, max_index = absolute_relative_errors(x, x_recon)
                     if isinstance(errors, torch.Tensor):
                         errors = errors.cpu().tolist()
                     for i, error_values in enumerate(zip(*errors)):
@@ -466,8 +389,19 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                             x_best_recon = x_recon[min_index].cpu()
                         else:
                             print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
-
-                      
+                    
+                    # Track worst reconstruction
+                    if maximum > max_error:
+                        max_error = maximum
+                        if 0<= max_index < x.shape[0]:
+                            x_worst_input = x[max_index].cpu()
+                            x_worst_recon = x_recon[max_index].cpu()
+                    
+                    # Track first batch
+            if len(x_input_N) <= N:
+                x_input_N.append(x[0])
+                x_recon_N.append(x_recon[0])
+                        
     try:
         with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
             data = {
@@ -480,38 +414,68 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     except Exception as e:
         print(f"{e}")
         
-    try:
-        if x_best_input is not None and x_best_recon is not None:
-            plt.figure(figsize=(10, 4))
-            plt.plot(x_best_input.flatten().numpy().tolist(), label="Original", lw=2)
-            plt.plot(x_best_recon.flatten().numpy().tolist(), label="Reconstructed", lw=2, linestyle="--")
-            plt.title(f"{this_signal} Reconstruction")
-            plt.legend()
-            plt.show()
-            plt.savefig(output_dir+ f"{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
-        else:
-            print("No valid reconstruction found.") 
+    try:  
+        fig, axs = plt.subplots(2, figsize=(8, 6))
+
+        axs[0].plot(x_best_input.flatten().numpy().tolist(), label="Original", lw=2)
+        axs[0].plot(x_best_recon.flatten().numpy().tolist(), label=f"Reconstructed ({minimum_error})", lw=2, linestyle="--")
+        axs[0].set_title(f"{this_signal} Reconstruction (Min Error)")
+        axs[0].set_xlabel("Time")  # X-axis label
+        axs[0].legend()
+
+        axs[1].plot(x_worst_input.flatten().numpy().tolist(), label="Original", lw=2)
+        axs[1].plot(x_worst_recon.flatten().numpy().tolist(), label=f"Reconstructed ({max_error})", lw=2, linestyle="--")
+        axs[1].set_title(f"{this_signal} Reconstruction (Max Error)")
+        axs[1].set_xlabel("Time")  # X-axis label
+        axs[1].legend()
+
+        plt.savefig(output_dir + f"{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
         print(f"{e}")
     
     try:
-        x_in = x_best_input.squeeze(0)   # shape: (n_channels, n_length)
-        x_re = x_best_recon.squeeze(0)  # shape: (n_channels, n_length)
-        
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+       
+        # Prepare data
+        x_best_in = x_best_input.squeeze(0)   
+        x_best_re = x_best_recon.squeeze(0)
+        x_worst_in = x_worst_input.squeeze(0)
+        x_worst_re = x_worst_recon.squeeze(0)
 
-        im0 = axes[0].imshow(x_in, aspect='auto', cmap='viridis', origin='lower')
-        axes[0].set_title("Original")
+        # Compute global min and max for consistent colour scale
+        vmin = min(x_best_in.min(), x_best_re.min(), x_worst_in.min(), x_worst_re.min())
+        vmax = max(x_best_in.max(), x_best_re.max(), x_worst_in.max(), x_worst_re.max())
+        
+        # Create subplots
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), sharey=True)
+        axes = axes.flatten()
+
+        # Best reconstruction
+        axes[0].imshow(x_best_in, vmin=vmin, vmax=vmax)
+        axes[0].set_title(f"{this_signal} Original (Best)")
         axes[0].set_xlabel("Time")
         axes[0].set_ylabel("Channel")
 
-        im1 = axes[1].imshow(x_re, aspect='auto', cmap='viridis', origin='lower')
-        axes[1].set_title(f"{this_signal} Reconstructed (relative error={minimum_error:.4f})")
+        axes[1].imshow(x_best_re, vmin=vmin, vmax=vmax)
+        axes[1].set_title(f"{this_signal} Reconstructed ({minimum_error:.4f})")
         axes[1].set_xlabel("Time")
+        axes[1].set_ylabel("Channel")
 
-        fig.colorbar(im1, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
-        plt.show()
-        plt.savefig(output_dir+f"{this_signal}_image_reconstruction.pdf", dpi=300, bbox_inches='tight')
+        # Worst reconstruction
+        axes[2].imshow(x_worst_in, vmin=vmin, vmax=vmax)
+        axes[2].set_title(f"{this_signal} Original (Worst)")
+        axes[2].set_xlabel("Time")
+        axes[2].set_ylabel("Channel")
+
+        im3 = axes[3].imshow(x_worst_re, vmin=vmin, vmax=vmax)
+        axes[3].set_title(f"{this_signal} Reconstructed ({max_error:.4f})")
+        axes[3].set_xlabel("Time")
+        axes[3].set_ylabel("Channel")
+
+        # colourbar
+        fig.colorbar(im3, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
+        
+        plt.savefig(output_dir + f"{this_signal}_image_reconstruction.pdf")
+
     except Exception as e:
         print(f"{e}")
 
@@ -571,9 +535,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     ax.set_ylabel('Loss')
     ax.set_title(signal + 'Conv1d_VAE')
     ax.grid(True)
+    ax.legend()
 
-    # Show plot
-    plt.show()
     fig.savefig(file_path + '/losses_vs_batch.pdf')
 
     # Total loss
@@ -608,9 +571,34 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     ax.set_yscale('log')
     ax.legend([f'Items: {len(rmse)}'])
     ax.set_title(signal + "RMSE")
-    plt.show()
     fig.savefig(file_path + f"/{this_signal}_RMSE.pdf")
-    
+ 
+
+    # Plot N reconstructions
+    x_input_N = torch.stack(x_input_N)
+    x_recon_N = torch.stack(x_recon_N)
+            
+    fig, axs = plt.subplots(N, figsize=(12,N*4))
+
+    for i in range(N):
+        try:
+            # Flatten features and length into 1D
+            original_flat = x_input_N[i].flatten().numpy().tolist()
+            recon_flat = x_recon_N[i].flatten().numpy().tolist()
+
+            # Plot original vs reconstructed
+            axs[i].plot(original_flat, label="Original", lw=2)
+            axs[i].plot(recon_flat, label="Reconstructed", lw=2, linestyle="--")
+            axs[i].set_title(f"Sample {i+1} Original vs Recon")
+            axs[i].set_xlabel("Time")
+            axs[i].legend()
+        except Exception as e:
+            print(f"e")
+
+    plt.savefig(output_dir + "/batch_reconstruction_comparison.pdf", dpi=300, bbox_inches='tight')
+    plt.show()
+
+   
 def get_RMSE(data, reco, eps = 1e-8):
     return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
 
@@ -672,14 +660,15 @@ def absolute_relative_errors(data, reco, eps = 1e-8):
     rel_error_per_sample = time_averaged_rel_errors.mean(dim =-1) # [batch]
     
     min_vals, min_index = torch.min(rel_error_per_sample, dim = 0) 
+    max_vals, max_index = torch.max(rel_error_per_sample, dim = 0) 
+    return time_averaged_rel_errors, min_vals.item(), min_index.item(), max_vals, max_index
 
-    return time_averaged_rel_errors, min_vals.item(), min_index.item()
 
 if __name__ == "__main__":
     
-    SETTINGS = get_settings("scripts/pipelines/configs/config10_part2.json")
+    SETTINGS = get_settings("scripts/pipelines/configs/config10.json")
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config10_part2/"
+    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config10/"
 
     source, signal_name = SETTINGS.DATA.data_names[0]
 
