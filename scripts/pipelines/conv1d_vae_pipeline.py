@@ -217,6 +217,8 @@ def train_conv1d_vae_models(
             'val_kl': []
         }
     
+    epochs_no_improvement = 0
+    stop_early = False
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         verbose and print(f"\nEpoch {epoch+1}\n")
 
@@ -335,6 +337,7 @@ def train_conv1d_vae_models(
 
             # Save best model
             if avg_val_loss < best_losses[signal_name]:
+                epochs_no_improvement = 0
                 best_losses[signal_name] = avg_val_loss
                 best_model_states[signal_name] = models[signal_name].state_dict()
 
@@ -343,15 +346,14 @@ def train_conv1d_vae_models(
                     output_dir, f"best_conv1d_vae_{signal_name.replace('/', '_')}.pt"
                 )
                 torch.save(best_model_states[signal_name], model_path)
-                
+            else:
+                epochs_no_improvement +=1  
+                if epochs_no_improvement == SETTINGS.TRAINING.patience:
+                    stop_early = True
         print(f"Training losses {loss_curves[signal_name]['train_total']}")
         print(f"Validation losses {loss_curves[signal_name]['val_total']}")
-        if stop_early(
-            loss_curves[signal_name]['val_total'],
-            SETTINGS.TRAINING.min_nr_epochs,
-            SETTINGS.TRAINING.patience,
-            SETTINGS.TRAINING.slope_threshold
-            ):
+        
+        if stop_early:
             break
     
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
