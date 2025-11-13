@@ -245,16 +245,12 @@ class Conv1dVAECollate():
                 continue
         
             for signal_name, list_of_tensors in sample.items():
-                
-                if len(list_of_tensors) >= self.targeted_number_tensors:
-                    tensors = []
-                    for ii in range(0,len(list_of_tensors),self.targeted_number_tensors):
-                        tensors = list_of_tensors[ii:ii+self.targeted_number_tensors]
-                        collated[signal_name][index[signal_name]] = torch.stack(tensors)
-                        index[signal_name] += 1
-                else:
-                     collated[signal_name][index[signal_name]] = torch.stack(list_of_tensors)
-                     index[signal_name] += 1
+                tensors = []
+                for ii in range(0,len(list_of_tensors),self.targeted_number_tensors):
+                    tensors = list_of_tensors[ii:ii+self.targeted_number_tensors]
+                    collated[signal_name][index[signal_name]] = torch.stack(tensors)
+                    index[signal_name] += 1
+              
 
         # Check if any signal has no groups formed
         empty_signals = [s for s, groups in collated.items() if len(groups) == 0]
