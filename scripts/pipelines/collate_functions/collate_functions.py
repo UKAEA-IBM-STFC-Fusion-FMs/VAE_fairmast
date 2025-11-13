@@ -286,7 +286,6 @@ def test_conv1dvae_collate():
     ]
 
     # Act
-    breakpoint()
     collated = collate_fn(batch)
 
 
