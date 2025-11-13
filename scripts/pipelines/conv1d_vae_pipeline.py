@@ -161,25 +161,28 @@ def create_conv1d_vae_models(
 
     return models
 
-def stop_early(val_losses, patience=5, slope_threshold=1e-4):
+def stop_early(val_losses, min_nr_epochs, patience=5, slope_threshold=1e-4):
     """
     Stop early if validation loss has plateaued or the trend slope is very small.
 
     Args:
         val_losses: list of floats (validation losses)
         patience: number of recent epochs to check
-        min_delta: required improvement to consider progress
         slope_threshold: minimum slope magnitude to consider ongoing learning
+        min_nr_epochs: minimum number of epochs
     """
-    if len(val_losses) < patience + 1:
+    if len(val_losses) < patience or len(val_losses) <= min_nr_epochs:
         return False
-
-    # Check if trend has flattened (slope logic)
-    y = np.array(val_losses[-patience:])
-    x = np.arange(len(y))
-    slope = np.polyfit(x, y, 1)[0]  # linear regression slope
-    flat_trend = abs(slope) < slope_threshold
-
+    
+    try:
+        # Check if trend has flattened (slope logic)
+        y = np.array(val_losses[-patience:])
+        x = np.arange(len(y))
+        slope = np.polyfit(x, y, 1)[0]  # linear regression slope
+        flat_trend = abs(slope) < slope_threshold
+    except:
+        return False
+        
     return flat_trend
 
 def train_conv1d_vae_models(
@@ -191,9 +194,6 @@ def train_conv1d_vae_models(
     output_dir, 
     verbose=False):
     
-    """Train β-VAE models for each signal"""
-
-
     os.makedirs(output_dir, exist_ok=True)
 
     # Create optimizers for each model
@@ -216,7 +216,6 @@ def train_conv1d_vae_models(
             'val_recon': [],
             'val_kl': []
         }
-     
     
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         verbose and print(f"\nEpoch {epoch+1}\n")
@@ -345,10 +344,14 @@ def train_conv1d_vae_models(
                 )
                 torch.save(best_model_states[signal_name], model_path)
                 
+        print(f"Training losses {loss_curves[signal_name]['train_total']}")
         print(f"Validation losses {loss_curves[signal_name]['val_total']}")
-        if stop_early(loss_curves[signal_name]['val_total'],
-                    SETTINGS.TRAINING.patience,
-                    SETTINGS.TRAINING.slope_threshold):
+        if stop_early(
+            loss_curves[signal_name]['val_total'],
+            SETTINGS.TRAINING.min_nr_epochs,
+            SETTINGS.TRAINING.patience,
+            SETTINGS.TRAINING.slope_threshold
+            ):
             break
     
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
@@ -396,7 +399,6 @@ def main():
             print(f"Error in loading configuration {e}")
             return 
     
-    
     # HPC settings for CPUs only
     num_workers = SETTINGS.TRAINING.num_workers
 
@@ -427,7 +429,6 @@ def main():
         SETTINGS.TRAINING.num_train_samples,
         SETTINGS.TRAINING.num_val_samples
     )
-
     
     # Get the signal transform map
     signal_transform_map = {
@@ -476,13 +477,12 @@ def main():
     )
     
     # # Use this block to load a saved model
-    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_best/best_conv1d_vae_magnetics-flux_loop_flux.pt"
+    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_new_part1/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # state_dict = torch.load(model_path, map_location=torch.device('cpu'))
     # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(state_dict)
     # for model in conv1d_vae_models.values():
     #     model.to(device)
 
-    
     #Save model architectures
     with open(os.path.join(output_directory, "models.json"),'w') as f:
        json.dump(

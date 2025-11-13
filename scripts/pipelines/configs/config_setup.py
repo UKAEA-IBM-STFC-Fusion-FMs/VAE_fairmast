@@ -126,6 +126,7 @@ class TrainingSettings:
 
         # Assign None if missing, and log warnings
         self.num_epochs = self._get_key(training_specs, "num_epochs")
+        self.min_nr_epochs = self._get_key(training_specs, "min_nr_epochs")
         self.patience = self._get_key(training_specs, "patience")
         self.slope_threshold = self._get_key(training_specs, "slope_threshold")
         self.dataloader_batch_size = self._get_key(training_specs, "dataloader_batch_size")

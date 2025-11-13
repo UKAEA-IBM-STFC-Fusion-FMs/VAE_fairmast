@@ -13,7 +13,7 @@ class Conv1dVAETransform:
 
         Parameters
         ----------
-        list_samples : list
+        list_samples : list of time windows determined by 'window_index'
         [
             {
                 'x': {
@@ -39,7 +39,7 @@ class Conv1dVAETransform:
                     ...
                 },
             'window_index': int,  # The same index for x, y does not mean necessarily same time, it means that x and y are to be considered input-target pair
-            }
+            },
             ... Same for a different 'window_index'
         ]
 
@@ -66,12 +66,12 @@ class Conv1dVAETransform:
                 all_signals[signal_name].append(torch.tensor(signal_data["values"],dtype=torch.float32))
 
         # Sanity check to be removed later
-        for name, val in all_signals.items():
-            if len(window_ids) != len(val):
-                print(f"Error, len(window_ids) != len(val): {len(window_ids)} != {len(val)}")
-        for nr, w in enumerate(window_ids):
-            if nr != int(w):
-                print("Error, non sequential window_ids")
+        # for name, val in all_signals.items():
+        #     if len(window_ids) != len(val):
+        #         print(f"Error, len(window_ids) != len(val): {len(window_ids)} != {len(val)}")
+        # for nr, w in enumerate(window_ids):
+        #     if nr != int(w):
+        #         print("Error, non sequential window_ids")
 
         return all_signals
 

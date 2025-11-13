@@ -200,7 +200,8 @@ class Conv1dVAECollate():
         "signal2": [Tensor(nr_features2, time-length2), Tensor(nr_features2, time-length2), ...],
         ...
     }
-    
+    Each sample derives from one item of the dataset, i.e., it represents one particular shot_id.
+    All signals in the same sample have the same number of tensors, although tensors shape may differ.
     For each signal, there is a list of tensors one for each temporal window. 
 
     Returns
@@ -245,18 +246,15 @@ class Conv1dVAECollate():
         
             for signal_name, list_of_tensors in sample.items():
                 
-                tensors = []
-                for tensor in list_of_tensors:
-                    tensors.append(tensor)
-                    
-                    if len(tensors) == self.targeted_number_tensors:
-                        collated[signal_name][index[signal_name]] = torch.stack(tensors) 
+                if len(list_of_tensors) >= self.targeted_number_tensors:
+                    tensors = []
+                    for ii in range(0,len(list_of_tensors),self.targeted_number_tensors):
+                        tensors = list_of_tensors[ii:ii+self.targeted_number_tensors]
+                        collated[signal_name][index[signal_name]] = torch.stack(tensors)
                         index[signal_name] += 1
-                        tensors = []
-                        
-                # Collate remaining tensors
-                if tensors:
-                    collated[signal_name][index[signal_name]] = torch.stack(tensors)
+                else:
+                     collated[signal_name][index[signal_name]] = torch.stack(list_of_tensors)
+                     index[signal_name] += 1
 
         # Check if any signal has no groups formed
         empty_signals = [s for s, groups in collated.items() if len(groups) == 0]
@@ -266,3 +264,31 @@ class Conv1dVAECollate():
             raise ValueError(f"Collate failed: not enough tensors to form a single group for signals: {empty_signals}")
 
         return collated
+
+
+
+def test_conv1dvae_collate():
+    # Arrange
+    signals = ["signal1", "signal2"]
+    targeted_number_tensors = 2
+    collate_fn = Conv1dVAECollate(signals, targeted_number_tensors)
+
+    # Create dummy batch
+    batch = [
+        {
+            "signal1": [torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2)],
+            "signal2": [torch.randn(1, 2), torch.randn(1, 2), torch.randn(1, 2)]
+        },
+        {
+            "signal1": [torch.randn(2, 2), torch.randn(2, 2)],
+            "signal2": [torch.randn(1, 2), torch.randn(1, 2)]
+        }
+    ]
+
+    # Act
+    breakpoint()
+    collated = collate_fn(batch)
+
+
+if __name__ == "__main__":
+    test_conv1dvae_collate()
