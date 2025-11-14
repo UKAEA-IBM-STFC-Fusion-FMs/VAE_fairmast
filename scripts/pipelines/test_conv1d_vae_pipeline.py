@@ -301,8 +301,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     )
 
     model = model[source + "-" + signal_name]
-    state_dict = torch.load(model_path, map_location=torch.device('cpu'))
-    model.load_state_dict(state_dict)
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()
 
@@ -371,8 +371,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                     for i, corr_values in enumerate(zip(*correl)):
                         correlations_[i].extend(corr_values)
 
-                    # Compute relative errors
-                    errors, minimum, min_index, maximum, max_index = absolute_relative_errors(x, x_recon)
+                    # Compute errors
+                    errors, minimum, min_index, maximum, max_index = absolute_errors(x, x_recon)
                     if isinstance(errors, torch.Tensor):
                         errors = errors.cpu().tolist()
                     for i, error_values in enumerate(zip(*errors)):
@@ -397,7 +397,7 @@ def test_model(source, signal_name, output_dir, SETTINGS):
                             x_worst_input = x[max_index].cpu()
                             x_worst_recon = x_recon[max_index].cpu()
                     
-                    # Track first batch
+            # Track first sample in each batch
             if len(x_input_N) <= N:
                 x_input_N.append(x[0])
                 x_recon_N.append(x_recon[0])
@@ -583,8 +583,8 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     for i in range(N):
         try:
             # Flatten features and length into 1D
-            original_flat = x_input_N[i].flatten().numpy().tolist()
-            recon_flat = x_recon_N[i].flatten().numpy().tolist()
+            original_flat = x_input_N[i].cpu().flatten().numpy().tolist()
+            recon_flat = x_recon_N[i].cpu().flatten().numpy().tolist()
 
             # Plot original vs reconstructed
             axs[i].plot(original_flat, label="Original", lw=2)
@@ -631,8 +631,8 @@ def correlations(data, reco, eps = 1e-8):
     
     return corr
 
-def absolute_relative_errors(data, reco, eps = 1e-8):
-    """Compute time-averaged absolute relative error for each feature 
+def absolute_errors(data, reco, eps = 1e-8):
+    """Compute time-averaged absolute error for each feature 
     in data-reco pairs
 
     Parameters
@@ -645,15 +645,15 @@ def absolute_relative_errors(data, reco, eps = 1e-8):
     Returns
     -------
     Tensor
-    time averaged absolute relative errors for each features in data-reco pairs
+    time averaged absolute errors for each features in data-reco pairs
         [batch, features]
     Tensor [batch]
-        minimum in the time- and features- averaged absolute relative error
+        minimum in the time- and features- averaged absolute error
     int
         index of the minimum in [batch]
     """
 
-    abs_rel_error = torch.abs(data - reco) / (torch.abs(data) + eps)  # [batch, features, time]
+    abs_rel_error = torch.abs(data - reco)  # [batch, features, time]
 
     # Mean over time dimension
     time_averaged_rel_errors = abs_rel_error.mean(dim=-1)  # [batch, features]

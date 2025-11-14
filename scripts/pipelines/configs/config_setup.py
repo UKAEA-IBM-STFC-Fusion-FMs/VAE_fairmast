@@ -36,6 +36,7 @@ class Settings:
         self.BETA_VAE = BetaVae(config)
         self.CONV1D = Conv1D(config)
         self.ENCODER = EncoderSettings(config)
+        self.SCHEDULER = Scheduler(config)
 
 
 # ======================================================================================================================
@@ -46,7 +47,6 @@ class BetaVae:
         # Assign None if missing, and log warnings
         self.latent_dim = self._get_key(beta_vae_specs, "latent_dim")
         self.beta = self._get_key(beta_vae_specs, "beta")
-        self.lr = self._get_key(beta_vae_specs, "lr")
         self.ref_freq = self._get_key(beta_vae_specs, "ref_freq")
         self.existing_fitted_params = self._get_key(beta_vae_specs, "existing_fitted_params")
 
@@ -96,6 +96,22 @@ class NNSettings:
 
 
 # ======================================================================================================================
+class Scheduler:
+    def __init__(self, config):
+        scheduler = config.get("scheduler", {})
+    
+        self.mode = self._get_key(scheduler, 'mode') 
+        self.factor = self._get_key(scheduler, 'factor')
+        self.threshold = self._get_key(scheduler, 'threshold')
+        self.threshold_mode =  self._get_key(scheduler, 'threshold_mode')
+    
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in scheduler. Setting to None.")
+            return None      
+# ======================================================================================================================
 class TimeSettings:
     def __init__(self, config):
         time_specs = config.get("time_settings", {})
@@ -125,10 +141,13 @@ class TrainingSettings:
         training_specs = config.get("training", {})
 
         # Assign None if missing, and log warnings
+        self.lr = self._get_key(training_specs, "lr")
         self.num_epochs = self._get_key(training_specs, "num_epochs")
         self.min_nr_epochs = self._get_key(training_specs, "min_nr_epochs")
         self.patience = self._get_key(training_specs, "patience")
         self.slope_threshold = self._get_key(training_specs, "slope_threshold")
+        self.weight_decay = self._get_key(training_specs, "weight_decay")
+        self.min_increment = self._get_key(training_specs, "min_increment")
         self.dataloader_batch_size = self._get_key(training_specs, "dataloader_batch_size")
         self.train_batch_size = self._get_key(training_specs, "train_batch_size")
         self.min_batch_size = self._get_key(training_specs, "min_batch_size")

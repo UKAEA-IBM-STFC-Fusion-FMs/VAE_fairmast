@@ -161,29 +161,6 @@ def create_conv1d_vae_models(
 
     return models
 
-def stop_early(val_losses, min_nr_epochs, patience=5, slope_threshold=1e-4):
-    """
-    Stop early if validation loss has plateaued or the trend slope is very small.
-
-    Args:
-        val_losses: list of floats (validation losses)
-        patience: number of recent epochs to check
-        slope_threshold: minimum slope magnitude to consider ongoing learning
-        min_nr_epochs: minimum number of epochs
-    """
-    if len(val_losses) < patience or len(val_losses) <= min_nr_epochs:
-        return False
-    
-    try:
-        # Check if trend has flattened (slope logic)
-        y = np.array(val_losses[-patience:])
-        x = np.arange(len(y))
-        slope = np.polyfit(x, y, 1)[0]  # linear regression slope
-        flat_trend = abs(slope) < slope_threshold
-    except:
-        return False
-        
-    return flat_trend
 
 def train_conv1d_vae_models(
     SETTINGS,
@@ -198,15 +175,31 @@ def train_conv1d_vae_models(
 
     # Create optimizers for each model
     optimizers = {}
+    schedulers = {}
     for signal_name, model in models.items():
-        optimizers[signal_name] = torch.optim.Adam(model.parameters(), lr=SETTINGS.BETA_VAE.lr)
-
+        
+        optimizers[signal_name] = torch.optim.Adam(
+            model.parameters(), 
+            lr=SETTINGS.TRAINING.lr, 
+            weight_decay=SETTINGS.TRAINING.weight_decay)
+        
+        schedulers[signal_name] = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizers[signal_name],
+            mode=SETTINGS.SCHEDULER.mode, 
+            factor=SETTINGS.SCHEDULER.factor, 
+            threshold=SETTINGS.SCHEDULER.threshold, # Check that is smaller than SETTINGS.TRAINING.min_increment
+            threshold_mode=SETTINGS.SCHEDULER.threshold_mode,
+            patience=SETTINGS.TRAINING.patience)
+        
     # Training tracking
     best_losses = {signal_name: float("inf") for signal_name in models.keys()}
     best_model_states = {}
     
-    # Loss tracking
+    # State tracking
     loss_curves = {}
+    epochs_no_improvement = {}
+    stop_early = {}
+    lr_history = {}
     for signal_name in models.keys():
         loss_curves[signal_name] = {
             'train_total': [],
@@ -216,9 +209,10 @@ def train_conv1d_vae_models(
             'val_recon': [],
             'val_kl': []
         }
-    
-    epochs_no_improvement = 0
-    stop_early = False
+        epochs_no_improvement[signal_name] = 0
+        stop_early[signal_name] = False
+        lr_history[signal_name] = []
+        
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         verbose and print(f"\nEpoch {epoch+1}\n")
 
@@ -243,6 +237,7 @@ def train_conv1d_vae_models(
             for signal_name, groups in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
+                scheduler = schedulers[signal_name]
                 
                 start_device = time.time()
                 for group_idx, stacked_tensor in groups.items():
@@ -321,6 +316,8 @@ def train_conv1d_vae_models(
                 avg_val_recon = float("inf")
                 avg_val_kl = float("inf")
             
+            lr_history[signal_name].append(optimizer.param_groups[0]['lr'])
+            scheduler.step(avg_val_loss)  # Important for ReduceLROnPlateau
 
             # Store loss curves
             loss_curves[signal_name]['train_total'].append(avg_train_loss)
@@ -336,8 +333,8 @@ def train_conv1d_vae_models(
                 )
 
             # Save best model
-            if avg_val_loss < best_losses[signal_name]:
-                epochs_no_improvement = 0
+            if  best_losses[signal_name] - avg_val_loss > SETTINGS.TRAINING.min_increment:
+                epochs_no_improvement[signal_name] = 0
                 best_losses[signal_name] = avg_val_loss
                 best_model_states[signal_name] = models[signal_name].state_dict()
 
@@ -345,15 +342,23 @@ def train_conv1d_vae_models(
                 model_path = os.path.join(
                     output_dir, f"best_conv1d_vae_{signal_name.replace('/', '_')}.pt"
                 )
-                torch.save(best_model_states[signal_name], model_path)
+                
+                torch.save({
+                    'model_state_dict': model.state_dict(),        
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'epoch': epoch
+                }, model_path)
+
             else:
-                epochs_no_improvement +=1  
-                if epochs_no_improvement == SETTINGS.TRAINING.patience:
-                    stop_early = True
+                epochs_no_improvement[signal_name] +=1  
+                if epochs_no_improvement[signal_name] >= SETTINGS.TRAINING.patience:
+                    stop_early[signal_name] = True
+                    
         print(f"Training losses {loss_curves[signal_name]['train_total']}")
         print(f"Validation losses {loss_curves[signal_name]['val_total']}")
+        print(f"lr history {lr_history[signal_name]}")
         
-        if stop_early:
+        if stop_early[signal_name]:
             break
     
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
