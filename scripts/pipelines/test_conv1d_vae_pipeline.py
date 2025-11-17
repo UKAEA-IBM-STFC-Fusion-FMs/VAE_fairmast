@@ -586,10 +586,10 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     beta = SETTINGS.BETA_VAE.beta
     val_loss = data["Loss"][signal]["val_total"]
     val_recon_loss = data["Loss"][signal]["val_recon"]
-    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"]*beta)
+    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"])*beta
     train_loss = data["Loss"][signal]["train_total"]
     train_recon_loss = data["Loss"][signal]["train_recon"]
-    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"]*beta)
+    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"])*beta
     # Epochs
     epochs = list(range(1, len(val_loss) + 1))
 
@@ -603,10 +603,10 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     fig, ax = plt.subplots()
     ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation total" )
     ax.plot(epochs, val_recon_loss, linestyle='dashed', color='blue', label="Validation recon")
-    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * \beta")
+    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * {beta}")
     ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training total")
     ax.plot(epochs, train_recon_loss, linestyle='dashed',color='red', label="Training recon")
-    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * \beta")
+    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * {beta}")
     ax.set_yscale('log')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
@@ -743,7 +743,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config10_best"
+    conf_file_name = "config10"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     

@@ -168,7 +168,7 @@ class LocalPaths:
     def __init__(self, config):
         paths_specs = config.get("paths", {})
 
-        self.average_values_file_path = self._get_key(paths_specs, "average_values_file_path")
+        self.global_mean_std_path = self._get_key(paths_specs, "global_mean_std_path")
         self.joblib_directory = self._get_key(paths_specs, "joblib_directory")
         self.data_split_csv_path = self._get_key(paths_specs, "data_split_csv_path")
         self.data_output_directory = self._get_key(paths_specs, "data_output_directory")

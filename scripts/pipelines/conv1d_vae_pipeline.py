@@ -167,21 +167,23 @@ def train_conv1d_vae_models(
     train_dataloader, 
     val_dataloader, 
     output_dir, 
-    verbose=False):
+    verbose=False,
+    optimizers = {}
+    ):
     
     os.makedirs(output_dir, exist_ok=True)
     lr = SETTINGS.TRAINING.lr
     
     # Create optimizers for each model
-    optimizers = {}
-    schedulers = {}
-    for signal_name, model in models.items():
-        
-        optimizers[signal_name] = torch.optim.Adam(
-            model.parameters(), 
-            lr=lr, 
-            weight_decay=SETTINGS.TRAINING.weight_decay)
-        
+    if not optimizers:
+        optimizers = {}
+        schedulers = {}
+        for signal_name, model in models.items():
+            optimizers[signal_name] = torch.optim.Adam(
+                model.parameters(), 
+                lr=lr, 
+                weight_decay=SETTINGS.TRAINING.weight_decay)
+
         # schedulers[signal_name] = torch.optim.lr_scheduler.ReduceLROnPlateau(
         #     optimizers[signal_name],
         #     mode=SETTINGS.SCHEDULER.mode, 
@@ -189,7 +191,7 @@ def train_conv1d_vae_models(
         #     threshold=SETTINGS.SCHEDULER.threshold, # Check that is smaller than SETTINGS.TRAINING.min_increment
         #     threshold_mode=SETTINGS.SCHEDULER.threshold_mode,
         #     patience=SETTINGS.TRAINING.patience)
-        
+    
     # Training tracking
     best_losses = {signal_name: float("inf") for signal_name in models.keys()}
     best_model_states = {}
@@ -373,7 +375,6 @@ def train_conv1d_vae_models(
                
     return best_model_states, loss_curves
 
-
 def main():
     mp.set_start_method("spawn", force=True)
 
@@ -438,7 +439,7 @@ def main():
         SETTINGS.TRAINING.num_val_samples
     )
     
-    Get mean and std for signal transformation
+    #Get mean and std for signal transformation
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
         dict_mean = pickle.load(f)
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
@@ -492,12 +493,17 @@ def main():
         verbose = False
     )
     
-    # # Use this block to load a saved model
-    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_new_part1/best_conv1d_vae_magnetics-flux_loop_flux.pt"
-    # state_dict = torch.load(model_path, map_location=torch.device('cpu'))
-    # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(state_dict)
-    # for model in conv1d_vae_models.values():
-    #     model.to(device)
+    optimizers = {}
+    ########### Use this block to continue training or comment it out ####
+    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_last/best_conv1d_vae_magnetics-flux_loop_flux.pt"
+    # checkpoint = torch.load(model_path)
+    # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(checkpoint['model_state_dict'])
+    # conv1d_vae_models["magnetics-flux_loop_flux"].to('cuda')
+    # optimizers['magnetics-flux_loop_flux'] = torch.optim.Adam(
+    #         conv1d_vae_models["magnetics-flux_loop_flux"].parameters(), 
+    #         lr=SETTINGS.TRAINING.lr)
+    # optimizers['magnetics-flux_loop_flux'].load_state_dict(checkpoint['optimizer_state_dict'])
+    #######################################################################
 
     #Save model architectures
     with open(os.path.join(output_directory, "models.json"),'w') as f:
@@ -523,7 +529,8 @@ def main():
             train_dataloader,
             val_dataloader,
             output_directory,
-            verbose=True
+            verbose=True,
+            optimizers = optimizers
         )
         print(f"ELapsed time {time.time() - start}")
         

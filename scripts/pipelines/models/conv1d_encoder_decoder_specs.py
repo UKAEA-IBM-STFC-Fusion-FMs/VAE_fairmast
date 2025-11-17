@@ -34,6 +34,14 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
     print(f"ENCODER SPECS {conv1d_encoder_specs}")
     
+    last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
+    encoded_signal_shape = [last_nr_channels, last_signal_length]
+    
+    if  last_signal_length <=1:
+        raise ValueError("Signal after stack of conv1d has length <=1")
+
+    conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS, conv1d_encoder_specs, input_channels, input_length, remove_last_activation = True)
+    
     # Uncomment this to hardcode conv1d_encoder_specs
     # Template:
     # conv1d_encoder_specs = {
@@ -53,14 +61,6 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     #             }
     #         ]
     #     }
-
-    last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
-    encoded_signal_shape = [last_nr_channels, last_signal_length]
-    
-    if  last_signal_length <=1:
-        raise ValueError("Signal after stack of conv1d has length <=1")
-
-    conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS, conv1d_encoder_specs, input_channels, input_length, remove_last_activation = True)
     
     return conv1d_encoder_specs, encoded_signal_shape, conv1d_decoder_specs
     

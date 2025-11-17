@@ -33,7 +33,6 @@ class Conv1dVAE(nn.Module):
             if first_layer["type"] != "conv1d":
                 raise ValueError("First encoder layer must be conv1d")
             
-            self.in_channels = first_layer["params"]["in_channels"]
             self.latent_dim = vae_specs["latent_dim"]
             self.input_length = vae_specs["input_length"]
 
