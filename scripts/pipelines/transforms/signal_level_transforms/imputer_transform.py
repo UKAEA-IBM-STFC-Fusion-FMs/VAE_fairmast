@@ -30,7 +30,7 @@ class ImputerTransform(object):
     sample: dict {"values":vals, "time":time}
     
     Return:
-    Standardized signal after imputation of NaN entires.
+    signal after imputation of NaN entires.
     """
     def __init__(self):
         self.imputer = SimpleImputer(missing_values=np.nan, strategy="mean")
@@ -72,12 +72,6 @@ class ImputerTransform(object):
                     vals[np.isnan(vals)] = mean_val          
         else:
             print("Error in imputer_transform.py, vals dimension must be 1 or 2.")
-            return None
-        
-        std = np.std(vals)
-        if std != 0:
-            vals = (vals - np.mean(vals)) / std
-        else:
             return None
                              
         return {"values":vals, "time":time}

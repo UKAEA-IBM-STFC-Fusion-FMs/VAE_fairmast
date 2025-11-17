@@ -76,6 +76,77 @@ def get_train_test_val_shots(max_index=None):
 
     return train_sh, test_sh, val_sh
 
+def fit_mean_and_std_for_signal_transform( 
+                                          train_shots,
+                                          output_dir, 
+                                          verbose=False,
+                                          use_existing=False, 
+                                          local=True
+                                          ):
+    """
+    Fit or load mean and std for signal transformation.
+
+    Args:
+        output_sub_dir: Directory to save/load fitted parameters
+        verbose: Print verbose output
+        use_existing: If True, try to load existing fitted parameters instead of re-fitting
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    mean_path = os.path.join(output_dir, "dict_mean_shot.pkl")
+    std_path = os.path.join(output_dir, "dict_std_shot.pkl")
+
+    # Try to load existing files if requested
+    if use_existing and os.path.exists(mean_path) and os.path.exists(std_path):
+        if verbose:
+            print("\n\n----------LOADING EXISTING FITTED PARAMETERS----------\n")
+            print(f"Loading fitted parameters from: {output_dir}")
+
+        try:
+            with open(mean_path, "rb") as f:
+                dict_mean_ = pickle.load(f)
+            with open(std_path, "rb") as f:
+                dict_std_ = pickle.load(f)
+
+            if verbose:
+                print(f"Successfully loaded mean and std dictionaries")
+                print(f"Mean dict keys: {list(dict_mean_.keys())}")
+                print(f"Std dict keys: {list(dict_std_.keys())}")
+
+            return dict_mean_, dict_std_
+
+        except Exception as e:
+            if verbose:
+                print(f"Error loading existing fitted parameters: {e}")
+                print("Falling back to re-fitting")
+
+    if verbose:
+        print("\n\n----------TRANSFORM FITTING----------\n")
+
+    preprocessing_train_dataset = MastDataset(
+        local=local,
+        shots_list=yamane_sampled_shot_list(train_shots, error=0.05),
+        source_signal_list=source_signal_list,
+        signal_level_transform_map=None,
+        shot_level_transform=None,
+    )
+
+    if verbose:
+        print(f"len(preprocessing_train_dataset): {len(preprocessing_train_dataset)}")
+
+    dict_mean_ = get_mean_shot(preprocessing_train_dataset)
+    dict_std_ = get_std_shot(preprocessing_train_dataset)
+
+    # Save fitted parameters
+    if verbose:
+        print(f"Output folder to save fitted mean and std dicts: {output_dir}")
+
+    with open(mean_path, "wb") as f:
+        pickle.dump(dict_mean_, f)
+    with open(std_path, "wb") as f:
+        pickle.dump(dict_std_, f)
+
+    return dict_mean_, dict_std_
 
 def initialize_datasets(
         sources_and_signals, 
@@ -253,11 +324,17 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         SETTINGS.TRAINING.num_val_samples
     )
 
-    
+    # Get mean and std for signal transformation
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
+        dict_mean = pickle.load(f)
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
+        dict_std = pickle.load(f)
+        
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
+                StdScalingTransform(dict_mean[var], dict_std[var]),
                 ImputerTransform(),
             ]
         )
@@ -506,13 +583,13 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         data = json.load(file)
 
     # Validation loss values
+    beta = SETTINGS.BETA_VAE.beta
     val_loss = data["Loss"][signal]["val_total"]
     val_recon_loss = data["Loss"][signal]["val_recon"]
-    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"])*data["vae"]["beta"]
+    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"]*beta)
     train_loss = data["Loss"][signal]["train_total"]
     train_recon_loss = data["Loss"][signal]["train_recon"]
-    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"])*data["vae"]["beta"]
-
+    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"]*beta)
     # Epochs
     epochs = list(range(1, len(val_loss) + 1))
 
@@ -526,10 +603,10 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     fig, ax = plt.subplots()
     ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation total" )
     ax.plot(epochs, val_recon_loss, linestyle='dashed', color='blue', label="Validation recon")
-    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * beta ({data['vae']['beta']})")
+    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * \beta")
     ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training total")
     ax.plot(epochs, train_recon_loss, linestyle='dashed',color='red', label="Training recon")
-    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * beta ({data['vae']['beta']})")
+    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * \beta")
     ax.set_yscale('log')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
@@ -666,10 +743,12 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    SETTINGS = get_settings("scripts/pipelines/configs/config10.json")
+    conf_file_name = "config10_best"
+    directory_name = "conv1d_vae_"+conf_file_name
+    output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     
-    output_dir = SETTINGS.LOCAL_PATHS.data_output_directory + "conv1d_vae_config10/"
-
+    SETTINGS = get_settings(output_dir + f"{conf_file_name}.json")
+    
     source, signal_name = SETTINGS.DATA.data_names[0]
 
     test_model(source, signal_name, output_dir, SETTINGS)

@@ -23,13 +23,9 @@ class StdScalingTransform:
         values = d['values']
 
         if values is not None:
-            # with warnings.catch_warnings():
-            #     warnings.simplefilter("ignore", category=RuntimeWarning)
-            #     mean = np.nanmean(values, axis=1, keepdims=True)
-            #     std = np.nanstd(values, axis=1, keepdims=True)
-            # std[std == 0] = 1.0  # avoid division by zero
-            values = (values - self.mean) / self.std
-
+            std_is_zero = ( self.std[..., None] == 0 )
+            self.std[..., None][std_is_zero] = 1.0  # avoid division by zero
+            values = (values - self.mean[..., None]) / self.std[..., None]
         return {
             'time': time,
             'values': values

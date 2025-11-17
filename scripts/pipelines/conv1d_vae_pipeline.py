@@ -26,23 +26,22 @@ from scripts.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
 
-from scripts.pipelines.transforms.signal_level_transforms.sampling_reference_time_transform import (
-    SamplingToReferenceTimeTransform,
+from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
+    StdScalingTransform
 )
-from scripts.pipelines.transforms.shot_level_transforms.truncation_transform import (
-    TruncationTransform,
-)
+
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
-from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 
+from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+
 
 def get_train_test_val_shots(
     max_index_for_train=None,
@@ -161,7 +160,6 @@ def create_conv1d_vae_models(
 
     return models
 
-
 def train_conv1d_vae_models(
     SETTINGS,
     models, 
@@ -172,7 +170,8 @@ def train_conv1d_vae_models(
     verbose=False):
     
     os.makedirs(output_dir, exist_ok=True)
-
+    lr = SETTINGS.TRAINING.lr
+    
     # Create optimizers for each model
     optimizers = {}
     schedulers = {}
@@ -180,16 +179,16 @@ def train_conv1d_vae_models(
         
         optimizers[signal_name] = torch.optim.Adam(
             model.parameters(), 
-            lr=SETTINGS.TRAINING.lr, 
+            lr=lr, 
             weight_decay=SETTINGS.TRAINING.weight_decay)
         
-        schedulers[signal_name] = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizers[signal_name],
-            mode=SETTINGS.SCHEDULER.mode, 
-            factor=SETTINGS.SCHEDULER.factor, 
-            threshold=SETTINGS.SCHEDULER.threshold, # Check that is smaller than SETTINGS.TRAINING.min_increment
-            threshold_mode=SETTINGS.SCHEDULER.threshold_mode,
-            patience=SETTINGS.TRAINING.patience)
+        # schedulers[signal_name] = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        #     optimizers[signal_name],
+        #     mode=SETTINGS.SCHEDULER.mode, 
+        #     factor=SETTINGS.SCHEDULER.factor, 
+        #     threshold=SETTINGS.SCHEDULER.threshold, # Check that is smaller than SETTINGS.TRAINING.min_increment
+        #     threshold_mode=SETTINGS.SCHEDULER.threshold_mode,
+        #     patience=SETTINGS.TRAINING.patience)
         
     # Training tracking
     best_losses = {signal_name: float("inf") for signal_name in models.keys()}
@@ -198,7 +197,8 @@ def train_conv1d_vae_models(
     # State tracking
     loss_curves = {}
     epochs_no_improvement = {}
-    stop_early = {}
+    epochs_constant_rate = {}
+    stop_early = False
     lr_history = {}
     for signal_name in models.keys():
         loss_curves[signal_name] = {
@@ -210,10 +210,12 @@ def train_conv1d_vae_models(
             'val_kl': []
         }
         epochs_no_improvement[signal_name] = 0
-        stop_early[signal_name] = False
         lr_history[signal_name] = []
         
     for epoch in range(SETTINGS.TRAINING.num_epochs):
+        if stop_early:
+            break
+        
         verbose and print(f"\nEpoch {epoch+1}\n")
 
         # Training phase
@@ -237,7 +239,7 @@ def train_conv1d_vae_models(
             for signal_name, groups in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
-                scheduler = schedulers[signal_name]
+                # scheduler = schedulers[signal_name]
                 
                 start_device = time.time()
                 for group_idx, stacked_tensor in groups.items():
@@ -280,7 +282,6 @@ def train_conv1d_vae_models(
                 verbose and print(f"Batch idx: {batch_idx}")
                 
                 for signal_name, groups in batch.items():
-           
                     model = models[signal_name]
 
                     for group_idx, stacked_tensor in groups.items():
@@ -317,7 +318,7 @@ def train_conv1d_vae_models(
                 avg_val_kl = float("inf")
             
             lr_history[signal_name].append(optimizer.param_groups[0]['lr'])
-            scheduler.step(avg_val_loss)  # Important for ReduceLROnPlateau
+            #scheduler.step(avg_val_loss)  # Important for ReduceLROnPlateau
 
             # Store loss curves
             loss_curves[signal_name]['train_total'].append(avg_train_loss)
@@ -334,9 +335,9 @@ def train_conv1d_vae_models(
 
             # Save best model
             if  best_losses[signal_name] - avg_val_loss > SETTINGS.TRAINING.min_increment:
-                epochs_no_improvement[signal_name] = 0
                 best_losses[signal_name] = avg_val_loss
                 best_model_states[signal_name] = models[signal_name].state_dict()
+                epochs_no_improvement[signal_name] = 0
 
                 # Save best model state
                 model_path = os.path.join(
@@ -347,29 +348,29 @@ def train_conv1d_vae_models(
                     'model_state_dict': model.state_dict(),        
                     'optimizer_state_dict': optimizer.state_dict(),
                     'epoch': epoch
-                }, model_path)
-
+                }, model_path)    
             else:
-                epochs_no_improvement[signal_name] +=1  
-                if epochs_no_improvement[signal_name] >= SETTINGS.TRAINING.patience:
-                    stop_early[signal_name] = True
+                epochs_no_improvement[signal_name] +=1 
+            
+            # Stop early
+            if epochs_no_improvement[signal_name] >= SETTINGS.TRAINING.patience and epoch > SETTINGS.TRAINING.min_nr_epochs:
+                stop_early = True
+                
+            # Scale the learning rate 
+            if epochs_no_improvement[signal_name] == SETTINGS.TRAINING.patience - 2:
+                optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr']/5
                     
         print(f"Training losses {loss_curves[signal_name]['train_total']}")
         print(f"Validation losses {loss_curves[signal_name]['val_total']}")
         print(f"lr history {lr_history[signal_name]}")
-        
-        if stop_early[signal_name]:
-            break
     
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
             data = {
-                'vae': to_dict(SETTINGS.BETA_VAE),
-                'conv1d': to_dict(SETTINGS.CONV1D),
-                'training': to_dict(SETTINGS.TRAINING),
-                'Loss': loss_curves
+                'Loss': loss_curves,
+                'lr_history': lr_history
             }
             json.dump(data, f, indent=4)
-                
+               
     return best_model_states, loss_curves
 
 
@@ -437,10 +438,18 @@ def main():
         SETTINGS.TRAINING.num_val_samples
     )
     
+    Get mean and std for signal transformation
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
+        dict_mean = pickle.load(f)
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
+        dict_std = pickle.load(f)
+
+
     # Get the signal transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
+                StdScalingTransform(dict_mean[var], dict_std[var]),
                 ImputerTransform()
             ]
         )
