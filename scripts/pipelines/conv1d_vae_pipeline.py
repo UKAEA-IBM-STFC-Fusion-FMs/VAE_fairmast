@@ -181,16 +181,15 @@ def train_conv1d_vae_models(
         for signal_name, model in models.items():
             optimizers[signal_name] = torch.optim.Adam(
                 model.parameters(), 
-                lr=lr, 
-                weight_decay=SETTINGS.TRAINING.weight_decay)
+                lr=lr)
 
-        # schedulers[signal_name] = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        #     optimizers[signal_name],
-        #     mode=SETTINGS.SCHEDULER.mode, 
-        #     factor=SETTINGS.SCHEDULER.factor, 
-        #     threshold=SETTINGS.SCHEDULER.threshold, # Check that is smaller than SETTINGS.TRAINING.min_increment
-        #     threshold_mode=SETTINGS.SCHEDULER.threshold_mode,
-        #     patience=SETTINGS.TRAINING.patience)
+        schedulers[signal_name] = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+             optimizers[signal_name],
+             T_0 = SETTINGS.TRAINING.min_nr_epochs,
+             T_mult = 1, 
+             eta_min = 1e-6
+            )
+           
     
     # Training tracking
     best_losses = {signal_name: float("inf") for signal_name in models.keys()}
@@ -241,7 +240,7 @@ def train_conv1d_vae_models(
             for signal_name, groups in batch.items():
                 model = models[signal_name]
                 optimizer = optimizers[signal_name]
-                # scheduler = schedulers[signal_name]
+                scheduler = schedulers[signal_name]
                 
                 start_device = time.time()
                 for group_idx, stacked_tensor in groups.items():
@@ -320,7 +319,7 @@ def train_conv1d_vae_models(
                 avg_val_kl = float("inf")
             
             lr_history[signal_name].append(optimizer.param_groups[0]['lr'])
-            #scheduler.step(avg_val_loss)  # Important for ReduceLROnPlateau
+            scheduler.step(epoch +1)  
 
             # Store loss curves
             loss_curves[signal_name]['train_total'].append(avg_train_loss)
@@ -495,14 +494,14 @@ def main():
     
     optimizers = {}
     ########### Use this block to continue training or comment it out ####
-    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_last/best_conv1d_vae_magnetics-flux_loop_flux.pt"
+    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
     # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(checkpoint['model_state_dict'])
     # conv1d_vae_models["magnetics-flux_loop_flux"].to('cuda')
     # optimizers['magnetics-flux_loop_flux'] = torch.optim.Adam(
-    #         conv1d_vae_models["magnetics-flux_loop_flux"].parameters(), 
-    #         lr=SETTINGS.TRAINING.lr)
+    #         conv1d_vae_models["magnetics-flux_loop_flux"].parameters())
     # optimizers['magnetics-flux_loop_flux'].load_state_dict(checkpoint['optimizer_state_dict'])
+    # optimizers['magnetics-flux_loop_flux'].param_groups[0]['lr'] = SETTINGS.TRAINING.lr
     #######################################################################
 
     #Save model architectures
