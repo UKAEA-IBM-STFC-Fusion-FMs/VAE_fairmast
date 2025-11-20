@@ -27,7 +27,7 @@ from scripts.pipelines.utils.utils import (
 )
 
 from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform
+    StdScalingTransform_v2 as StdScalingTransform
 )
 
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
@@ -348,6 +348,7 @@ def train_conv1d_vae_models(
                 torch.save({
                     'model_state_dict': model.state_dict(),        
                     'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict(),
                     'epoch': epoch
                 }, model_path)    
             else:

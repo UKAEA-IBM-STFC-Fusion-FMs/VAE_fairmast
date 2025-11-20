@@ -2,13 +2,11 @@ import json
 import os
 import sys
 import pickle
-from multiprocessing import cpu_count
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
-from collections import defaultdict
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -24,34 +22,18 @@ from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from scripts.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms, load_models, to_dict
 )
-from scripts.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
-from scripts.pipelines.preprocessing.standardscaling_preprocessing import (
-    get_mean_shot,
-    get_std_shot,
-)
-from scripts.pipelines.transforms.signal_level_transforms.fill_with_zeros_imputer_transform import (
-    FillWithZerosImputerTransform,
-)
-from scripts.pipelines.transforms.signal_level_transforms.forward_fill_imputer_transform import (
-    ForwardFillImputerTransform,
-)
+
 from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform,
+    StdScalingTransform
 )
-from scripts.pipelines.transforms.signal_level_transforms.sampling_reference_time_transform import (
-    SamplingToReferenceTimeTransform,
-)
-from scripts.pipelines.transforms.shot_level_transforms.truncation_transform import (
-    TruncationTransform,
-)
+
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
 from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 
 from scripts.pipelines.configs.config_setup import get_settings
-from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_vae_model import loss_function
+from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
@@ -79,6 +61,7 @@ def get_train_test_val_shots(max_index=None):
 def fit_mean_and_std_for_signal_transform( 
                                           train_shots,
                                           output_dir, 
+                                          source_signal_list,
                                           verbose=False,
                                           use_existing=False, 
                                           local=True
@@ -324,6 +307,15 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         SETTINGS.TRAINING.num_val_samples
     )
 
+    # dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
+    #     train_shots,
+    #     output_directory,
+    #     source_signal_list,
+    #     verbose=False,
+    #     use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
+    #     local = SETTINGS.DATA.local
+    # )
+    
     # Get mean and std for signal transformation
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
         dict_mean = pickle.load(f)
@@ -743,7 +735,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config10"
+    conf_file_name = "config_flux_loop_flux_v2_3layers_3"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     
