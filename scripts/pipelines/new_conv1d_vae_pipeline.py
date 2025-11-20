@@ -23,11 +23,11 @@ if REPO_ROOT not in sys.path:
 
 from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from scripts.pipelines.utils.utils import (
-    read_data_split_csv, ComposeTransforms, load_models, to_dict
+    read_data_split_csv, ComposeTransforms
 )
 
 from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform_v2 as StdScalingTransform
+    StdScalingTransform
 )
 
 from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
@@ -40,7 +40,7 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate_v2 as Conv1dVAECollate
 
 
 def get_train_test_val_shots(
@@ -105,114 +105,85 @@ def initialize_dataloaders(
 
     return dataloaders_
 
-def create_conv1d_vae_models(
+def create_conv1d_vae_model(
     SETTINGS,
     dataloader, 
     verbose = False
     ):
-    """Create conv1d-VAE models for each signal type"""
+    """Create conv1d-VAE model"""
     
-    # Initalize models
-    models = {}
-    
-    # Get sample batch to determine signal shapes  
+    # Get one sample from the batch to determine signal shape 
     sample_batch = next(iter(dataloader))
     
-    for signal_name, groups in sample_batch.items():
-        for group_idx, signal_data in groups.items():
+    for group_idx, signal_data in sample_batch.items():
 
-            input_length = signal_data.shape[-1]  # Last dimension is time
-            input_channels = signal_data.shape[-2] # Nr. of channels
+        input_length = signal_data.shape[-1]  # Last dimension is time
+        input_channels = signal_data.shape[-2] # Nr. of channels
+                
+        vae_specs = {
+            "beta": SETTINGS.BETA_VAE.beta, 
+            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
+            "input_length": input_length
+        }
 
-            if verbose:
-                print(
-                    f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
-                )
-                    
-            vae_specs = {
-                "beta": SETTINGS.BETA_VAE.beta, 
-                "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-                "input_length": input_length
-            }
+        # Encoder layer specs
+        try:
+            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                SETTINGS, 
+                input_channels, 
+                input_length
+            )
+        except ValueError as e:
+            print(f"Building encoder error: {e}")
+            return models
+
+        model = Conv1dVAE(
+            conv1d_encoder_layer_specs, 
+            encoded_signal_shape,
+            conv1d_decoder_layer_specs, 
+            vae_specs
+            )
+        
+        break
     
-            # Encoder layer specs
-            print(f"signal_name {signal_name}")
-            try:
-                conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                    SETTINGS, 
-                    input_channels, 
-                    input_length
-                )
-            except ValueError as e:
-                print(f"Building encoder error: {e}")
-                return models
+    return model
 
-            model = Conv1dVAE(conv1d_encoder_layer_specs, 
-                                encoded_signal_shape,
-                                conv1d_decoder_layer_specs, 
-                                vae_specs)
-
-            models[signal_name] = model
-
-            if verbose:
-                print(f"Created conv1dVAE for {signal_name}")
-            break
-
-    return models
-
-def train_conv1d_vae_models(
+def train_conv1d_vae_model(
     SETTINGS,
-    models, 
+    model,
+    optimizer,
+    scheduler, 
     device,
     train_dataloader, 
     val_dataloader, 
     output_dir, 
     verbose=False,
-    optimizers = {}
     ):
     
+    # Make directory
     os.makedirs(output_dir, exist_ok=True)
-    lr = SETTINGS.TRAINING.lr
     
-    # Create optimizers for each model
-    if not optimizers:
-        optimizers = {}
-        schedulers = {}
-        for signal_name, model in models.items():
-            optimizers[signal_name] = torch.optim.Adam(
-                model.parameters(), 
-                lr=lr)
+    # Signal name
+    _, signal_name = SETTINGS.DATA.data_names
 
-        schedulers[signal_name] = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-             optimizers[signal_name],
-             T_0 = SETTINGS.TRAINING.min_nr_epochs,
-             T_mult = 1, 
-             eta_min = 1e-6
-            )
-           
-    
     # Training tracking
-    best_losses = {signal_name: float("inf") for signal_name in models.keys()}
+    best_losses = float("inf")
     best_model_states = {}
     
     # State tracking
-    loss_curves = {}
-    epochs_no_improvement = {}
-    epochs_constant_rate = {}
-    stop_early = False
-    lr_history = {}
-    for signal_name in models.keys():
-        loss_curves[signal_name] = {
-            'train_total': [],
-            'train_recon': [],
-            'train_kl': [],
-            'val_total': [],
-            'val_recon': [],
-            'val_kl': []
-        }
-        epochs_no_improvement[signal_name] = 0
-        lr_history[signal_name] = []
+    loss_curves = {
+        'train_total': [],
+        'train_recon': [],
+        'train_kl': [],
+        'val_total': [],
+        'val_recon': [],
+        'val_kl': []
+    }
+    
+    epochs_no_improvement = 0
+    lr_history = []
         
+    stop_early = False
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         if stop_early:
             break
@@ -221,14 +192,14 @@ def train_conv1d_vae_models(
 
         # Training phase
         verbose and print("Training phase")
-        for signal_name, model in models.items():
-            model.to(device)
-            model.train()
+       
+        model.to(device)
+        model.train()
             
-        train_losses = defaultdict(float)
-        train_recon_losses = defaultdict(float)
-        train_kl_losses = defaultdict(float)
-        train_counts =  defaultdict(float)
+        train_losses = 0
+        train_recon_losses = 0
+        train_kl_losses = 0
+        train_counts =  0
         
         start = time.time()
         for batch_idx, batch in enumerate(train_dataloader):
@@ -236,13 +207,45 @@ def train_conv1d_vae_models(
             verbose and print(f"Elapsed time DataLoader {time.time()-start}")
             
             device_average_process_time = 0
-            
-            for signal_name, groups in batch.items():
-                model = models[signal_name]
-                optimizer = optimizers[signal_name]
-                scheduler = schedulers[signal_name]
+            start_device = time.time()
+            for group_idx, stacked_tensor in groups.items():
+                x = stacked_tensor.to(device)
                 
+                x_recon, mu, logvar = model(x)
+
+                # Compute loss
+                total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
+
+                # Backward pass
+                optimizer.zero_grad()
+                total_loss.backward()
+                optimizer.step()
+                
+                train_losses += total_loss.item()
+                train_recon_losses += recon_loss.item()
+                train_kl_losses += kl_loss.item()
+                train_counts += 1
+                
+                device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
+                
+            verbose and print(f"Batch processing time {device_average_process_time:.2f}")      
+            start = time.time()
+    
+        # Validation phase
+        val_losses = 0
+        val_recon_losses = 0
+        val_kl_losses = 0
+        val_counts = 0
+
+        model.eval()
+
+        verbose and print("\nValidation phase")
+
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(val_dataloader):
+                verbose and print(f"Batch idx: {batch_idx}")
+
                 for group_idx, stacked_tensor in groups.items():
                     x = stacked_tensor.to(device)
                     
@@ -251,120 +254,73 @@ def train_conv1d_vae_models(
                     # Compute loss
                     total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
-                    # Backward pass
-                    optimizer.zero_grad()
-                    total_loss.backward()
-                    optimizer.step()
-                    
-                    train_losses[signal_name] += total_loss.item()
-                    train_recon_losses[signal_name] += recon_loss.item()
-                    train_kl_losses[signal_name] += kl_loss.item()
-                    train_counts[signal_name] += 1
-                    
-                    device_average_process_time += (time.time()-start_device)
-                    start_device = time.time()
-            verbose and print(f"Device processing time per single data {device_average_process_time/train_counts[signal_name]:.4f}")  
-            verbose and print(f"Device processing time all data in batch {device_average_process_time:.2f}")      
-            start = time.time()
-    
-        # Validation phase
-        val_losses = defaultdict(float)
-        val_recon_losses = defaultdict(float)
-        val_kl_losses = defaultdict(float)
-        val_counts = defaultdict(int)
-
-        for signal_name, model in models.items():
-            model.eval()
-
-        verbose and print("\nValidation phase")
-
-        with torch.no_grad():
-            for batch_idx, batch in enumerate(val_dataloader):
-                verbose and print(f"Batch idx: {batch_idx}")
-                
-                for signal_name, groups in batch.items():
-                    model = models[signal_name]
-
-                    for group_idx, stacked_tensor in groups.items():
-                        x = stacked_tensor.to(device)
-                        
-                        x_recon, mu, logvar = model(x)
-
-                        # Compute loss
-                        total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
-
-                        val_losses[signal_name] += total_loss.item()
-                        val_recon_losses[signal_name] += recon_loss.item()
-                        val_kl_losses[signal_name] += kl_loss.item()
-                        val_counts[signal_name] += 1
+                    val_losses += total_loss.item()
+                    val_recon_losses += recon_loss.item()
+                    val_kl_losses += kl_loss.item()
+                    val_counts += 1
 
         # Store loss curves and print epoch results
-        for signal_name in models.keys():
-            if  train_counts[signal_name] > 0:
-                avg_train_loss = train_losses[signal_name] / train_counts[signal_name]
-                avg_train_recon = train_recon_losses[signal_name] / train_counts[signal_name]
-                avg_train_kl = train_kl_losses[signal_name] / train_counts[signal_name]
-            else: 
-                avg_train_loss = float("inf")
-                avg_train_recon = float("inf")
-                avg_train_kl = float("inf")
+        if  train_counts > 0:
+            avg_train_loss = train_losses / train_counts
+            avg_train_recon = train_recon_losses / train_counts
+            avg_train_kl = train_kl_losses / train_counts
+        else: 
+            avg_train_loss = float("inf")
+            avg_train_recon = float("inf")
+            avg_train_kl = float("inf")
+        
+        if val_counts > 0:
+            avg_val_loss  = val_losses / val_counts
+            avg_val_recon = val_recon_losses / val_counts
+            avg_val_kl = val_kl_losses / val_counts
+        else:
+            avg_val_loss = float("inf")
+            avg_val_recon = float("inf")
+            avg_val_kl = float("inf")
+        
+        lr_history.append(optimizer.param_groups[0]['lr'])
+        scheduler.step(epoch +1)  
+
+        # Store loss curves
+        loss_curves['train_total'].append(avg_train_loss)
+        loss_curves['train_recon'].append(avg_train_recon)
+        loss_curves['train_kl'].append(avg_train_kl)
+        loss_curves['val_total'].append(avg_val_loss)
+        loss_curves['val_recon'].append(avg_val_recon)
+        loss_curves['val_kl'].append(avg_val_kl)
+
+        if verbose:
+            print(
+                f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
+            )
+
+        # Save best model
+        if  best_losses - avg_val_loss > SETTINGS.TRAINING.min_increment:
+            best_losses = avg_val_loss
+            best_model_states = model.state_dict()
+            epochs_no_improvement = 0
+
+            # Save best model state
+            model_path = os.path.join(
+                output_dir, f"best_conv1d_vae_{signal_name}.pt"
+            )
             
-            if val_counts[signal_name] > 0:
-                avg_val_loss  = val_losses[signal_name] / val_counts[signal_name]
-                avg_val_recon = val_recon_losses[signal_name] / val_counts[signal_name]
-                avg_val_kl = val_kl_losses[signal_name] / val_counts[signal_name]
-            else:
-                avg_val_loss = float("inf")
-                avg_val_recon = float("inf")
-                avg_val_kl = float("inf")
-            
-            lr_history[signal_name].append(optimizer.param_groups[0]['lr'])
-            scheduler.step(epoch +1)  
-
-            # Store loss curves
-            loss_curves[signal_name]['train_total'].append(avg_train_loss)
-            loss_curves[signal_name]['train_recon'].append(avg_train_recon)
-            loss_curves[signal_name]['train_kl'].append(avg_train_kl)
-            loss_curves[signal_name]['val_total'].append(avg_val_loss)
-            loss_curves[signal_name]['val_recon'].append(avg_val_recon)
-            loss_curves[signal_name]['val_kl'].append(avg_val_kl)
-
-            if verbose:
-                print(
-                    f"Signal {signal_name:30s} - Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
-                )
-
-            # Save best model
-            if  best_losses[signal_name] - avg_val_loss > SETTINGS.TRAINING.min_increment:
-                best_losses[signal_name] = avg_val_loss
-                best_model_states[signal_name] = models[signal_name].state_dict()
-                epochs_no_improvement[signal_name] = 0
-
-                # Save best model state
-                model_path = os.path.join(
-                    output_dir, f"best_conv1d_vae_{signal_name.replace('/', '_')}.pt"
-                )
-                
-                torch.save({
-                    'model_state_dict': model.state_dict(),        
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict(),
-                    'epoch': epoch
-                }, model_path)    
-            else:
-                epochs_no_improvement[signal_name] +=1 
-            
-            # Stop early
-            if epochs_no_improvement[signal_name] >= SETTINGS.TRAINING.patience and epoch > SETTINGS.TRAINING.min_nr_epochs:
-                stop_early = True
-                
-            # Scale the learning rate 
-            # if epochs_no_improvement[signal_name] == SETTINGS.TRAINING.patience - 2:
-            #     optimizer.param_groups[0]['lr'] = optimizer.param_groups[0]['lr']/5
+            torch.save({
+                'model_state_dict': model.state_dict(),        
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'epoch': epoch
+            }, model_path)    
+        else:
+            epochs_no_improvement +=1 
+        
+        # Stop early
+        if epochs_no_improvement >= SETTINGS.TRAINING.patience and epoch > SETTINGS.TRAINING.min_nr_epochs:
+            stop_early = True
                     
-        print(f"Training losses {loss_curves[signal_name]['train_total']}")
-        print(f"Validation losses {loss_curves[signal_name]['val_total']}")
-        print(f"lr history {lr_history[signal_name]}")
+        print(f"Training losses {loss_curves['train_total']}")
+        print(f"Validation losses {loss_curves['val_total']}")
+        print(f"lr history {lr_history}")
     
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
             data = {
@@ -474,8 +430,8 @@ def main():
         local_flag=SETTINGS.DATA.local
     )
     
-    signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
-    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.train_batch_size)
+
+    conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
@@ -487,30 +443,43 @@ def main():
     val_dataloader = dataloaders_train_val_test["val"]
 
     # Create conv1d-VAE models
-    conv1d_vae_models = create_conv1d_vae_models(
+    conv1d_vae_model = create_conv1d_vae_model(
         SETTINGS,
         val_dataloader, 
         verbose = False
     )
     
-    optimizers = {}
+    optimizer = torch.optim.Adam(
+                conv1d_vae_model.parameters(), 
+                lr = SETTINGS.TRAINING.lr
+                )
+
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+             optimizer,
+             T_0 = SETTINGS.TRAINING.min_nr_epochs,
+             T_mult = 1, 
+             eta_min = 1e-6
+            
+            )
+  
     ########### Use this block to continue training or comment it out ####
     # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
-    # conv1d_vae_models["magnetics-flux_loop_flux"].load_state_dict(checkpoint['model_state_dict'])
-    # conv1d_vae_models["magnetics-flux_loop_flux"].to('cuda')
-    # optimizers['magnetics-flux_loop_flux'] = torch.optim.Adam(
-    #         conv1d_vae_models["magnetics-flux_loop_flux"].parameters())
-    # optimizers['magnetics-flux_loop_flux'].load_state_dict(checkpoint['optimizer_state_dict'])
-    # optimizers['magnetics-flux_loop_flux'].param_groups[0]['lr'] = SETTINGS.TRAINING.lr
+    # conv1d_vae_model.load_state_dict(checkpoint['model_state_dict'])
+    # conv1d_vae_model.to('cuda')
+    # optimizer = torch.optim.Adam(
+    #         conv1d_vae_model.parameters())
+    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # optimizer.param_groups[0]['lr'] = SETTINGS.TRAINING.lr
+    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
 
     #Save model architectures
-    with open(os.path.join(output_directory, "models.json"),'w') as f:
+    with open(os.path.join(output_directory, "model.json"),'w') as f:
        json.dump(
-            {k: str(v) for k, v in conv1d_vae_models.items()},
-                f,
-                indent=4
+            str(conv1d_vae_model),
+            f,
+            indent=4
             )
     
     # Save config file 
@@ -520,17 +489,18 @@ def main():
     except Exception as e:
         print(f"Error copying config file: {e}")
         
-    if conv1d_vae_models:
+    if conv1d_vae_model:
         start = time.time()
-        best_model_states, training_loss_curves = train_conv1d_vae_models(
+        best_model_states, training_loss_curves = train_conv1d_vae_model(
             SETTINGS,
-            conv1d_vae_models,
+            conv1d_vae_model,
+            optimizer,
+            scheduler,
             device,
             train_dataloader,
             val_dataloader,
             output_directory,
-            verbose=True,
-            optimizers = optimizers
+            verbose=True
         )
         print(f"ELapsed time {time.time() - start}")
         
