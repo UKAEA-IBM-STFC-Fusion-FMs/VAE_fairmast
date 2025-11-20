@@ -13,47 +13,49 @@
     "dt_sec": 0.0, 
     "stride_sec": 0.0015,
     "stride_unitary": true,
-    "min_samples_per_window": 1
+    "tergeted_time_stamp_per_window": 16
   },
   "training": {
-    "num_epochs": 10,
+    "num_epochs": 45,
+    "min_nr_epochs": 35,
     "patience":5,
-    "min_delta":3e-3,
-    "slope_threshold": 1e-3,
-    "num_train_samples": 9252,
+    "min_increment": 0.0005,
+    "weight_decay": 1e-4,
+    "lr": 1e-4,
+    "num_train_samples":9259,
     "num_val_samples": 1157,
-    "dataloader_batch_size": 50,
-    "training_batch_size":48,
+    "dataloader_batch_size": 100,
+    "train_batch_size":200,
     "min_batch_size": 4,
-    "num_workers": 6
-  },
-  "nn_model":{
-    "lr": 0.001,
-    "l1_size": 64,
-    "l2_size": 64
+    "num_workers": 4
   },
   "beta-vae":{
     "latent_dim":12,
     "beta":0.001,
-    "lr": 1e-5,
     "ref_freq": 0.001,
     "existing_fitted_params": true
   },
   "conv1d":{
-    "kernel":4,
-    "stride":2,
-    "padding":0
+    "kernel":[4,3,4],
+    "stride":[1,2,1],
+    "padding":[0,0,0]
   },
   "encoder_specs":{
     "conv1d_in_channels":15,
-    "conv1d_out_channels": [40, 60, 60],
+    "conv1d_out_channels": [64,128,256],
     "activation_fn": "relu",
     "add_dense_layer": true
+  },
+  "scheduler":{
+    "mode":"min", 
+    "factor":0.1,
+    "threshold":0.5e-4,
+    "threshold_mode":"rel"
   },
   "paths": {
     "data_split_csv_path": "metadata/2025-05-12/data_splits.csv",
     "joblib_directory": "/home/ir-lore2/ImputerModels/",
-    "average_values_file_path": "scripts/pipelines/data/input/averaged_arrays_N_100.json",
+    "global_mean_std_path": "metadata/2025-09-22_stdscaling",
     "data_output_directory": "scripts/pipelines/data/output/"
   },
   "local": true
