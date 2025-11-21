@@ -164,7 +164,7 @@ def train_conv1d_vae_model(
     os.makedirs(output_dir, exist_ok=True)
     
     # Signal name
-    _, signal_name = SETTINGS.DATA.data_names
+    _, signal_name = SETTINGS.DATA.data_names[0]
 
     # Training tracking
     best_losses = float("inf")
@@ -205,10 +205,10 @@ def train_conv1d_vae_model(
         for batch_idx, batch in enumerate(train_dataloader):
             verbose and print(f"Batch idx: {batch_idx}")
             verbose and print(f"Elapsed time DataLoader {time.time()-start}")
-            
+          
             device_average_process_time = 0
             start_device = time.time()
-            for group_idx, stacked_tensor in groups.items():
+            for group_idx, stacked_tensor in batch.items():
                 x = stacked_tensor.to(device)
                 
                 x_recon, mu, logvar = model(x)
@@ -246,7 +246,7 @@ def train_conv1d_vae_model(
             for batch_idx, batch in enumerate(val_dataloader):
                 verbose and print(f"Batch idx: {batch_idx}")
 
-                for group_idx, stacked_tensor in groups.items():
+                for group_idx, stacked_tensor in batch.items():
                     x = stacked_tensor.to(device)
                     
                     x_recon, mu, logvar = model(x)
@@ -437,7 +437,7 @@ def main():
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=False
+        shuffle=True
     )
     train_dataloader = dataloaders_train_val_test["train"]
     val_dataloader = dataloaders_train_val_test["val"]

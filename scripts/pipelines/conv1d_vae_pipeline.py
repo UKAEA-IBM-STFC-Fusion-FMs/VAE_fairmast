@@ -263,7 +263,6 @@ def train_conv1d_vae_models(
                     
                     device_average_process_time += (time.time()-start_device)
                     start_device = time.time()
-            verbose and print(f"Device processing time per single data {device_average_process_time/train_counts[signal_name]:.4f}")  
             verbose and print(f"Device processing time all data in batch {device_average_process_time:.2f}")      
             start = time.time()
     
