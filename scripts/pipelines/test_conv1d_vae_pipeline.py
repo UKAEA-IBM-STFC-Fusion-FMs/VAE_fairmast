@@ -15,28 +15,17 @@ REPO_ROOT = os.path.abspath(
         "..",
     )
 )
-if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
-
+if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from scripts.pipelines.utils.utils import (
-    read_data_split_csv, ComposeTransforms
-)
-
-from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform
-)
-
-from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
-    WindowSegmenterTransform,
-)
+from scripts.pipelines.utils.utils import (read_data_split_csv, ComposeTransforms)
+from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (StdScalingTransform)
+from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import ( WindowSegmenterTransform)
 from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
-
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate_v2 as Conv1dVAECollate
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -47,88 +36,16 @@ else:
     print(f"--------------- RUNNING ON CPUs ---------------")
     
 
-def get_train_test_val_shots(max_index=None):
+def get_train_test_val_shots(
+    max_index_for_train=None,
+    max_index_for_val = None):
     train_sh, test_sh, val_sh = read_data_split_csv()
 
-    if max_index:
-        train_sh = train_sh[0:max_index]
-        val_sh = val_sh[0:max_index]
-        test_sh = test_sh[0:max_index]
+    if max_index_for_train:
+        train_set = train_sh[0:max_index_for_train]
+        val_set = val_sh[0:max_index_for_val]
 
-    return train_sh, test_sh, val_sh
-
-def fit_mean_and_std_for_signal_transform( 
-                                          train_shots,
-                                          output_dir, 
-                                          source_signal_list,
-                                          verbose=False,
-                                          use_existing=False, 
-                                          local=True
-                                          ):
-    """
-    Fit or load mean and std for signal transformation.
-
-    Args:
-        output_sub_dir: Directory to save/load fitted parameters
-        verbose: Print verbose output
-        use_existing: If True, try to load existing fitted parameters instead of re-fitting
-    """
-    os.makedirs(output_dir, exist_ok=True)
-
-    mean_path = os.path.join(output_dir, "dict_mean_shot.pkl")
-    std_path = os.path.join(output_dir, "dict_std_shot.pkl")
-
-    # Try to load existing files if requested
-    if use_existing and os.path.exists(mean_path) and os.path.exists(std_path):
-        if verbose:
-            print("\n\n----------LOADING EXISTING FITTED PARAMETERS----------\n")
-            print(f"Loading fitted parameters from: {output_dir}")
-
-        try:
-            with open(mean_path, "rb") as f:
-                dict_mean_ = pickle.load(f)
-            with open(std_path, "rb") as f:
-                dict_std_ = pickle.load(f)
-
-            if verbose:
-                print(f"Successfully loaded mean and std dictionaries")
-                print(f"Mean dict keys: {list(dict_mean_.keys())}")
-                print(f"Std dict keys: {list(dict_std_.keys())}")
-
-            return dict_mean_, dict_std_
-
-        except Exception as e:
-            if verbose:
-                print(f"Error loading existing fitted parameters: {e}")
-                print("Falling back to re-fitting")
-
-    if verbose:
-        print("\n\n----------TRANSFORM FITTING----------\n")
-
-    preprocessing_train_dataset = MastDataset(
-        local=local,
-        shots_list=yamane_sampled_shot_list(train_shots, error=0.05),
-        source_signal_list=source_signal_list,
-        signal_level_transform_map=None,
-        shot_level_transform=None,
-    )
-
-    if verbose:
-        print(f"len(preprocessing_train_dataset): {len(preprocessing_train_dataset)}")
-
-    dict_mean_ = get_mean_shot(preprocessing_train_dataset)
-    dict_std_ = get_std_shot(preprocessing_train_dataset)
-
-    # Save fitted parameters
-    if verbose:
-        print(f"Output folder to save fitted mean and std dicts: {output_dir}")
-
-    with open(mean_path, "wb") as f:
-        pickle.dump(dict_mean_, f)
-    with open(std_path, "wb") as f:
-        pickle.dump(dict_std_, f)
-
-    return dict_mean_, dict_std_
+    return train_set, val_set
 
 def initialize_datasets(
         sources_and_signals, 
@@ -138,8 +55,8 @@ def initialize_datasets(
         local_flag=False
     ):
     
-    datasets_ = {"train": None, "val": None, "test": None}
-    data_set_types = ["train", "val", "test"]
+    datasets_ = {"train": None, "val": None}
+    data_set_types = ["train", "val"]
     
     for data_set_type in data_set_types:
         if shots[data_set_type]:
@@ -151,8 +68,7 @@ def initialize_datasets(
                 shot_level_transform=shot_transforms,
             )
     datasets_["train"] = CachedDataset(datasets_["train"])
-    datasets_["val"]   = CachedDataset(datasets_["val"])
-    datasets_["test"]  = CachedDataset(datasets_["test"])   
+    datasets_["val"]   = CachedDataset(datasets_["val"])    
     return datasets_
 
 def initialize_dataloaders(
@@ -161,12 +77,13 @@ def initialize_dataloaders(
         batch_size,
         num_workers,
         shuffle=True,
-        drop_last=False
+        drop_last=False,
+        persistent_workers=True
     ):
     
-    dataloaders_ = {"train": None, "val": None, "test": None}
+    dataloaders_ = {"train": None, "val": None}
 
-    data_set_types = ["train", "val", "test"]
+    data_set_types = ["train", "val"]
     
     for data_set_type in data_set_types:
         if datasets[data_set_type]:
@@ -181,61 +98,48 @@ def initialize_dataloaders(
 
     return dataloaders_
 
-def create_conv1d_vae_models(
+def create_conv1d_vae_model(
     SETTINGS,
-    train_dataloader, 
+    dataloader, 
     verbose = False
     ):
-    """Create conv1d-VAE models for each signal type"""
+    """Create conv1d-VAE model"""
     
-    # Initalize models
-    models = {}
+    # Get one sample from the batch to determine signal shape 
+    sample_batch = next(iter(dataloader))
     
-    # Get sample batch to determine signal shapes  
-    sample_batch = next(iter(train_dataloader))
+    for group_idx, signal_data in sample_batch.items():
+
+        input_length = signal_data.shape[-1]  # Last dimension is time
+        input_channels = signal_data.shape[-2] # Nr. of channels
+                
+        vae_specs = {
+            "beta": SETTINGS.BETA_VAE.beta, 
+            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
+            "input_length": input_length
+        }
+
+        # Encoder layer specs
+        try:
+            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                SETTINGS, 
+                input_channels, 
+                input_length
+            )
+        except ValueError as e:
+            print(f"Building encoder error: {e}")
+            return models
+
+        model = Conv1dVAE(
+            conv1d_encoder_layer_specs, 
+            encoded_signal_shape,
+            conv1d_decoder_layer_specs, 
+            vae_specs
+            )
+        
+        break
     
-    for signal_name, groups in sample_batch.items():
-        for group_idx, signal_data in groups.items():
-
-            input_length = signal_data.shape[-1]  # Last dimension is time
-            input_channels = signal_data.shape[-2] # Nr. of channels
-
-            if verbose:
-                print(
-                    f"Signal: {signal_name}, Shape: {signal_data.shape}, Input length: {input_length}"
-                )
-                    
-            vae_specs = {
-                "beta": SETTINGS.BETA_VAE.beta, 
-                "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-                "input_length": input_length
-            }
-    
-            # Encoder layer specs
-            print(f"signal_name {signal_name}")
-            try:
-                conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                    SETTINGS, 
-                    input_channels, 
-                    input_length
-                )
-            except ValueError as e:
-                print(f"Building encoder error: {e}")
-                return models
-
-            model = Conv1dVAE(conv1d_encoder_layer_specs, 
-                                encoded_signal_shape,
-                                conv1d_decoder_layer_specs, 
-                                vae_specs)
-
-            models[signal_name] = model
-
-            if verbose:
-                print(f"Created conv1dVAE for {signal_name}")
-            break
-
-    return models
-   
+    return model
 
 def plot_histograms(
     properties,
@@ -246,7 +150,7 @@ def plot_histograms(
     title_prefix,
     file_name,
     num_rows=3,
-    num_cols=5,
+    num_cols=6,
     x_max = None,
     x_min = None
 ):
@@ -274,7 +178,20 @@ def plot_histograms(
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close()
  
-def test_model(source, signal_name, output_dir, SETTINGS):
+def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
+    """Test pre-trained model 
+
+    Parameters
+    ----------
+    source : str
+        source name
+    signal_name : str
+        signal name
+    output_dir : str
+        path to output directory
+    SETTINGS : structure
+        config settings
+    """
     model_path = os.path.join(output_dir, "best_conv1d_vae_" + signal_name + ".pt")
      
     if not os.path.exists(model_path):
@@ -302,18 +219,11 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     }
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, test_shots, val_shots = get_train_test_val_shots(
+    train_shots, val_shots = get_train_test_val_shots(
         SETTINGS.TRAINING.num_val_samples
     )
 
-    # dict_mean, dict_std = fit_mean_and_std_for_signal_transform(
-    #     train_shots,
-    #     output_directory,
-    #     source_signal_list,
-    #     verbose=False,
-    #     use_existing=SETTINGS.BETA_VAE.existing_fitted_params,
-    #     local = SETTINGS.DATA.local
-    # )
+    this_signal = "b_field_pol_probe_obv_field"
     
     # Get mean and std for signal transformation
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
@@ -340,35 +250,35 @@ def test_model(source, signal_name, output_dir, SETTINGS):
         ]
     )
 
+ 
     # Prepare datasets
     datasets_train_val_test = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots, "test": test_shots},
+        shots={"train": train_shots, "val": val_shots},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local
     )
     
-    signals_to_collate = [f"{source}-{signal}" for source, signal in source_signal_list]
-    conv1d_vae_collate_fn = Conv1dVAECollate(signals_to_collate, SETTINGS.TRAINING.train_batch_size)
+
+    conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
         datasets=datasets_train_val_test,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=False # Keep it False since the order need to be deterministic for later analysis
+        shuffle=False
     )
 
     val_dataloader = dataloaders_train_val_test["val"]
     
     # Create conv1d-VAE models
-    model = create_conv1d_vae_models(
+    model = create_conv1d_vae_model(
         SETTINGS,
         val_dataloader, 
         verbose = False
     )
 
-    model = model[source + "-" + signal_name]
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
@@ -392,78 +302,67 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     minimum_error = float("inf")
 
     
-    this_signal = "magnetics-b_flux_loop_flux"
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
             
-            # Check if the signal exists in the batch
-            if this_signal not in batch:
-                print(f"Signal '{this_signal}' not found in batch {batch_idx}")
-                continue
-
             print(f"Batch idx {batch_idx}")
             
             # if batch_idx==1:
             #     break
-            
-            for signal_name, groups in batch.items():
-                # Do it for only one signal
-                if signal_name !=  this_signal:
-                    continue
                 
-                for group_idx, stacked_tensor in groups.items():
-                    
-                    # if group_idx ==1:
-                    #     break
-                    
-                    x = stacked_tensor.to(device)
-                    x_recon, mu, logvar = model(x)
+            for group_idx, stacked_tensor in batch.items():
+                
+                # if group_idx ==1:
+                #     break
+                
+                x = stacked_tensor.to(device)
+                x_recon, mu, logvar = model(x)
 
-                    # Compute loss
-                    total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
-                    loss_vs_batch.append(total_loss.item())  
+                # Compute loss
+                total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
+                loss_vs_batch.append(total_loss.item())  
+                
+                if total_loss.item() < best_loss:
+                    best_loss = total_loss.item()
                     
-                    if total_loss.item() < best_loss:
-                        best_loss = total_loss.item()
-                        
-                    num_channels = x.shape[1]
-                    if not correlations_:
-                        correlations_ = [[] for _ in range(num_channels)]
-                    if not rel_errors:
-                        rel_errors = [[] for _ in range(num_channels)]
+                num_channels = x.shape[1]
+                if not correlations_:
+                    correlations_ = [[] for _ in range(num_channels)]
+                if not rel_errors:
+                    rel_errors = [[] for _ in range(num_channels)]
 
-                    # Compute correlations
-                    correl = correlations(x, x_recon)
-                    if isinstance(correl, torch.Tensor):
-                        correl = correl.cpu().tolist()
-                    for i, corr_values in enumerate(zip(*correl)):
-                        correlations_[i].extend(corr_values)
+                # Compute correlations
+                correl = correlations(x, x_recon)
+                if isinstance(correl, torch.Tensor):
+                    correl = correl.cpu().tolist()
+                for i, corr_values in enumerate(zip(*correl)):
+                    correlations_[i].extend(corr_values)
 
-                    # Compute errors
-                    errors, minimum, min_index, maximum, max_index = absolute_errors(x, x_recon)
-                    if isinstance(errors, torch.Tensor):
-                        errors = errors.cpu().tolist()
-                    for i, error_values in enumerate(zip(*errors)):
-                        rel_errors[i].extend(error_values)
+                # Compute errors
+                errors, minimum, min_index, maximum, max_index = absolute_errors(x, x_recon)
+                if isinstance(errors, torch.Tensor):
+                    errors = errors.cpu().tolist()
+                for i, error_values in enumerate(zip(*errors)):
+                    rel_errors[i].extend(error_values)
 
-                    # Compute RMSE
-                    rmse.extend(get_RMSE(x,x_recon).tolist())
-                    
-                    #Track best reconstruction
-                    if minimum < minimum_error:
-                        minimum_error = minimum
-                        if 0 <= min_index < x.shape[0]:
-                            x_best_input = x[min_index].cpu()
-                            x_best_recon = x_recon[min_index].cpu()
-                        else:
-                            print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
-                    
-                    # Track worst reconstruction
-                    if maximum > max_error:
-                        max_error = maximum
-                        if 0<= max_index < x.shape[0]:
-                            x_worst_input = x[max_index].cpu()
-                            x_worst_recon = x_recon[max_index].cpu()
+                # Compute RMSE
+                rmse.extend(get_RMSE(x,x_recon).tolist())
+                
+                #Track best reconstruction
+                if minimum < minimum_error:
+                    minimum_error = minimum
+                    if 0 <= min_index < x.shape[0]:
+                        x_best_input = x[min_index].cpu()
+                        x_best_recon = x_recon[min_index].cpu()
+                    else:
+                        print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
+                
+                # Track worst reconstruction
+                if maximum > max_error:
+                    max_error = maximum
+                    if 0<= max_index < x.shape[0]:
+                        x_worst_input = x[max_index].cpu()
+                        x_worst_recon = x_recon[max_index].cpu()
                     
             # Track first sample in each batch
             if len(x_input_N) <= N:
@@ -575,12 +474,12 @@ def test_model(source, signal_name, output_dir, SETTINGS):
 
     # Validation loss values
     beta = SETTINGS.BETA_VAE.beta
-    val_loss = data["Loss"][signal]["val_total"]
-    val_recon_loss = data["Loss"][signal]["val_recon"]
-    val_kl_loss  =  np.array(data["Loss"][signal]["val_kl"])*beta
-    train_loss = data["Loss"][signal]["train_total"]
-    train_recon_loss = data["Loss"][signal]["train_recon"]
-    train_kl_loss =  np.array(data["Loss"][signal]["train_kl"])*beta
+    val_loss = data["Loss"]["val_total"]
+    val_recon_loss = data["Loss"]["val_recon"]
+    val_kl_loss  =  np.array(data["Loss"]["val_kl"])*beta
+    train_loss = data["Loss"]["train_total"]
+    train_recon_loss = data["Loss"]["train_recon"]
+    train_kl_loss =  np.array(data["Loss"]["train_kl"])*beta
     # Epochs
     epochs = list(range(1, len(val_loss) + 1))
 
@@ -608,7 +507,6 @@ def test_model(source, signal_name, output_dir, SETTINGS):
     fig.savefig(file_path + '/losses_vs_batch.pdf')
 
     # Total loss
-    breakpoint()
     loss = loss_vs_batch
     min_loss = min(loss)
     max_loss = max(loss)
@@ -735,7 +633,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_flux_loop_flux"
+    conf_file_name = "config_b_field_pol_probe_obv_field"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     
