@@ -149,8 +149,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=3,
-    num_cols=6,
+    num_rows=5,
+    num_cols=8,
     x_max = None,
     x_min = None
 ):
@@ -223,7 +223,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         SETTINGS.TRAINING.num_val_samples
     )
 
-    this_signal = "b_field_pol_probe_obv_field"
+    this_signal = signal_name
     
     # Get mean and std for signal transformation
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
@@ -385,13 +385,13 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         fig, axs = plt.subplots(2, figsize=(8, 6))
 
         axs[0].plot(x_best_input.flatten().numpy().tolist(), label="Original", lw=2)
-        axs[0].plot(x_best_recon.flatten().numpy().tolist(), label=f"Reconstructed ({minimum_error})", lw=2, linestyle="--")
+        axs[0].plot(x_best_recon.flatten().numpy().tolist(), label=f"Reconstructed ({minimum_error:.4f})", lw=2, linestyle="--")
         axs[0].set_title(f"{this_signal} Reconstruction (Min Error)")
         axs[0].set_xlabel("Time")  # X-axis label
         axs[0].legend()
 
         axs[1].plot(x_worst_input.flatten().numpy().tolist(), label="Original", lw=2)
-        axs[1].plot(x_worst_recon.flatten().numpy().tolist(), label=f"Reconstructed ({max_error})", lw=2, linestyle="--")
+        axs[1].plot(x_worst_recon.flatten().numpy().tolist(), label=f"Reconstructed ({max_error:.2f})", lw=2, linestyle="--")
         axs[1].set_title(f"{this_signal} Reconstruction (Max Error)")
         axs[1].set_xlabel("Time")  # X-axis label
         axs[1].legend()
@@ -633,7 +633,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_b_field_pol_probe_obv_field"
+    conf_file_name = "config_b_field_pol_probe_ccbv_field"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     

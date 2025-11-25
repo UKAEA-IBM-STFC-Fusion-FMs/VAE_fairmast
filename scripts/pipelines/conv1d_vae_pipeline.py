@@ -469,7 +469,7 @@ def main():
             
             )
   
-    ########### Use this block to continue training or comment it out ####
+    ########### Use this block to continue training from a specific checkpoint ####
     # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
     # conv1d_vae_model.load_state_dict(checkpoint['model_state_dict'])
