@@ -25,7 +25,7 @@ from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate_v2 as Conv1dVAECollate
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -149,8 +149,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=5,
-    num_cols=8,
+    num_rows=3,
+    num_cols=5,
     x_max = None,
     x_min = None
 ):
@@ -214,7 +214,6 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
         "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
         "stride_unitary": SETTINGS.TIME_SEGMENTATION.stride_unitary,
-        "tergeted_time_stamp_per_window": SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window,
         "verbose": False,
     }
 
@@ -246,7 +245,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(),
+            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window),
         ]
     )
 
@@ -633,7 +632,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_b_field_pol_probe_ccbv_field"
+    conf_file_name = "config_flux_loop_flux_new_2"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     

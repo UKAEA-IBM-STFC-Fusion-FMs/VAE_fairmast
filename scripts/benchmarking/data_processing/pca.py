@@ -23,6 +23,8 @@ from sigfill import run_simple_filler
 from utils import shuffle_shot_ids
 from pipelines.utils.utils import read_data_split_csv
 
+import argparse
+
 
 def process_single_shot_id( 
     shot_id:int,
@@ -129,7 +131,13 @@ class MASTpca:
             ))
 
         if results:
-            data_array = np.concatenate([*results], axis=1).T
+            try: 
+                data_array = np.concatenate([*results], axis=1).T
+            except Exception as e:
+                print(f"Exception for shot ID: {shot_id}")
+                print(f"Exception: {e}")
+                #print(f"results: {[*results]}")
+                data_array = None
         else:
             print("Warning: No results to concatenate.")
             return
@@ -247,7 +255,12 @@ def test_reconstruction(
   
 if __name__ == "__main__":
     # Load settings
-    SETTINGS = get_settings("scripts/benchmarking/data_processing/config_files/config.json")
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config_file",type=str,default="config.json")
+    args=parser.parse_args()
+    config_filename=args.config_file
+
+    SETTINGS = get_settings("scripts/benchmarking/data_processing/config_files/"+config_filename)
     
     # Run PCA analysis
     run_MASTpca(SETTINGS)

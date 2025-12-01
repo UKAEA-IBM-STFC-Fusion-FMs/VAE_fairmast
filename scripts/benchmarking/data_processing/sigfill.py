@@ -11,6 +11,7 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 import sys
 
+import argparse
 
 cwd = os.path.dirname(os.path.abspath(__file__))
 mother_dir = os.path.dirname(cwd)
@@ -639,7 +640,7 @@ def concatenate_signals(
            feature 1 (time2), feature 2 (time2), feature 3 (time2) .... feature n (time2)
     
     """
-    # Instanciate MASTStorageManager
+    # Instantiate MASTStorageManager
     store_manager = MASTStorageManager()
     sig = MASTSignalManager() 
 
@@ -653,10 +654,20 @@ def concatenate_signals(
             signal_name=signal_name
         )
         if sig_values is not None:
+            ## Debugging check.
+            #if signal_name=="coil_current" and sig_values.shape[0]!= 10:
+            #    print(f"Wrong dimension at shot ID: {shot_id}, dimension = {sig_values.shape}")
             values.append(sig_values)
 
     if values:
-        return np.concatenate([*values], axis=1).T
+        try: 
+            return np.concatenate([*values], axis=1).T
+        except Exception as e:
+            print(f"Exception for shot ID: {shot_id}")
+            print(f"Exception: {e}")
+            #print(f"values: {[*values]}")
+            return None
+
     else:
         print("Warning: No values to concatenate.")
         return None
@@ -712,11 +723,11 @@ def main(SETTINGS):
     #                                 local,
     #                                 json_filename=output_path+"signal_shotids_not_fully_nan"+str(len(shot_ids))+".json")
 
-    signals_average_across_shots_v1(store_manager,
-                                    shot_ids,
-                                    signal_list,
-                                    local,
-                                    json_filename=output_path+"averaged_arrays_N_"+str(len(shot_ids))+".json")
+    #signals_average_across_shots_v1(store_manager,
+    #                                shot_ids,
+    #                                signal_list,
+    #                                local,
+    #                                json_filename=output_path+"averaged_arrays_N_"+str(len(shot_ids))+".json")
 
     for source_signal_name, _ in signal_list:
         source, signal_name = source_signal_name.split("-")
@@ -725,5 +736,10 @@ def main(SETTINGS):
 if __name__ == "__main__":
     
     # Inputs
-    SETTINGS = get_settings("scripts/benchmarking/data_processing/config_files/config.json")
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config_file",type=str,default="config.json")
+    args=parser.parse_args()
+    config_filename=args.config_file
+
+    SETTINGS = get_settings("scripts/benchmarking/data_processing/config_files/"+config_filename)
     main(SETTINGS)

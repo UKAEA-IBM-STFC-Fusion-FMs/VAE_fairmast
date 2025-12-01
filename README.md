@@ -43,13 +43,13 @@ For usage on [CSD3](https://docs.hpc.cam.ac.uk/hpc/index.html).
 
 Running computational workloads on CSD3 (including Jupyter Notebooks) should be done using the worker nodes.
 
-To get a terminal shell running on 4 cores of worker node for 1 hour:
+Start interactive job with 32 CPUs per task, 1 Node for 1 hour:
 
 ```bash
-sintr -A ukaea-ap002-cpu -p ukaea-icl -N1 -n4 -t 1:00:00
+sintr -A ukaea-ap002-cpu -p ukaea-icl -N1 --ntasks=1 --cpus-per-task=32 -t 1:00:00
 ```
 
-Start interactive job with 1 gpu, 2 hours:
+Start interactive job with 4 GPUs, 1 Node, 1 task (n) for 2 hours:
 ```bash
 sintr --gres=gpu:4 -A ukaea-ap002-gpu -p ukaea-amp -N1 -n1 -t 2:0:0
 ```
@@ -78,7 +78,53 @@ sacctmgr show associations user=$USER format=Cluster,User,Account,Partition
 
 Show partitions, example for ukaea-icl:
 ```bash
-scontrol show partition ukaea-icl
+scontrol show partition ukaea-amp
+```
+
+```
+AllowGroups=ALL AllowAccounts=ALL AllowQos=sys0,sys1,support-gpu,covid0,intr,ukaea-gpu1,gpu0,gpul,gpu1,gpu2,gpu3,dirac-gpu1,dirac-gpu3
+AllocNodes=ALL Default=NO QoS=N/A
+DefaultTime=00:10:00 DisableRootJobs=NO ExclusiveUser=NO GraceTime=0 Hidden=NO
+MaxNodes=UNLIMITED MaxTime=7-00:00:00 MinNodes=0 LLN=NO MaxCPUsPerNode=UNLIMITED MaxCPUsPerSocket=UNLIMITED
+Nodes=gpu-q-[48-60,64,73-80]
+PriorityJobFactor=1 PriorityTier=1 RootOnly=NO ReqResv=NO OverSubscribe=NO
+OverTimeLimit=NONE PreemptMode=OFF
+State=UP TotalCPUs=2816 TotalNodes=22 SelectTypeParameters=NONE
+JobDefaults=(null)
+DefMemPerCPU=8000 MaxMemPerCPU=8000
+TRES=cpu=2816,mem=22000G,node=22,billing=2816,gres/gpu=88
+ResumeTimeout=GLOBAL SuspendTimeout=GLOBAL SuspendTime=1800 PowerDownOnIdle=NO
+```
+
+Show nodes list of a specific partition, for instance 
+```
+sinfo -p ukaea-amp -N
+```
+
+```
+NODELIST   NODES PARTITION STATE 
+gpu-q-48       1 ukaea-amp idle~ 
+gpu-q-49       1 ukaea-amp alloc 
+gpu-q-50       1 ukaea-amp alloc 
+gpu-q-51       1 ukaea-amp alloc 
+gpu-q-52       1 ukaea-amp alloc 
+gpu-q-53       1 ukaea-amp alloc 
+gpu-q-54       1 ukaea-amp alloc 
+gpu-q-55       1 ukaea-amp alloc 
+gpu-q-56       1 ukaea-amp alloc 
+gpu-q-57       1 ukaea-amp alloc 
+gpu-q-58       1 ukaea-amp alloc 
+gpu-q-59       1 ukaea-amp idle~ 
+gpu-q-60       1 ukaea-amp idle~ 
+gpu-q-64       1 ukaea-amp idle~ 
+gpu-q-73       1 ukaea-amp alloc 
+gpu-q-74       1 ukaea-amp alloc 
+gpu-q-75       1 ukaea-amp alloc 
+gpu-q-76       1 ukaea-amp alloc 
+gpu-q-77       1 ukaea-amp alloc 
+gpu-q-78       1 ukaea-amp alloc 
+gpu-q-79       1 ukaea-amp alloc 
+gpu-q-80       1 ukaea-amp alloc 
 ```
     
 

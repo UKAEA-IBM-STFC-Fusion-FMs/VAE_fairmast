@@ -40,19 +40,20 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate_v2 as Conv1dVAECollate
-
+from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+# from scripts.pipelines.utils.utils import (initialize_datasets, initialize_dataloaders)
 
 def get_train_test_val_shots(
     max_index_for_train=None,
     max_index_for_val = None):
     train_sh, test_sh, val_sh = read_data_split_csv()
 
-    if max_index_for_train:
+    if max_index_for_train and max_index_for_val:
         train_set = train_sh[0:max_index_for_train]
         val_set = val_sh[0:max_index_for_val]
 
     return train_set, val_set
+
 
 def initialize_datasets(
         sources_and_signals, 
@@ -105,12 +106,21 @@ def initialize_dataloaders(
 
     return dataloaders_
 
+
 def create_conv1d_vae_model(
     SETTINGS,
-    dataloader, 
+    dataset, 
+    conv1d_vae_collate_fn,
     verbose = False
     ):
     """Create conv1d-VAE model"""
+
+    
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1, 
+        shuffle=False, 
+        collate_fn=conv1d_vae_collate_fn)
 
     # Get one sample from the batch to determine signal shape 
     sample_batch = next(iter(dataloader))
@@ -136,7 +146,7 @@ def create_conv1d_vae_model(
         except ValueError as e:
             print(f"Building encoder error: {e}")
             return models
-
+        
         model = Conv1dVAE(
             conv1d_encoder_layer_specs, 
             encoded_signal_shape,
@@ -147,6 +157,7 @@ def create_conv1d_vae_model(
         break
     
     return model
+
 
 def train_conv1d_vae_model(
     SETTINGS,
@@ -352,7 +363,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "scripts/pipelines/configs/config.json",
+        default = "scripts/pipelines/configs/config_flux_loop_flux_new_2.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -392,7 +403,6 @@ def main():
         "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
         "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
         "stride_unitary": SETTINGS.TIME_SEGMENTATION.stride_unitary,
-        "tergeted_time_stamp_per_window": SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window,
         "verbose": False,
     }
 
@@ -424,14 +434,14 @@ def main():
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(),
+            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window),
         ]
     )
 
     # Prepare datasets
-    datasets_train_val_test = initialize_datasets(
+    datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots},
+        shots={"train": train_shots, "val": val_shots, "test": []},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local
@@ -439,20 +449,22 @@ def main():
     
 
     conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
-    dataloaders_train_val_test = initialize_dataloaders(
-        datasets=datasets_train_val_test,
+    dataloaders_train_val = initialize_dataloaders(
+        datasets=datasets_train_val,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
-        shuffle=True
+        shuffle=True,
+        persistent_workers=True
     )
-    train_dataloader = dataloaders_train_val_test["train"]
-    val_dataloader = dataloaders_train_val_test["val"]
+    train_dataloader = dataloaders_train_val["train"]
+    val_dataloader = dataloaders_train_val["val"]
 
     # Create conv1d-VAE models
     conv1d_vae_model = create_conv1d_vae_model(
         SETTINGS,
-        val_dataloader, 
+        datasets_train_val['val'],
+        conv1d_vae_collate_fn,
         verbose = False
     )
     

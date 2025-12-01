@@ -1,47 +1,11 @@
 import numpy as np
 
-
-# ======================================================================================================================
-# class TruncationTransform:
-#     """
-#     A shot-level transform that truncates all time series signals in a shot
-#     to the shortest common length across all signals.
-
-#     This ensures all signals are aligned and have the same number of time steps.
-#     Non-signal metadata (e.g., 'shot_id') is ignored during truncation and preserved.
-
-#     Returns
-#     -------
-#     new_shot : dict
-#         A new shot dictionary with each signal truncated to the common minimum length.
-#         Non-signal fields (like 'shot_id') are preserved.
-#     """
-
-#     def __call__(self, shot):
-
-#         # Compute the minimum available time length across all valid signals
-#         min_common_time = min(len(data["time"]) for data in shot.values())
-
-#         # Construct new truncated shot
-#         new_shot = {}
-#         for var, data in shot.items():
-#             new_shot[var] = {
-#                 "time": data["time"][:min_common_time],
-#                 "values": data["values"][..., :min_common_time]
-#             }
-
-#         # Preserve shot-level metadata (e.g., shot_id)
-#         if "shot_id" in shot:
-#             new_shot["shot_id"] = shot["shot_id"]
-
-#         return new_shot
-
 # ======================================================================================================================
 class TruncationTransform:
     """
     Shot-level transform that truncates all signals in a shot to the minimum end time
     across all available time-series. This ensures consistent signal duration when
-    signals have different time extents or sampling frequencies.
+    signals have different time extents or sampling frequencies. Robust to missing signals and metadata.
 
     Usage
     -----
@@ -73,38 +37,68 @@ class TruncationTransform:
     """
 
     # ------------------------------------------------------------------------------------------------------------------
-
     def __call__(self, shot):
-        # Step 1: Determine min end time
-        min_end_time = min(
-            np.max(np.asarray(data["time"]))
-            for key, data in shot.items()
-            # if isinstance(data, dict) and "time" in data and "values" in data
-        )
+        # --- 1) Collect valid end-times from signal entries only ---
+        end_times = []
+        for key, data in shot.items():
+            if not isinstance(data, dict):
+                continue
+            t = data.get("time", None)
+            v = data.get("values", None)
+            if t is None or v is None:
+                continue
+            t = np.asarray(t)
+            if t.size == 0:
+                continue
+            # ignore non-finite times
+            t = t[np.isfinite(t)]
+            if t.size == 0:
+                continue
+            end_times.append(float(np.max(t)))
 
-        # Step 2: Truncate signals to that end time
+        # If nothing valid, return shot unchanged (nothing to truncate)
+        if not end_times:
+            return dict(shot)
+
+        min_end_time = float(min(end_times))
+
+        # --- 2) Truncate each signal to <= min_end_time; pass non-signal entries through ---
         new_shot = {}
         for key, data in shot.items():
-            # if not (isinstance(data, dict) and "time" in data and "values" in data):
-            #     continue
+            if not isinstance(data, dict):
+                # metadata or other non-signal payload: keep as-is
+                new_shot[key] = data
+                continue
 
-            time = np.asarray(data["time"])
-            values = np.asarray(data["values"])
+            t = data.get("time", None)
+            v = data.get("values", None)
+            if t is None or v is None:
+                # keep explicit "missing" convention
+                new_shot[key] = {"time": None, "values": None}
+                continue
 
-            mask = time <= min_end_time
-            idx = np.where(mask)[0]
+            t = np.asarray(t)
+            v = np.asarray(v)
+
+            # Guard empty arrays
+            if t.size == 0 or v.size == 0:
+                new_shot[key] = {"time": None, "values": None}
+                continue
+
+            # keep finite times and truncate to min_end_time
+            finite_mask = np.isfinite(t)
+            mask = finite_mask & (t <= min_end_time)
+            idx = np.nonzero(mask)[0]
 
             if idx.size == 0:
-                raise ValueError(f"Signal '{key}' has no valid samples before {min_end_time:.5f} s")
-
-            new_shot[key] = {
-                "time": time[idx],
-                "values": values[..., idx]
-            }
-
-        # Preserve metadata
-        if "shot_id" in shot:
-            new_shot["shot_id"] = shot["shot_id"]
+                # no valid samples before truncation point → mark missing
+                new_shot[key] = {"time": None, "values": None}
+            else:
+                lo, hi = int(idx[0]), int(idx[-1]) + 1
+                new_shot[key] = {
+                    "time": t[lo:hi],
+                    "values": v[..., lo:hi],
+                }
 
         return new_shot
 

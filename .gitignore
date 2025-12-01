@@ -184,3 +184,19 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 /scripts/pipelines/ft_transformer_v3/
+
+output_saved_by_cecile/
+
+scripts/pipelines/shot_gifs/
+
+machine.file*
+slurm-*
+*.wilkes3
+
+WIP_CNN/
+logs/
+output_chronos/
+output_chronos_test/
+
+
+

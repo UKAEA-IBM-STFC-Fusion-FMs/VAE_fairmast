@@ -6,7 +6,6 @@ import warnings
 def get_mean_shot(dataset):
     
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
     
         dict_mean_list = {var: [] for var in dataset[0].keys()}
         for data in dataset:
@@ -34,7 +33,6 @@ def get_mean_shot(dataset):
 def get_std_shot(dataset):
 
     with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
     
         dict_std_list = {var: [] for var in dataset[0].keys()}
         for data in dataset:

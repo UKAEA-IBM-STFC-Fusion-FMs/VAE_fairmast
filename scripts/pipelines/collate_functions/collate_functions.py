@@ -102,7 +102,7 @@ def beta_vae_collate_fn(batch):
 def nested_defaultdict():
     return defaultdict(list)
        
-class Conv1dVAECollate():
+class Conv1dVAECollate_multiple_signals():
     """_summary_
 
     Parameters
@@ -164,32 +164,24 @@ class Conv1dVAECollate():
                     tensors = list_of_tensors[ii:ii+self.targeted_number_tensors]
                     collated[signal_name][index[signal_name]] = torch.stack(tensors)
                     index[signal_name] += 1
-              
-
-        # # Check if any signal has no groups formed
-        # empty_signals = [s for s, groups in collated.items() if len(groups) == 0]
-        # if empty_signals:
-        #     if self.verbose:
-        #         print(f"Warning: No groups formed for signals: {empty_signals}. Consider lowering targeted_number_tensors.")
-        #     raise ValueError(f"Collate failed: not enough tensors to form a single group for signals: {empty_signals}")
 
         return collated
 
 
-class Conv1dVAECollate_v2():
+class Conv1dVAECollate():
     def __init__(self, targeted_number_tensors, verbose = False):
         self.targeted_number_tensors = targeted_number_tensors
         self.verbose = verbose
 
     def __call__(self, batch):
         collated = defaultdict(list)
-        
         index = 0
         for sample in batch:
-            if isinstance(sample, list):
+       
+            if len(sample) == 0:
                 continue
-            
-            for signal, list_of_tensors in sample.items():
+
+            for signal, list_of_tensors in sample[0].items():
                 tensors = []
                 for i in range(0,len(list_of_tensors),self.targeted_number_tensors):
                     tensors = list_of_tensors[i:i+self.targeted_number_tensors]

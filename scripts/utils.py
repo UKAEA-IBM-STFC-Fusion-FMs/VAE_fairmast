@@ -7,7 +7,8 @@ import sys
 cwd = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(cwd)
 
-from MAST_tools.signal_utils import MASTSignalManager
+from MAST_tools.signal_utils import MASTSignalManager  # noqa
+from MAST_tools.store_utils import MASTStorageManager  # noqa
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -25,7 +26,7 @@ def read_signals(filepath: str) -> dict[str:int]:
     filepath: path to file containing all signal names and their multiplicity (nr. of channels)
 
     Output: Dictionary with signal names as keys and number of traces as values. Empty dictionary if exception raised
-     during reading.
+            during reading.
     """
 
     signals = dict()
@@ -51,7 +52,7 @@ def shuffle_shot_ids(shot_ids, seed=None):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def make_dataframe_from_shot_ids(
-        store_manager: MASTSignalManager,
+        store_manager: MASTStorageManager,
         shot_ids: list[int],
         group: str,
         signal_name: str,
@@ -80,5 +81,7 @@ def make_dataframe_from_shot_ids(
     
     return channels, shot_list
 
+
+# ======================================================================================================================
 if __name__ == "__main__":
     print("Main")

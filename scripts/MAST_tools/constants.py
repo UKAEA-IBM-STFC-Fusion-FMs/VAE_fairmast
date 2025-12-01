@@ -7,6 +7,8 @@ import zarr.storage
 from xarray.core.dataset import Dataset
 
 NoneType = type(None)
-ZarrStoreType = zarr.storage.FsspecStore
+ZarrFSStoreType = zarr.storage.FsspecStore
+ZarrLocalStoreType = zarr.storage.LocalStore
+ZarrStoreType = Union[ZarrFSStoreType, ZarrLocalStoreType]
 DataSourceType = Union[dict, ZarrStoreType]
 XarrayDatasetType = Dataset
