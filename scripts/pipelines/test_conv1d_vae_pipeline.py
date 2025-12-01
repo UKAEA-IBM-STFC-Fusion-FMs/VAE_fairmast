@@ -26,6 +26,8 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
+from scripts.pipelines.utils.utils import get_train_test_val_shots
+from scripts.pipelines.conv1d_vae_pipeline import initialize_datasets, initialize_dataloaders, create_conv1d_vae_model
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -35,111 +37,6 @@ else:
     device = torch.device("cpu")
     print(f"--------------- RUNNING ON CPUs ---------------")
     
-
-def get_train_test_val_shots(
-    max_index_for_train=None,
-    max_index_for_val = None):
-    train_sh, test_sh, val_sh = read_data_split_csv()
-
-    if max_index_for_train:
-        train_set = train_sh[0:max_index_for_train]
-        val_set = val_sh[0:max_index_for_val]
-
-    return train_set, val_set
-
-def initialize_datasets(
-        sources_and_signals, 
-        shots, 
-        signal_transform_map, 
-        shot_transforms, 
-        local_flag=False
-    ):
-    
-    datasets_ = {"train": None, "val": None}
-    data_set_types = ["train", "val"]
-    
-    for data_set_type in data_set_types:
-        if shots[data_set_type]:
-            datasets_[data_set_type] = MastDataset(
-                local=local_flag,
-                shots_list=shots[data_set_type],
-                source_signal_list=sources_and_signals,
-                signal_level_transform_map=signal_transform_map,
-                shot_level_transform=shot_transforms,
-            )
-    datasets_["train"] = CachedDataset(datasets_["train"])
-    datasets_["val"]   = CachedDataset(datasets_["val"])    
-    return datasets_
-
-def initialize_dataloaders(
-        datasets,
-        collate_function,
-        batch_size,
-        num_workers,
-        shuffle=True,
-        drop_last=False,
-        persistent_workers=True
-    ):
-    
-    dataloaders_ = {"train": None, "val": None}
-
-    data_set_types = ["train", "val"]
-    
-    for data_set_type in data_set_types:
-        if datasets[data_set_type]:
-            dataloaders_[data_set_type] = DataLoader(
-                dataset=datasets[data_set_type],
-                batch_size=batch_size,
-                num_workers=num_workers,
-                shuffle=shuffle,
-                drop_last=drop_last,
-                collate_fn=collate_function,
-            )
-
-    return dataloaders_
-
-def create_conv1d_vae_model(
-    SETTINGS,
-    dataloader, 
-    verbose = False
-    ):
-    """Create conv1d-VAE model"""
-    
-    # Get one sample from the batch to determine signal shape 
-    sample_batch = next(iter(dataloader))
-    
-    for group_idx, signal_data in sample_batch.items():
-
-        input_length = signal_data.shape[-1]  # Last dimension is time
-        input_channels = signal_data.shape[-2] # Nr. of channels
-                
-        vae_specs = {
-            "beta": SETTINGS.BETA_VAE.beta, 
-            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-            "input_length": input_length
-        }
-
-        # Encoder layer specs
-        try:
-            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                SETTINGS, 
-                input_channels, 
-                input_length
-            )
-        except ValueError as e:
-            print(f"Building encoder error: {e}")
-            return models
-
-        model = Conv1dVAE(
-            conv1d_encoder_layer_specs, 
-            encoded_signal_shape,
-            conv1d_decoder_layer_specs, 
-            vae_specs
-            )
-        
-        break
-    
-    return model
 
 def plot_histograms(
     properties,
@@ -218,8 +115,10 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     }
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, val_shots = get_train_test_val_shots(
-        SETTINGS.TRAINING.num_val_samples
+    train_shots, _, val_shots = get_train_test_val_shots(
+        max_index_for_train = SETTINGS.TRAINING.num_train_samples,
+        max_index_for_val = SETTINGS.TRAINING.num_val_samples,
+        max_index_for_test = None
     )
 
     this_signal = signal_name
@@ -245,7 +144,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window),
+            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
         ]
     )
 
@@ -274,7 +173,8 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     # Create conv1d-VAE models
     model = create_conv1d_vae_model(
         SETTINGS,
-        val_dataloader, 
+        datasets_train_val_test['val'],
+        conv1d_vae_collate_fn,
         verbose = False
     )
 
@@ -632,7 +532,7 @@ def absolute_errors(data, reco, eps = 1e-8):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_flux_loop_flux_new_2"
+    conf_file_name = "config_flux_loop_flux_copy"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     

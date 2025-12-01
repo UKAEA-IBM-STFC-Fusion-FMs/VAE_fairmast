@@ -256,7 +256,7 @@ def _build_decoder_specs_from_encoder_specs(
 
     return decoder_layer_specs
 
-def FullyConnectedEncode(in_features, out_features):
+def FullyConnectedLinearRelu(in_features, out_features):
     layer_specs = {
             "layers": [
                 {

@@ -15,7 +15,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 from scripts.pipelines.utils.layer_factory import SequentialBuilder
-from scripts.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedEncode
+from scripts.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedLinearRelu
 
 class Conv1dVAE(nn.Module):
     def __init__(self, 
@@ -50,7 +50,7 @@ class Conv1dVAE(nn.Module):
         # Add Fully Connected Layer to encoder
         self.FCLlayer_size = int((self.conv_out_dim+self.latent_dim)/2)
         self.FCLencoder = SequentialBuilder(
-            FullyConnectedEncode( self.conv_out_dim, self.FCLlayer_size )
+            FullyConnectedLinearRelu( self.conv_out_dim, self.FCLlayer_size )
             )
         
         # =============== VAE =====================
@@ -59,10 +59,10 @@ class Conv1dVAE(nn.Module):
 
         # =============== Decoder =====================
         self.FCLdecoder = SequentialBuilder(
-            FullyConnectedEncode(self.latent_dim, self.FCLlayer_size)
+            FullyConnectedLinearRelu(self.latent_dim, self.FCLlayer_size)
             )
         self.FCLdecoder2 = SequentialBuilder(
-            FullyConnectedEncode(self.FCLlayer_size, self.conv_out_dim)
+            FullyConnectedLinearRelu(self.FCLlayer_size, self.conv_out_dim)
             )
 
         self.conv1d_decoder = SequentialBuilder(conv1d_decoder_layer_specs)

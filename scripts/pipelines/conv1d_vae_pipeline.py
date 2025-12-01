@@ -41,18 +41,7 @@ from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_e
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
-# from scripts.pipelines.utils.utils import (initialize_datasets, initialize_dataloaders)
-
-def get_train_test_val_shots(
-    max_index_for_train=None,
-    max_index_for_val = None):
-    train_sh, test_sh, val_sh = read_data_split_csv()
-
-    if max_index_for_train and max_index_for_val:
-        train_set = train_sh[0:max_index_for_train]
-        val_set = val_sh[0:max_index_for_val]
-
-    return train_set, val_set
+from scripts.pipelines.utils.utils import get_train_test_val_shots
 
 
 def initialize_datasets(
@@ -363,7 +352,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "scripts/pipelines/configs/config_flux_loop_flux_new_2.json",
+        default = "scripts/pipelines/configs/config_flux_loop_flux_new.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -407,9 +396,10 @@ def main():
     }
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, val_shots = get_train_test_val_shots(
-        SETTINGS.TRAINING.num_train_samples,
-        SETTINGS.TRAINING.num_val_samples
+    train_shots, _, val_shots = get_train_test_val_shots(
+        max_index_for_train = SETTINGS.TRAINING.num_train_samples,
+        max_index_for_val = SETTINGS.TRAINING.num_val_samples,
+        max_index_for_test = None
     )
     
     #Get mean and std for signal transformation
@@ -434,7 +424,7 @@ def main():
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.tergeted_time_stamp_per_window),
+            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
         ]
     )
 
@@ -460,6 +450,7 @@ def main():
     train_dataloader = dataloaders_train_val["train"]
     val_dataloader = dataloaders_train_val["val"]
 
+    breakpoint()
     # Create conv1d-VAE models
     conv1d_vae_model = create_conv1d_vae_model(
         SETTINGS,
