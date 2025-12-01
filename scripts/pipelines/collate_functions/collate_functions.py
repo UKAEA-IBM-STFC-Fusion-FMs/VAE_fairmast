@@ -191,11 +191,11 @@ class Conv1dVAECollate():
         return collated
                 
 
-def test_Conv1dVAECollate():
+def test_Conv1dVAECollate_multiple_signals():
     # Arrange
     signals = ["signal1", "signal2"]
     targeted_number_tensors = 2
-    collate_fn = Conv1dVAECollateTest(signals, targeted_number_tensors)
+    collate_fn = Conv1dVAECollate_multiple_signals(signals, targeted_number_tensors)
 
     # Create dummy batch
     batch = [
@@ -211,11 +211,11 @@ def test_Conv1dVAECollate():
 
     collated = collate_fn(batch)
 
-def test_Conv1dVAECollateTest_v2():
+def test_Conv1dVAECollate():
     # Arrange
     signals = ["signal1"]
     targeted_number_tensors = 2
-    collate_fn = Conv1dVAECollate_v2(signals, targeted_number_tensors)
+    collate_fn = Conv1dVAECollate(signals, targeted_number_tensors)
 
     # Create dummy batch
     batch = [
@@ -231,4 +231,4 @@ def test_Conv1dVAECollateTest_v2():
     print(f"collated {collated}")
     
 if __name__ == "__main__":
-    test_Conv1dVAECollateTest_v2()
+    test_Conv1dVAECollate()
