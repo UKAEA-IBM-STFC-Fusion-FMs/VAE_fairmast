@@ -450,7 +450,6 @@ def main():
     train_dataloader = dataloaders_train_val["train"]
     val_dataloader = dataloaders_train_val["val"]
 
-    breakpoint()
     # Create conv1d-VAE models
     conv1d_vae_model = create_conv1d_vae_model(
         SETTINGS,

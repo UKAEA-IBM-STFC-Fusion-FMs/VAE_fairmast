@@ -69,7 +69,6 @@ class EncoderSettings:
         self.conv1d_in_channels = self._get_key(encoder_specs, "conv1d_in_channels")
         self.conv1d_out_channels = self._get_key(encoder_specs, "conv1d_out_channels")
         self.activation_fn = self._get_key(encoder_specs, "activation_fn")
-        self.add_dense_layer = self._get_key(encoder_specs, "add_dense_layer")
 
     def _get_key(self, section, key):
         if key in section:
