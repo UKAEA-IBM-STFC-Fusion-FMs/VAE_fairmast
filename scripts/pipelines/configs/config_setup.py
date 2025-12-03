@@ -53,6 +53,7 @@ class BetaVae:
         self.beta = self._get_key(beta_vae_specs, "beta")
         self.ref_freq = self._get_key(beta_vae_specs, "ref_freq")
         self.existing_fitted_params = self._get_key(beta_vae_specs, "existing_fitted_params")
+        self.hidden_dim = self._get_key(beta_vae_specs, "hidden_dim")
 
     def _get_key(self, section, key):
         if key in section:

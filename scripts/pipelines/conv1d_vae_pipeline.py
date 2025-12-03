@@ -395,7 +395,7 @@ def main():
         "verbose": False,
     }
 
-    # Create sets of shot IDs for training, validation and testing
+    # Create sets of shot IDs for training, testing and validation
     train_shots, _, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
