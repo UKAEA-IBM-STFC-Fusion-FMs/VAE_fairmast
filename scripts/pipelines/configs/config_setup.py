@@ -34,12 +34,12 @@ class Settings:
             self.BETA_VAE = BetaVae(config)
         if  "conv1d" in config.keys():
             self.CONV1D = Conv1D(config)
+            self.CONV1dENCODER = Conv1dEncoderSettings(config)
             
         self.TIME_SEGMENTATION = TimeSettings(config)
         self.TRAINING = TrainingSettings(config)
         self.LOCAL_PATHS = LocalPaths(config)
         self.DATA = DataInput(config)
-        self.CONV1dENCODER = Conv1dEncoderSettings(config)
         self.SCHEDULER = Scheduler(config)
 
 
