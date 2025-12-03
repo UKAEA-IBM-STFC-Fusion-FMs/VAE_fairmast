@@ -1,4 +1,3 @@
-import json
 import os
 import json
 
@@ -29,14 +28,18 @@ class Settings:
         self.config = config
 
         # Direct initialisation (safe because each class handles missing keys internally)
-        self.NEURALNET = NNSettings(config)
+        if "nn_model" in config.keys():
+            self.NEURALNET = NNSettings(config)
+        if "beta-vae" in config.keys():
+            self.BETA_VAE = BetaVae(config)
+        if  "conv1d" in config.keys():
+            self.CONV1D = Conv1D(config)
+            
         self.TIME_SEGMENTATION = TimeSettings(config)
         self.TRAINING = TrainingSettings(config)
         self.LOCAL_PATHS = LocalPaths(config)
         self.DATA = DataInput(config)
-        self.BETA_VAE = BetaVae(config)
-        self.CONV1D = Conv1D(config)
-        self.ENCODER = EncoderSettings(config)
+        self.CONV1dENCODER = Conv1dEncoderSettings(config)
         self.SCHEDULER = Scheduler(config)
 
 
@@ -61,7 +64,7 @@ class BetaVae:
 
 
 # ======================================================================================================================
-class EncoderSettings:
+class Conv1dEncoderSettings:
     def __init__(self, config):
         encoder_specs = config.get("encoder_specs", {})
 
