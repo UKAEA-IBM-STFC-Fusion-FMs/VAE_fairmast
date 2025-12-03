@@ -49,8 +49,8 @@ def plot_histograms(
     num_rows=3,
     num_cols=5,
     x_max = None,
-    x_min = None
-):
+    x_min = None):
+    
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
     axes = axes.flatten()  # Flatten to 1D for easy iteration

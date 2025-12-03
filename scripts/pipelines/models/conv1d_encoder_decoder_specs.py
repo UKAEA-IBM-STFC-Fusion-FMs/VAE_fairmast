@@ -32,7 +32,7 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     
     # Build conv1d encoder
     conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
-    print(f"ENCODER SPECS {conv1d_encoder_specs}")
+    print(f"CONV1dENCODER SPECS {conv1d_encoder_specs}")
     
     last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
     encoded_signal_shape = [last_nr_channels, last_signal_length]
@@ -81,7 +81,7 @@ def _build_encoder_layer_specs(SETTINGS, input_length):
     """
     
     
-    if not (len( SETTINGS.ENCODER.conv1d_out_channels) == len(SETTINGS.CONV1D.kernel) \
+    if not (len( SETTINGS.CONV1dENCODER.conv1d_out_channels) == len(SETTINGS.CONV1D.kernel) \
         == len(SETTINGS.CONV1D.stride) == len(SETTINGS.CONV1D.padding)):
         raise ValueError(
             f"Mismatch in layer specs: "
@@ -91,11 +91,11 @@ def _build_encoder_layer_specs(SETTINGS, input_length):
             f"padding={len(padding_list)}"
         )
 
-    in_channels = SETTINGS.ENCODER.conv1d_in_channels
+    in_channels = SETTINGS.CONV1dENCODER.conv1d_in_channels
     
     layers = []
     for out_channels, kernel, stride, padding in zip(
-        SETTINGS.ENCODER.conv1d_out_channels,
+        SETTINGS.CONV1dENCODER.conv1d_out_channels,
         SETTINGS.CONV1D.kernel,
         SETTINGS.CONV1D.stride,
         SETTINGS.CONV1D.padding
@@ -110,7 +110,7 @@ def _build_encoder_layer_specs(SETTINGS, input_length):
                 "padding": padding
             },
         })
-        layers.append({"type":   SETTINGS.ENCODER.activation_fn})
+        layers.append({"type":   SETTINGS.CONV1dENCODER.activation_fn})
         in_channels = out_channels
         
     nr_channels, length, _, _ = _compute_conv_output_dim(in_channels, input_length, {"layers": layers})
@@ -248,10 +248,10 @@ def _build_decoder_specs_from_encoder_specs(
             decoder_layer_specs["layers"].append(spec)
             
             # Add ReLU spec after each ConvTranspose1d
-            decoder_layer_specs["layers"].append({"type":  SETTINGS.ENCODER.activation_fn})
+            decoder_layer_specs["layers"].append({"type":  SETTINGS.CONV1dENCODER.activation_fn})
     
     # For standardized targets, remove last relu 
-    if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] ==  SETTINGS.ENCODER.activation_fn:
+    if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] ==  SETTINGS.CONV1dENCODER.activation_fn:
         decoder_layer_specs["layers"].pop()
 
     return decoder_layer_specs

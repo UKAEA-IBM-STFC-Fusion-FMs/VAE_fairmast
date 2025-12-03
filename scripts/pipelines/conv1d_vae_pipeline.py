@@ -286,7 +286,7 @@ def train_conv1d_vae_model(
             avg_val_kl = float("inf")
         
         lr_history.append(optimizer.param_groups[0]['lr'])
-        scheduler.step(epoch +1)  
+        scheduler.step()  
 
         # Store loss curves
         loss_curves['train_total'].append(avg_train_loss)
