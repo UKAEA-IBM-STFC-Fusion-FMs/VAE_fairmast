@@ -90,14 +90,15 @@ def get_train_test_val_shots(
     ----------
     max_index : int, optional
         If not None, all lists will have the same length given by max_index.
-        Overrides other max_index_* parameters.
     max_index_for_train : int, optional
         Number of shot IDs for the training set.
+        Overrides max_index.
     max_index_for_val : int, optional
         Number of shot IDs for the validation set.
+        Overrides max_index.
     max_index_for_test : int, optional
         Number of shot IDs for the testing set.
-
+        Overrides max_index.
 
     Returns
     -------
@@ -107,24 +108,23 @@ def get_train_test_val_shots(
     """
 
     # Read full data splits
-    train_set, test_set, val_set = read_data_split_csv()
+    train_set_full, test_set_full, val_set_full = read_data_split_csv()
 
     # If max_index is provided, override all other limits
     if max_index is not None and max_index > 0:
-        train_set = train_set[:max_index]
-        val_set = val_set[:max_index]
-        test_set = test_set[:max_index]
-        return train_set, test_set, val_set
+        train_set = train_set_full[:max_index]
+        val_set = val_set_full[:max_index]
+        test_set = test_set_full[:max_index]
 
     # Apply individual limits if provided and positive
     if max_index_for_train is not None and max_index_for_train > 0:
-        train_set = train_set[:max_index_for_train]
+        train_set = train_set_full[:max_index_for_train]
 
     if max_index_for_val is not None and max_index_for_val > 0:
-        val_set = val_set[:max_index_for_val]
+        val_set = val_set_full[:max_index_for_val]
 
     if max_index_for_test is not None and max_index_for_test > 0:
-        test_set = test_set[:max_index_for_test]
+        test_set = test_set_full[:max_index_for_test]
 
 
     return train_set, test_set, val_set
