@@ -76,23 +76,30 @@ def dataloader_seed_parts(seed: int):
 
 # ----------------------------------------------------------------------------------------------------------------------
 def get_train_test_val_shots(
-    max_index_for_train=None,
+    max_index = None,
+    max_index_for_train = None,
     max_index_for_val = None,
     max_index_for_test = None
     ):
-    
-    train_set, test_set, val_set = read_data_split_csv()
 
-    if max_index_for_train is not None:
+    train_set, test_set, val_set = read_data_split_csv()
+    np.random.shuffle(train_set)
+    np.random.shuffle(val_set)
+    np.random.shuffle(test_set)
+
+    if max_index:
         train_set = train_set[0:max_index_for_train]
-         
-    if  max_index_for_val is not None:
-       val_set = val_set[0:max_index_for_val]
-        
-    if max_index_for_test is not None:
+        val_set = val_set[0:max_index_for_val]
         test_set = test_set[0:max_index_for_test]
-        
+    if max_index_for_train:
+        train_set = train_set[0:max_index_for_train]
+    if max_index_for_val:
+        val_set = val_set[0:max_index_for_val]
+    if max_index_for_test:
+        test_set = test_set[0:max_index_for_test]
+
     return train_set, test_set, val_set
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 def read_data_split_csv(csv_path="metadata/2025-05-12/data_splits.csv"):
