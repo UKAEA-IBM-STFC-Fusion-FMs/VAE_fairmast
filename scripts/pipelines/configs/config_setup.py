@@ -28,8 +28,6 @@ class Settings:
         self.config = config
 
         # Direct initialisation (safe because each class handles missing keys internally)
-        if "nn_model" in config.keys():
-            self.NEURALNET = NNSettings(config)
         if "beta-vae" in config.keys():
             self.BETA_VAE = BetaVae(config)
         if  "conv1d" in config.keys():
@@ -79,23 +77,6 @@ class Conv1dEncoderSettings:
             return section[key]
         else:
             print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
-            return None
-
-        
-# ======================================================================================================================
-class NNSettings:
-    def __init__(self, config):
-        nn_specs = config.get("nn_model", {})
-
-        self.lr = self._get_key(nn_specs, "lr")
-        self.l1_size = self._get_key(nn_specs, "l1_size")
-        self.l2_size = self._get_key(nn_specs, "l2_size")
-
-    def _get_key(self, section, key):
-        if key in section:
-            return section[key]
-        else:
-            print(f"[Warning] Missing key '{key}' in nn_model configuration. Setting to None.")
             return None
 
 
