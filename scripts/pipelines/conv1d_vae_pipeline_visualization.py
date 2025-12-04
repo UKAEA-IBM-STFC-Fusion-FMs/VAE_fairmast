@@ -497,7 +497,7 @@ def correlations(data, reco, eps = 1e-8):
     
     return corr
 
-def time_averaged_absolute_errors(data, reco, eps = 1e-8):
+def time_averaged_absolute_errors(data, reco):
     """Compute time-averaged absolute error for each feature 
     in data-reco pairs
 
