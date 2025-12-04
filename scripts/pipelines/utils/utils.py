@@ -79,7 +79,9 @@ def get_train_test_val_shots(
     max_index = None,
     max_index_for_train = None,
     max_index_for_val = None,
-    max_index_for_test = None
+    max_index_for_test = None,
+    shuffle = False,
+    seed = None
     ):
     
     """
@@ -99,6 +101,10 @@ def get_train_test_val_shots(
     max_index_for_test : int, optional
         Number of shot IDs for the testing set.
         Overrides max_index.
+    shuffle: bool
+        True if we need shuffled samples.
+    seed: int 
+        For reproducibility of the rnd sequence.
 
     Returns
     -------
@@ -130,6 +136,17 @@ def get_train_test_val_shots(
     if max_index_for_test is not None and max_index_for_test > 0:
         test_set = test_set_full[:max_index_for_test]
 
+    
+    if shuffle:
+        if seed is not None:
+            if not isinstance(seed, int):
+                raise ValueError(f"Seed must be an integer, got {type(seed).__name__}")
+            random.seed(seed)  
+            
+        random.shuffle(train_set)
+        random.shuffle(test_set)
+        random.shuffle(val_set)
+        
     return train_set, test_set, val_set
 
 
