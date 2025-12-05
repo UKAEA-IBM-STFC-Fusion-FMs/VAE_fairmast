@@ -116,6 +116,16 @@ def get_train_test_val_shots(
     # Read full data splits
     train_set_full, test_set_full, val_set_full = read_data_split_csv()
 
+    if shuffle:
+        if seed is not None:
+            if not isinstance(seed, int):
+                raise ValueError(f"Seed must be an integer, got {type(seed).__name__}")
+            random.seed(seed)  
+            
+        random.shuffle(train_set_full)
+        random.shuffle(test_set_full)
+        random.shuffle(val_set_full)
+        
     train_set = train_set_full
     test_set = test_set_full
     val_set = val_set_full
@@ -135,17 +145,6 @@ def get_train_test_val_shots(
 
     if max_index_for_test is not None and max_index_for_test > 0:
         test_set = test_set_full[:max_index_for_test]
-
-    
-    if shuffle:
-        if seed is not None:
-            if not isinstance(seed, int):
-                raise ValueError(f"Seed must be an integer, got {type(seed).__name__}")
-            random.seed(seed)  
-            
-        random.shuffle(train_set)
-        random.shuffle(test_set)
-        random.shuffle(val_set)
         
     return train_set, test_set, val_set
 

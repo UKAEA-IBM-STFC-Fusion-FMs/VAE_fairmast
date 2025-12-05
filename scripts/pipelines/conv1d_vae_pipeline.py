@@ -232,7 +232,7 @@ def train_conv1d_vae_model(
                 
                 device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
-                
+               
             if verbose:
                 print(f"Batch processing time {device_average_process_time:.2f}")      
             start = time.time()
@@ -371,7 +371,7 @@ def main():
             print(f"Error in loading configuration {e}")
             return 
     
-    # HPC settings for CPUs only
+    # HPC settings
     num_workers = SETTINGS.TRAINING.num_workers
 
     # Output data folder
@@ -380,14 +380,14 @@ def main():
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
     
-    # Signal names
+    # Signal names for training 
     source_signal_list = SETTINGS.DATA.data_names
 
-    # Parameters for window segmentation (no x/y split for VAE)
+    # Parameters for window segmentation
     PARAMETERS_WINDOWS_SEGMENTER = {
         "x_keys": [f"{source}-{signal}" for source, signal in SETTINGS.DATA.data_names],
         "y_keys": [f"{source}-{signal}" for source, signal in SETTINGS.DATA.target_names],  # Same as x for VAE
-        "x_window_sec": SETTINGS.TIME_SEGMENTATION.x_window_sec,  # 100ms windows
+        "x_window_sec": SETTINGS.TIME_SEGMENTATION.x_window_sec,
         "y_window_sec": SETTINGS.TIME_SEGMENTATION.y_window_sec,
         "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
         "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
@@ -409,7 +409,7 @@ def main():
         dict_std = pickle.load(f)
 
 
-    # Get the signal transform map
+    # Signal-level transforms
     signal_transform_map = {
         var: ComposeTransforms(
             [   
@@ -420,7 +420,7 @@ def main():
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
     }
 
-    # Shot-level transform for β-VAE
+    # Shot-level transforms
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
@@ -450,7 +450,7 @@ def main():
     train_dataloader = dataloaders_train_val["train"]
     val_dataloader = dataloaders_train_val["val"]
 
-    # Create conv1d-VAE models
+    # Create conv1d-VAE model
     conv1d_vae_model = create_conv1d_vae_model(
         SETTINGS,
         datasets_train_val['val'],
@@ -483,7 +483,7 @@ def main():
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
 
-    #Save model architectures
+    # Save model architecture
     with open(os.path.join(output_directory, "model.json"),'w') as f:
        json.dump(
             str(conv1d_vae_model),
