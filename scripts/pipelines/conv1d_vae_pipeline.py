@@ -40,6 +40,7 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
+from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals import ConcatenateSignalsAfterTimeSegmentation
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 from scripts.pipelines.utils.utils import get_train_test_val_shots
 
@@ -49,7 +50,8 @@ def initialize_datasets(
         shots, 
         signal_transform_map, 
         shot_transforms, 
-        local_flag=False
+        local_flag=False,
+        cache_data=True
     ):
     
     datasets_ = {"train": None, "val": None}
@@ -64,8 +66,11 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
             )
-    datasets_["train"] = CachedDataset(datasets_["train"])
-    datasets_["val"]   = CachedDataset(datasets_["val"])    
+            
+    if cache_data:
+        datasets_["train"] = CachedDataset(datasets_["train"])
+        datasets_["val"]   = CachedDataset(datasets_["val"]) 
+           
     return datasets_
 
 def initialize_dataloaders(
@@ -104,7 +109,6 @@ def create_conv1d_vae_model(
     ):
     """Create conv1d-VAE model"""
 
-    
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=1, 
@@ -134,7 +138,7 @@ def create_conv1d_vae_model(
             )
         except ValueError as e:
             print(f"Building encoder error: {e}")
-            return models
+            return None
         
         model = Conv1dVAE(
             conv1d_encoder_layer_specs, 
@@ -205,6 +209,10 @@ def train_conv1d_vae_model(
         
         start = time.time()
         for batch_idx, batch in enumerate(train_dataloader):
+            
+            if batch is None:
+                continue
+            
             if verbose:
                 print(f"Batch idx: {batch_idx}")
             if verbose:
@@ -409,7 +417,7 @@ def main():
         dict_std = pickle.load(f)
 
 
-    # Signal-level transforms
+    # Signal-level transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
@@ -420,13 +428,24 @@ def main():
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
     }
 
-    # Shot-level transforms
-    shot_transforms = ComposeTransforms(
-        [
-            WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
-        ]
-    )
+    # Shot-level transform map
+    if len(SETTINGS.DATA.data_names)>1: # Merge signals
+        print("WARNING: current pipeline supports single signal analysis only.\
+            All signals in the list will be merged into one, if compatible")
+        shot_transforms = ComposeTransforms(
+            [
+                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                ConcatenateSignalsAfterTimeSegmentation(),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+            ]
+        )
+    else:
+        shot_transforms = ComposeTransforms(
+            [
+                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+            ]
+        )
 
     # Prepare datasets
     datasets_train_val = initialize_datasets(
@@ -437,7 +456,6 @@ def main():
         local_flag=SETTINGS.DATA.local
     )
     
-
     conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
     dataloaders_train_val = initialize_dataloaders(
         datasets=datasets_train_val,
@@ -457,6 +475,9 @@ def main():
         conv1d_vae_collate_fn,
         verbose = False
     )
+    if conv1d_vae_model is None:
+        print("Model error. It was not possible to create your model")
+        return
     
     optimizer = torch.optim.Adam(
                 conv1d_vae_model.parameters(), 
@@ -514,7 +535,7 @@ def main():
         print(f"ELapsed time {time.time() - start}")
         
         print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
-        print(f"Trained β-VAE models for {len(best_model_states)} signals")
+        print(f"Trained conv1d_vae models for {len(best_model_states)} signals")
         print(f"Models saved in: {output_directory}")
     else:
         print("NO TRAINING: models dictionary is empty.")

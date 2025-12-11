@@ -176,18 +176,28 @@ class Conv1dVAECollate():
     def __call__(self, batch):
         collated = defaultdict(list)
         index = 0
+        
         for sample in batch:
-       
+            
             if len(sample) == 0:
                 continue
 
+            try:
+                sample[0].items()
+            except:
+                continue
+            
             for signal, list_of_tensors in sample[0].items():
                 tensors = []
+
                 for i in range(0,len(list_of_tensors),self.targeted_number_tensors):
                     tensors = list_of_tensors[i:i+self.targeted_number_tensors]
                     collated[index] = torch.stack(tensors)
                     index += 1
-                
+                # In conv1d_vae we only use one signal at a time. 
+                # If more than one signal is provided, the loop breaks after first iteration
+                break  
+
         return collated
                 
 

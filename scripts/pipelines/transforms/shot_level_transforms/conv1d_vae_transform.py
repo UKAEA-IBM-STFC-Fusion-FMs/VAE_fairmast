@@ -60,13 +60,13 @@ class Conv1dVAETransform:
         all_signals = defaultdict(list)
 
         # Loop trhough all window_index
-        if not list_samples or len(list_samples)==0:
-            print("Empty list_samples in conv1d_vae_transform.py")
-            return all_signals
+        if not list_samples or list_samples is None:
+            return None
         
         for windowed_signal in list_samples:
             # Add signals
             for signal_name, signal_data in windowed_signal["x"].items():
+               
                 values = signal_data["values"]
                 
                 if values.shape[-1] < self.targeted_signal_length:
@@ -76,6 +76,9 @@ class Conv1dVAETransform:
                 cropped_values = values[:, :self.targeted_signal_length]
                 all_signals[signal_name].append(torch.tensor(cropped_values, dtype=torch.float32))
 
-        return all_signals
+        if all_signals:
+            return all_signals
+        else:
+            return None
 
         

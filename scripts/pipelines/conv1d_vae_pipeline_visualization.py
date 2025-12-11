@@ -28,6 +28,7 @@ from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform imp
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 from scripts.pipelines.utils.utils import get_train_test_val_shots
 from scripts.pipelines.conv1d_vae_pipeline import initialize_datasets, initialize_dataloaders, create_conv1d_vae_model
+from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals import ConcatenateSignalsAfterTimeSegmentation
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -47,7 +48,7 @@ def plot_histograms(
     title_prefix,
     file_name,
     num_rows=3,
-    num_cols=5,
+    num_cols=4,
     x_max = None,
     x_min = None):
     
@@ -129,7 +130,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
         dict_std = pickle.load(f)
         
-    # Get the signal transform map
+    # Signal-level transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
@@ -140,24 +141,34 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
     }
 
-    # Shot-level transform for β-VAE
-    shot_transforms = ComposeTransforms(
-        [
-            WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
-        ]
-    )
-
- 
+    # Shot-level transform map
+    if len(SETTINGS.DATA.data_names)>1: # Merge signals
+        print("WARNING: current pipeline supports single signal analysis only.\
+            All signals in the list will be merged into one, if compatible")
+        shot_transforms = ComposeTransforms(
+            [
+                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                ConcatenateSignalsAfterTimeSegmentation(),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+            ]
+        )
+    else:
+        shot_transforms = ComposeTransforms(
+            [
+                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+            ]
+        )
+    
     # Prepare datasets
     datasets_train_val_test = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
-        local_flag=SETTINGS.DATA.local
+        local_flag=SETTINGS.DATA.local,
+        cache_data=False
     )
-    
 
     conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
     dataloaders_train_val_test = initialize_dataloaders(
@@ -205,6 +216,10 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         for batch_idx, batch in enumerate(val_dataloader):
             
             print(f"Batch idx {batch_idx}")
+            
+            if batch is None:
+                continue
+            
             
             # if batch_idx==1:
             #     break
@@ -532,7 +547,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_flux_loop_flux_copy"
+    conf_file_name = "config_currents"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "scripts/pipelines/data/output/" + f"{directory_name}/"
     
