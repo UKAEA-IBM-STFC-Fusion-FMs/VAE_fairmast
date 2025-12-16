@@ -103,7 +103,7 @@ def nested_defaultdict():
     return defaultdict(list)
        
 class Conv1dVAECollate_multiple_signals():
-    """_summary_
+    """DEPRECATED, NOT MANTAINED.
 
     Parameters
     ----------
@@ -169,6 +169,31 @@ class Conv1dVAECollate_multiple_signals():
 
 
 class Conv1dVAECollate():
+    """Collate samples in a batch.
+
+    Parameters
+    ----------
+    batch : list of samples
+
+    sample = {
+        "signal_name": [Tensor(nr_features1, time-length1), Tensor(nr_features1, time-length1), ...],  # one per time window
+    }
+    Each sample derives from one item of the dataset, i.e., it represents one particular shot_id.
+
+    Returns
+    -------
+    defaultdict
+    
+    collated = {
+        "signal_name": {
+            0: Tensor(targeted_number_tensors, nr_features1, time-length1),
+            1: Tensor(targeted_number_tensors, nr_features1, time-length1),
+            ...
+        }
+    }
+
+    """
+    
     def __init__(self, targeted_number_tensors, verbose = False):
         self.targeted_number_tensors = targeted_number_tensors
         self.verbose = verbose
@@ -182,12 +207,14 @@ class Conv1dVAECollate():
             if len(sample) == 0:
                 continue
 
+            if isinstance(sample, list):
+                sample = sample[0]
             try:
-                sample[0].items()
+                sample.items()
             except:
                 continue
             
-            for signal, list_of_tensors in sample[0].items():
+            for signal, list_of_tensors in sample.items():
                 tensors = []
 
                 for i in range(0,len(list_of_tensors),self.targeted_number_tensors):

@@ -40,7 +40,7 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.models.conv1d_vae_model import loss_function
 from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals import ConcatenateSignalsAfterTimeSegmentation
+from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
 from scripts.pipelines.utils.utils import get_train_test_val_shots
 
@@ -107,7 +107,35 @@ def create_conv1d_vae_model(
     conv1d_vae_collate_fn,
     verbose = False
     ):
-    """Create conv1d-VAE model"""
+    """
+    Create a 1D convolutional Variational Autoencoder (Conv1dVAE)
+    based on the provided dataset sample and configuration settings.
+
+    This function builds a one-sample DataLoader (batch_size=1) to probe the
+    dataset's tensor shape (channels and temporal length). It then uses those
+    dimensions together with the `SETTINGS` configuration to construct encoder
+    and decoder specifications via `build_conv1d_encoder_decoder`, and finally
+    instantiates a `Conv1dVAE` model.
+
+    Parameters
+    ----------
+    SETTINGS : object
+        A configuration object providing the required fields 
+            - SETTINGS.BETA_VAE.beta : float
+                The β coefficient for the β-VAE KL divergence term.
+            - SETTINGS.BETA_VAE.latent_dim : int
+                Dimensionality of the latent space.
+    dataset : torch.utils.data.Dataset
+        A PyTorch MAST dataset 
+    conv1d_vae_collate_fn : Callable
+        A collate function compatible with the given `dataset` that produces a
+        batch where 
+    verbose : bool, optional
+
+    Returns
+    -------
+    Conv1dVAE or None
+    """
 
     dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -136,7 +164,7 @@ def create_conv1d_vae_model(
                 input_channels, 
                 input_length
             )
-        except ValueError as e:
+        except RuntimeError as e:
             print(f"Building encoder error: {e}")
             return None
         

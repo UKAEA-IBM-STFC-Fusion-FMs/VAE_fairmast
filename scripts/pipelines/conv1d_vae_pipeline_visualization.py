@@ -17,9 +17,9 @@ REPO_ROOT = os.path.abspath(
 )
 if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from scripts.pipelines.utils.utils import (read_data_split_csv, ComposeTransforms)
-from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (StdScalingTransform)
-from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import ( WindowSegmenterTransform)
+from scripts.pipelines.utils.utils import ComposeTransforms
+from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import StdScalingTransform
+from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
 from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from scripts.pipelines.configs.config_setup import get_settings
 from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
@@ -28,7 +28,7 @@ from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform imp
 from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 from scripts.pipelines.utils.utils import get_train_test_val_shots
 from scripts.pipelines.conv1d_vae_pipeline import initialize_datasets, initialize_dataloaders, create_conv1d_vae_model
-from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals import ConcatenateSignalsAfterTimeSegmentation
+from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 
 # Determine device to train on
 if torch.cuda.is_available():

@@ -29,40 +29,26 @@ def build_conv1d_encoder_decoder(SETTINGS, input_channels, input_length):
     ValueError
         If signal after encoder has length <=1
     """
-    
-    # Build conv1d encoder
-    conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
-    print(f"CONV1dENCODER SPECS {conv1d_encoder_specs}")
-    
-    last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
-    encoded_signal_shape = [last_nr_channels, last_signal_length]
-    
-    if  last_signal_length <=1:
-        raise ValueError("Signal after stack of conv1d has length <=1")
+    try:
+        
+        # Build conv1d encoder
+        conv1d_encoder_specs, encoded_signal_shape = _build_encoder_layer_specs(SETTINGS, input_length)
+        print(f"CONV1dENCODER SPECS {conv1d_encoder_specs}")
+        
+        last_nr_channels, last_signal_length, _, _ = _compute_conv_output_dim(input_channels, input_length, conv1d_encoder_specs)
+        encoded_signal_shape = [last_nr_channels, last_signal_length]
+        
+        if  last_signal_length <=1:
+            raise ValueError("Signal after stack of conv1d has length <=1")
 
-    conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS, conv1d_encoder_specs, input_channels, input_length, remove_last_activation = True)
+        conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(SETTINGS, conv1d_encoder_specs, input_channels, input_length, remove_last_activation = True)
+        
+        return conv1d_encoder_specs, encoded_signal_shape, conv1d_decoder_specs
     
-    # Uncomment this to hardcode conv1d_encoder_specs
-    # Template:
-    # conv1d_encoder_specs = {
-    #         "layers": [
-    #             {
-    #                 "type": "conv1d",
-    #                 "params": {
-    #                     "in_channels": 15,
-    #                     "out_channels": 128,
-    #                     "kernel_size": 4,
-    #                     "stride": 1,
-    #                     "padding": SETTINGS.CONV1D.padding
-    #                 }
-    #             },
-    #             {
-    #                 "type": "relu"
-    #             }
-    #         ]
-    #     }
+    except Exception as e:
+        raise RuntimeError(f"Error building Conv1D specs: {e}") from e
+
     
-    return conv1d_encoder_specs, encoded_signal_shape, conv1d_decoder_specs
     
     
 def _build_encoder_layer_specs(SETTINGS, input_length):
