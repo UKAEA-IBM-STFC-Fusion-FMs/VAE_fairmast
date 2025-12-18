@@ -1,5 +1,16 @@
 """
-Methods to retrieve the latent space representation of data x.
+This script introduces the class LATENTSPACE() to retrieve the
+latent space representation of data x. 
+
+The data x is a stack of PyTorch tensors, or it can be a single PyTorch tensor
+with the appropriate shape.
+
+1- Class LATENTSPACE(): Initialized with parameter model and called by passing dataset x.
+2- Function create_conv1d_vae_model() creates an instance of the model to pass to LATENTSPACE(). 
+The architecture of this model must match the architecture of the pre-trained one loaded 
+by using load_conv1d_vae_model()
+3 Function load_conv1d_vae_model() loads the state dictionary of the pre-trained model into
+the model instance created by create_conv1d_vae_model().
 
 """
 
@@ -34,6 +45,34 @@ from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
 from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from scripts.pipelines.utils.utils import get_train_test_val_shots
 from scripts.pipelines.utils.utils import ComposeTransforms
+
+
+class LATENTSPACE():
+    
+    def __init__(self, model):
+        self.model = model
+        
+    def __call__(self, x, select_output: str):
+        """Apply model to a stack of PyTorch tensors x and return the latent space representation 
+        of such data.
+
+        Parameters
+        ----------
+        x : PyTorch tensors stack
+        select_output: 
+            if "z" returns mu (latent space representation of x)
+            if "x_rec" returns x_recon (the reconstructed x obtained from its latent space representation)
+
+        """
+        try:
+            x_recon, mu, logvar = self.model(x)
+            
+            if select_output == "z":
+                return mu
+            if select_output == "x_rec":
+                return x_recon
+        except Exception as e:
+            raise RuntimeError(f"Error in loading configuration: {e}")
 
 
 def create_conv1d_vae_model(
@@ -163,31 +202,6 @@ def load_conv1d_vae_model(device, dataset:Dataset, model_path:str, SETTINGS):
     return model
             
                
-class LATENTSPACE():
-    
-    def __init__(self, model):
-        self.model = model
-        
-    def __call__(self, x, select_output: str):
-        """Apply model to a stack of PyTorch tensors x and return the latent space representation mu
-
-        Parameters
-        ----------
-        x : PyTorch tensors stack
-        select_output: 
-            if "z" returns mu
-            if "x_rec" returns x_recon
-
-        """
-        try:
-            x_recon, mu, logvar = self.model(x)
-            
-            if select_output == "z":
-                return mu
-            if select_output == "x_rec":
-                return x_recon
-        except Exception as e:
-            raise RuntimeError(f"Error in loading configuration: {e}")
 
 
 
@@ -248,30 +262,15 @@ def create_dataset(SETTINGS):
     )
     return dataset
         
-
-def main(model_path:str, settings_path:str, SETTINGS):
-    
-    dataset = create_dataset(SETTINGS)
-    
-     # Determine device to train on
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print(f"--------------- RUNNING ON GPUs ---------------")
-    else:
-        device = torch.device("cpu")
-        print(f"--------------- RUNNING ON CPUs ---------------")
         
-    model = load_conv1d_vae_model(device, dataset, model_path, SETTINGS)
-    
-    return LATENTSPACE(model), dataset
-    
 def get_data_at(index:int, dataset: Dataset, SETTINGS):
     conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
     data = dataset[index]
     return conv1d_vae_collate_fn(data)
       
+      
 if __name__ =="__main__":
-    # Determine device to train on
+    # Determine available device
     if torch.cuda.is_available():
         device = torch.device("cuda")
         print(f"--------------- RUNNING ON GPUs ---------------")
