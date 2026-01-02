@@ -1,0 +1,3 @@
+[submodule "fairmast_tools"]
+	path = fairmast_tools
+	url = git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/fairmast_tools.git
