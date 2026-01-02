@@ -1,161 +1,93 @@
-# FAIR-MAST Data Preprocessing
-
-Data preprocessing of the FAIR-MAST data for foundation modelling.
-
-Initialised as part of HNCDI project Fusion Plasma Modelling HT07632.
-
-For usage on [CSD3](https://docs.hpc.cam.ac.uk/hpc/index.html).
-
-## Initial setup
-
-1. Connect to CSD3 following the instructions in the [user guide](https://docs.hpc.cam.ac.uk/hpc/user-guide/quickstart.html).
-2. Install Miniforge by following the instructions [here](https://github.com/conda-forge/miniforge). In brief:  
-   1. Find the latest [release](https://github.com/conda-forge/miniforge/releases/).
-   2. Download the installer. For example:
-      ```bash
-      cd ~
-      wget https://github.com/conda-forge/miniforge/releases/download/24.11.3-2/Miniforge3-24.11.3-2-Linux-x86_64.sh
-      ```
-   3. Run the installer. For example:
-      ```bash
-      chmod +x Miniforge3-24.11.3-2-Linux-x86_64.sh
-      ./Miniforge3-24.11.3-2-Linux-x86_64.sh
-      ```
-   4. Source the base environment:
-      ```bash
-      source ~/miniforge3/bin/activate
-      ```
-3. Set up the project virtual environment:
-   1. Move to the directory containing this repository. For example:
-      ```bash
-      cd ~/hncdi-fusion-plasma/fairmast-data-preprocessing
-      ```
-   2. Use conda to set up the virtual environment and install the dependencies:
-      ```bash
-      conda env create -f environment.yml
-      ```
-4. Activate the project conda environment:
-   ```bash
-   conda activate fairmast-data-preprocessing
-   ```
-
-## CSD3 instructions
-
-Running computational workloads on CSD3 (including Jupyter Notebooks) should be done using the worker nodes.
-
-Start interactive job with 32 CPUs per task, 1 Node for 1 hour:
-
-```bash
-sintr -A ukaea-ap002-cpu -p ukaea-icl -N1 --ntasks=1 --cpus-per-task=32 -t 1:00:00
-```
-
-Start interactive job with 4 GPUs, 1 Node, 1 task (n) for 2 hours:
-```bash
-sintr --gres=gpu:4 -A ukaea-ap002-gpu -p ukaea-amp -N1 -n1 -t 2:0:0
-```
-
-Check accounts and partitions that I am allowed to use, (example for my acount ir-lore2):
-```bash
-sacctmgr show associations user=$USER format=Cluster,User,Account,Partition
+# VAE Fairmast
 
 
- Cluster       User    Account  Partition 
----------- ---------- ---------- ---------- 
-      csd3   ir-lore2 ukaea-ap0+    desktop 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-icl+ 
-      csd3   ir-lore2 ukaea-ap0+  ukaea-icl 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-spr+ 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-spr+ 
-      csd3   ir-lore2 ukaea-ap0+  ukaea-spr 
-      csd3   ir-lore2 ukaea-ap0+    desktop 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-icl+ 
-      csd3   ir-lore2 ukaea-ap0+  ukaea-icl 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-spr+ 
-      csd3   ir-lore2 ukaea-ap0+ ukaea-spr+ 
-      csd3   ir-lore2 ukaea-ap0+  ukaea-spr 
-      csd3   ir-lore2 ukaea-ap0+  ukaea-amp 
-```
 
-Show partitions, example for ukaea-icl:
-```bash
-scontrol show partition ukaea-amp
-```
+## Getting started
+
+To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+
+Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+
+## Add your files
+
+- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
+- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
 
 ```
-AllowGroups=ALL AllowAccounts=ALL AllowQos=sys0,sys1,support-gpu,covid0,intr,ukaea-gpu1,gpu0,gpul,gpu1,gpu2,gpu3,dirac-gpu1,dirac-gpu3
-AllocNodes=ALL Default=NO QoS=N/A
-DefaultTime=00:10:00 DisableRootJobs=NO ExclusiveUser=NO GraceTime=0 Hidden=NO
-MaxNodes=UNLIMITED MaxTime=7-00:00:00 MinNodes=0 LLN=NO MaxCPUsPerNode=UNLIMITED MaxCPUsPerSocket=UNLIMITED
-Nodes=gpu-q-[48-60,64,73-80]
-PriorityJobFactor=1 PriorityTier=1 RootOnly=NO ReqResv=NO OverSubscribe=NO
-OverTimeLimit=NONE PreemptMode=OFF
-State=UP TotalCPUs=2816 TotalNodes=22 SelectTypeParameters=NONE
-JobDefaults=(null)
-DefMemPerCPU=8000 MaxMemPerCPU=8000
-TRES=cpu=2816,mem=22000G,node=22,billing=2816,gres/gpu=88
-ResumeTimeout=GLOBAL SuspendTimeout=GLOBAL SuspendTime=1800 PowerDownOnIdle=NO
+cd existing_repo
+git remote add origin https://gitlab.stfc.ac.uk/hncdi-fusion-plasma-modelling/VAE_fairmast.git
+git branch -M main
+git push -uf origin main
 ```
 
-Show nodes list of a specific partition, for instance 
-```
-sinfo -p ukaea-amp -N
-```
+## Integrate with your tools
 
-```
-NODELIST   NODES PARTITION STATE 
-gpu-q-48       1 ukaea-amp idle~ 
-gpu-q-49       1 ukaea-amp alloc 
-gpu-q-50       1 ukaea-amp alloc 
-gpu-q-51       1 ukaea-amp alloc 
-gpu-q-52       1 ukaea-amp alloc 
-gpu-q-53       1 ukaea-amp alloc 
-gpu-q-54       1 ukaea-amp alloc 
-gpu-q-55       1 ukaea-amp alloc 
-gpu-q-56       1 ukaea-amp alloc 
-gpu-q-57       1 ukaea-amp alloc 
-gpu-q-58       1 ukaea-amp alloc 
-gpu-q-59       1 ukaea-amp idle~ 
-gpu-q-60       1 ukaea-amp idle~ 
-gpu-q-64       1 ukaea-amp idle~ 
-gpu-q-73       1 ukaea-amp alloc 
-gpu-q-74       1 ukaea-amp alloc 
-gpu-q-75       1 ukaea-amp alloc 
-gpu-q-76       1 ukaea-amp alloc 
-gpu-q-77       1 ukaea-amp alloc 
-gpu-q-78       1 ukaea-amp alloc 
-gpu-q-79       1 ukaea-amp alloc 
-gpu-q-80       1 ukaea-amp alloc 
-```
-    
+- [ ] [Set up project integrations](https://gitlab.stfc.ac.uk/hncdi-fusion-plasma-modelling/VAE_fairmast/-/settings/integrations)
 
-To run a Jupyter notebook on a worker node using VSCode:
+## Collaborate with your team
 
-1. On the local machine, add an entry to `~/.ssh/config`:
-   ```
-   Host csd3
-     User <user-name>
-     HostName login-cpu.hpc.cam.ac.uk
-     IdentityFile </path/to/id_rsa>
-   ```
-2. In VSCode, install the "Remote Development" extension pack (if not already installed).
-3. In VSCode, run the command "Remote-SSH: Connect to Host" and select "csd3" from the dropdown menu. VSCode will now connect to a VSCode server running on a CSD3 login node.
-4. In the VSCode terminal, start an interactive session using the command above. Note down the node address, which appears as part of the terminal prompt prefix with the format `[<user-name>@<node-address>]` and will be something like `cpu-q-123`.
-5. In the interactive session, start a Jupyter notebook server:
-   ```bash
-   jupyter notebook --no-browser --ip=* --port=8081
-   ```
-   Wait for the server to start then copy the address, which should have the format:
-   ```
-   http://localhost:8081/tree?token=<token>
-   ```
-6. In another VSCode terminal (i.e., not the interactive one), tunnel to the worker node and forward the Jupyter server port:
-   ```bash
-   ssh -L 8081:localhost:8081 <user-name>@<node-address>
-   ```
-7. In VSCode, open up a `.ipynb` file and connect to the server running on the worker node:
-   1. Run the command `Notebook: Select Notebook Kernel`.
-   2. Click "Select Another Kernel".
-   3. Select "Existing Jupyter Server".
-   4. Paste in the server address noted down before and hit enter. Hit enter on the subsequent input boxes to accept the default values, or modify them if needed.
+- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
+- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
+- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
+- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
+- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
 
-Any cells executed in the notebook will now execute on the kernel running on the reserved cores of the worker node.
+## Test and Deploy
+
+Use the built-in continuous integration in GitLab.
+
+- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
+- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
+- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
+- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
+- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+
+***
+
+# Editing this README
+
+When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+
+## Suggestions for a good README
+
+Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+
+## Name
+Choose a self-explaining name for your project.
+
+## Description
+Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+
+## Badges
+On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+
+## Visuals
+Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+
+## Installation
+Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+## Usage
+Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+
+## Support
+Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+
+## Roadmap
+If you have ideas for releases in the future, it is a good idea to list them in the README.
+
+## Contributing
+State if you are open to contributions and what your requirements are for accepting them.
+
+For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+
+You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+
+## Authors and acknowledgment
+Show your appreciation to those who have contributed to the project.
+
+## License
+For open source projects, say how it is licensed.
+
+## Project status
+If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
