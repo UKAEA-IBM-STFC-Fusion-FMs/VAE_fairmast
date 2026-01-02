@@ -1,9 +1,0 @@
-magnetics/flux_loop_flux 15
-magnetics/b_field_pol_probe_ccbv_field 40
-magnetics/b_field_pol_probe_obr_field 18
-magnetics/b_field_pol_probe_obv_field 18
-magnetics/b_field_tor_probe_saddle_voltage 12
-pf_active/coil_current 10
-pf_active/coil_voltage 4
-equilibrium/x_point_r 2
-equilibrium/x_point_z 2
