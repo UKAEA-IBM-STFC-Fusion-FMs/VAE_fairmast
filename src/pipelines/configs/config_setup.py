@@ -213,6 +213,6 @@ class Conv1D:
 if __name__ == "__main__":
     import json
 
-    config_file_path_ = "scripts/pipelines/configs/config_beta_vae.json"
+    config_file_path_ = "src/pipelines/configs/config_beta_vae.json"
     settings = get_settings(config_file_path_)
 

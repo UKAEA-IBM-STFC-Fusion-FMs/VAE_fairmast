@@ -21,28 +21,29 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scripts.MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from scripts.pipelines.utils.utils import (
+from fairmast_tools.MAST_tools.MAST_dataset import MastDataset, CachedDataset
+
+from src.pipelines.utils.utils import (
     read_data_split_csv, ComposeTransforms
 )
 
-from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
+from src.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
     StdScalingTransform
 )
 
-from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
+from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
 
-from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
-from scripts.pipelines.configs.config_setup import get_settings
-from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE
-from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
-from scripts.pipelines.models.conv1d_vae_model import loss_function
-from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate
-from scripts.pipelines.utils.utils import get_train_test_val_shots
+from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
+from src.pipelines.configs.config_setup import get_settings
+from src.pipelines.models.conv1d_vae_model import Conv1dVAE
+from src.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
+from src.pipelines.models.conv1d_vae_model import loss_function
+from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
+from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
+from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+from src.pipelines.utils.utils import get_train_test_val_shots
 
 
 def initialize_datasets(
@@ -388,7 +389,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "scripts/pipelines/configs/config_flux_loop_flux_new.json",
+        default = "src/pipelines/configs/config_flux_loop_flux.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -521,7 +522,7 @@ def main():
             )
   
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "scripts/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
+    # model_path = "src/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
     # conv1d_vae_model.load_state_dict(checkpoint['model_state_dict'])
     # conv1d_vae_model.to('cuda')

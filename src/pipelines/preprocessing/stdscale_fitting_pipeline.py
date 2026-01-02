@@ -21,12 +21,12 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 # print(f"REPO_ROOT: {REPO_ROOT}")
 
-from scripts.MAST_tools.MAST_dataset import MastDataset
-from scripts.pipelines.utils.utils import read_data_split_csv
+from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
+from src.pipelines.utils.utils import read_data_split_csv
 
-from scripts.pipelines.utils.utils import ComposeTransforms
+from src.pipelines.utils.utils import ComposeTransforms
 
-from scripts.pipelines.transforms.signal_level_transforms.reshape_lcfs_transform import (
+from src.pipelines.transforms.signal_level_transforms.reshape_lcfs_transform import (
     ReshapeLcfsTransform
 )
 

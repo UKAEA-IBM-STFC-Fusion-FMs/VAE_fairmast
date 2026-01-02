@@ -34,17 +34,17 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from scripts.MAST_tools.MAST_dataset import MastDataset
-from scripts.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import StdScalingTransform
-from scripts.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
-from scripts.pipelines.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
-from scripts.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from scripts.pipelines.configs.config_setup import get_settings
-from scripts.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
-from scripts.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
-from scripts.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
-from scripts.pipelines.utils.utils import get_train_test_val_shots
-from scripts.pipelines.utils.utils import ComposeTransforms
+from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
+from src.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import StdScalingTransform
+from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
+from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
+from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
+from src.pipelines.configs.config_setup import get_settings
+from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
+from src.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
+from src.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
+from src.pipelines.utils.utils import get_train_test_val_shots
+from src.pipelines.utils.utils import ComposeTransforms
 
 
 class LATENTSPACE():
@@ -279,8 +279,8 @@ if __name__ =="__main__":
         print(f"--------------- RUNNING ON CPUs ---------------")
         
     # Create SETTINGS
-    model_path = "scripts/pipelines/data/output/conv1d_vae_config_flux_loop_flux/best_conv1d_vae_flux_loop_flux.pt"
-    settings_path = "scripts/pipelines/data/output/conv1d_vae_config_flux_loop_flux/config_flux_loop_flux.json"
+    model_path = "src/pipelines/data/output/conv1d_vae_config_flux_loop_flux/best_conv1d_vae_flux_loop_flux.pt"
+    settings_path = "src/pipelines/data/output/conv1d_vae_config_flux_loop_flux/config_flux_loop_flux.json"
     
     SETTINGS = get_settings(settings_path)
      

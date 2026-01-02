@@ -9,9 +9,9 @@ import numpy as np
 import itertools
 from torch.utils.data import DataLoader
 
-from scripts.MAST_tools.MAST_dataset import MastDataset
-from scripts.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
-from scripts.pipelines.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
+from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
+from src.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
+from src.pipelines.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
 
 # Compute project root relative to this file
 REPO_ROOT = os.path.abspath(os.path.join(
@@ -150,7 +150,7 @@ def get_train_test_val_shots(
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def read_data_split_csv(csv_path="metadata/2025-05-12/data_splits.csv"):
+def read_data_split_csv(csv_path="fairmast_tools/metadata/2025-05-12/data_splits.csv"):
     """Read the csv file containing the lists of shot IDs for
     training, validation and testing.
     """

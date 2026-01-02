@@ -14,8 +14,8 @@ REPO_ROOT = os.path.abspath(
 )
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
-from scripts.pipelines.utils.layer_factory import SequentialBuilder
-from scripts.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedLinearRelu
+from src.pipelines.utils.layer_factory import SequentialBuilder
+from src.pipelines.models.conv1d_encoder_decoder_specs import FullyConnectedLinearRelu
 
 class Conv1dVAE(nn.Module):
     def __init__(self, 
