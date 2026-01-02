@@ -81,7 +81,8 @@ def get_train_test_val_shots(
     max_index_for_val = None,
     max_index_for_test = None,
     shuffle = False,
-    seed = None
+    seed = None,
+    csv_path = "fairmast_tools/metadata/2025-05-12/data_splits.csv"
     ):
     
     """
@@ -114,7 +115,7 @@ def get_train_test_val_shots(
     """
 
     # Read full data splits
-    train_set_full, test_set_full, val_set_full = read_data_split_csv()
+    train_set_full, test_set_full, val_set_full = read_data_split_csv(csv_path)
 
     if shuffle:
         if seed is not None:
@@ -150,7 +151,7 @@ def get_train_test_val_shots(
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-def read_data_split_csv(csv_path="fairmast_tools/metadata/2025-05-12/data_splits.csv"):
+def read_data_split_csv(csv_path):
     """Read the csv file containing the lists of shot IDs for
     training, validation and testing.
     """

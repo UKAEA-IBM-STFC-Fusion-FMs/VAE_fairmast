@@ -52,7 +52,8 @@ def initialize_datasets(
         signal_transform_map, 
         shot_transforms, 
         local_flag=False,
-        cache_data=True
+        cache_data=True,
+        other_mast_settings={}
     ):
     
     datasets_ = {"train": None, "val": None}
@@ -66,6 +67,7 @@ def initialize_datasets(
                 source_signal_list=sources_and_signals,
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
+                other_mast_settings=other_mast_settings
             )
             
     if cache_data:
@@ -436,7 +438,8 @@ def main():
     train_shots, _, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
-        max_index_for_test = None
+        max_index_for_test = None,
+        csv_path = "fairmast_tools/metadata/2025-05-12/data_splits.csv"
     )
     
     #Get mean and std for signal transformation
@@ -477,6 +480,7 @@ def main():
         )
 
     # Prepare datasets
+    breakpoint()
     datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
