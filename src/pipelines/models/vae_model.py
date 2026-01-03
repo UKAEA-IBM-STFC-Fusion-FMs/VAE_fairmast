@@ -29,14 +29,8 @@ class Conv1dVAE(nn.Module):
         super().__init__()
 
         try:
-            # Extract specs
-            first_layer = conv1d_encoder_layer_specs["layers"][0]
-            if first_layer["type"] != "conv1d":
-                raise ValueError("First encoder layer must be conv1d")
-            
             self.latent_dim = vae_specs["latent_dim"]
             self.input_length = vae_specs["input_length"]
-
         except (KeyError, IndexError) as e:
             raise ValueError(f"Missing required specification: {e}")
         

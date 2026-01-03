@@ -38,7 +38,6 @@ from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform i
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
 from src.pipelines.models.conv1d_vae_model import Conv1dVAE
-from src.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
 from src.pipelines.models.conv1d_vae_model import loss_function, create_conv1d_vae_model
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
