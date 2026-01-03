@@ -1,9 +1,11 @@
 {
   "input": {
     "data_names": [
-      ["magnetics","flux_loop_flux"]
+      ["pulse_schedule","i_plasma"]
     ],
-    "target_names": [["magnetics","flux_loop_flux"]]
+    "target_names": [
+      ["pulse_schedule","i_plasma"]
+    ]
   },
   "time_settings":{
     "time_window_sec": 0.005,
@@ -13,44 +15,37 @@
     "dt_sec": 0.0, 
     "stride_sec": 0.0035,
     "stride_unitary": true,
-    "targeted_time_stamps_per_window": 25
+    "targeted_time_stamps_per_window": 20
   },
   "training": {
-    "num_epochs": 45,
+    "num_epochs": 40,
     "min_nr_epochs": 35,
     "patience":5,
     "min_increment": 0.0005,
     "weight_decay": 1e-4,
     "lr": 1e-4,
-    "num_train_samples":200,
-    "num_val_samples": 100,
-    "dataloader_batch_size": 25,
-    "train_batch_size":50,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 100,
+    "train_batch_size":200,
     "min_batch_size": 4,
-    "num_workers": 0
+    "num_workers": 1
   },
   "beta-vae":{
-    "latent_dim":12,
+    "latent_dim":4,
     "beta":0.001,
     "ref_freq": 0.001,
     "existing_fitted_params": true
   },
   "conv1d":{
-    "kernel":[5,3,4],
-    "stride":[2,2,1],
+    "kernel":[2,5,4],
+    "stride":[2,1,1],
     "padding":[0,0,0]
   },
   "encoder_specs":{
-    "conv1d_in_channels":15,
-    "conv1d_out_channels": [64,128,256],
-    "activation_fn": "relu",
-    "add_dense_layer": true
-  },
-  "scheduler":{
-    "mode":"min", 
-    "factor":0.1,
-    "threshold":0.5e-4,
-    "threshold_mode":"rel"
+    "conv1d_in_channels":1,
+    "conv1d_out_channels": [12,24,48],
+    "activation_fn": "relu"
   },
   "paths": {
     "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",

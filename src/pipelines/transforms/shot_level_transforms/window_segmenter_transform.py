@@ -167,6 +167,7 @@ class WindowSegmenterTransform:
                 if self.verbose:
                     print(f"Δt for {key}: {dt:.6f} s")
         if not delta_ts:
+            breakpoint()
             raise ValueError("No valid Δt found in any available signals.")
 
         min_dt = float(np.min(delta_ts))
