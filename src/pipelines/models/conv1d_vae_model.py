@@ -106,3 +106,81 @@ def loss_function(beta, reconstruction, target, mu, logvar):
     
     return total_loss, reconstruction_loss, kl_loss
 
+
+def create_conv1d_vae_model(
+    SETTINGS,
+    dataset, 
+    conv1d_vae_collate_fn,
+    verbose = False
+    ):
+    """
+    Create a 1D convolutional Variational Autoencoder (Conv1dVAE)
+    based on the provided dataset sample and configuration settings.
+
+    This function builds a one-sample DataLoader (batch_size=1) to probe the
+    dataset's tensor shape (channels and temporal length). It then uses those
+    dimensions together with the `SETTINGS` configuration to construct encoder
+    and decoder specifications via `build_conv1d_encoder_decoder`, and finally
+    instantiates a `Conv1dVAE` model.
+
+    Parameters
+    ----------
+    SETTINGS : object
+        A configuration object providing the required fields 
+            - SETTINGS.BETA_VAE.beta : float
+                The β coefficient for the β-VAE KL divergence term.
+            - SETTINGS.BETA_VAE.latent_dim : int
+                Dimensionality of the latent space.
+    dataset : torch.utils.data.Dataset
+        A PyTorch MAST dataset 
+    conv1d_vae_collate_fn : Callable
+        A collate function compatible with the given `dataset` that produces a
+        batch where 
+    verbose : bool, optional
+
+    Returns
+    -------
+    Conv1dVAE or None
+    """
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=1, 
+        shuffle=False, 
+        collate_fn=conv1d_vae_collate_fn)
+
+    # Get one sample from the batch to determine signal shape 
+    sample_batch = next(iter(dataloader))
+    
+    for group_idx, signal_data in sample_batch.items():
+
+        input_length = signal_data.shape[-1]  # Last dimension is time
+        input_channels = signal_data.shape[-2] # Nr. of channels
+                
+        vae_specs = {
+            "beta": SETTINGS.BETA_VAE.beta, 
+            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
+            "input_length": input_length
+        }
+
+        # Encoder layer specs
+        try:
+            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
+                SETTINGS, 
+                input_channels, 
+                input_length
+            )
+        except RuntimeError as e:
+            print(f"Building encoder error: {e}")
+            return None
+        
+        model = Conv1dVAE(
+            conv1d_encoder_layer_specs, 
+            encoded_signal_shape,
+            conv1d_decoder_layer_specs, 
+            vae_specs
+            )
+        
+        break
+    
+    return model

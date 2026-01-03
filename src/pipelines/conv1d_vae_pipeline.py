@@ -39,7 +39,7 @@ from src.pipelines.transforms.signal_level_transforms.imputer_transform import I
 from src.pipelines.configs.config_setup import get_settings
 from src.pipelines.models.conv1d_vae_model import Conv1dVAE
 from src.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
-from src.pipelines.models.conv1d_vae_model import loss_function
+from src.pipelines.models.conv1d_vae_model import loss_function, create_conv1d_vae_model
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate
@@ -102,85 +102,6 @@ def initialize_dataloaders(
             )
 
     return dataloaders_
-
-
-def create_conv1d_vae_model(
-    SETTINGS,
-    dataset, 
-    conv1d_vae_collate_fn,
-    verbose = False
-    ):
-    """
-    Create a 1D convolutional Variational Autoencoder (Conv1dVAE)
-    based on the provided dataset sample and configuration settings.
-
-    This function builds a one-sample DataLoader (batch_size=1) to probe the
-    dataset's tensor shape (channels and temporal length). It then uses those
-    dimensions together with the `SETTINGS` configuration to construct encoder
-    and decoder specifications via `build_conv1d_encoder_decoder`, and finally
-    instantiates a `Conv1dVAE` model.
-
-    Parameters
-    ----------
-    SETTINGS : object
-        A configuration object providing the required fields 
-            - SETTINGS.BETA_VAE.beta : float
-                The β coefficient for the β-VAE KL divergence term.
-            - SETTINGS.BETA_VAE.latent_dim : int
-                Dimensionality of the latent space.
-    dataset : torch.utils.data.Dataset
-        A PyTorch MAST dataset 
-    conv1d_vae_collate_fn : Callable
-        A collate function compatible with the given `dataset` that produces a
-        batch where 
-    verbose : bool, optional
-
-    Returns
-    -------
-    Conv1dVAE or None
-    """
-
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=1, 
-        shuffle=False, 
-        collate_fn=conv1d_vae_collate_fn)
-
-    # Get one sample from the batch to determine signal shape 
-    sample_batch = next(iter(dataloader))
-    
-    for group_idx, signal_data in sample_batch.items():
-
-        input_length = signal_data.shape[-1]  # Last dimension is time
-        input_channels = signal_data.shape[-2] # Nr. of channels
-                
-        vae_specs = {
-            "beta": SETTINGS.BETA_VAE.beta, 
-            "latent_dim": SETTINGS.BETA_VAE.latent_dim, 
-            "input_length": input_length
-        }
-
-        # Encoder layer specs
-        try:
-            conv1d_encoder_layer_specs, encoded_signal_shape, conv1d_decoder_layer_specs = build_conv1d_encoder_decoder(
-                SETTINGS, 
-                input_channels, 
-                input_length
-            )
-        except RuntimeError as e:
-            print(f"Building encoder error: {e}")
-            return None
-        
-        model = Conv1dVAE(
-            conv1d_encoder_layer_specs, 
-            encoded_signal_shape,
-            conv1d_decoder_layer_specs, 
-            vae_specs
-            )
-        
-        break
-    
-    return model
 
 
 def train_conv1d_vae_model(
@@ -480,7 +401,6 @@ def main():
         )
 
     # Prepare datasets
-    breakpoint()
     datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
@@ -568,7 +488,6 @@ def main():
         print(f"ELapsed time {time.time() - start}")
         
         print("\n\n----------TRAINING-VALIDATION COMPLETE----------")
-        print(f"Trained conv1d_vae models for {len(best_model_states)} signals")
         print(f"Models saved in: {output_directory}")
     else:
         print("NO TRAINING: models dictionary is empty.")

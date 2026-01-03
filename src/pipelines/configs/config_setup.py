@@ -47,7 +47,7 @@ class BetaVae:
         beta_vae_specs = config.get("beta-vae", {})
 
         # Assign None if missing, and log warnings
-        self.latent_dim = self._get_key(beta_vae_specs, "latent_dim")
+        self.latent_dim = int(self._get_key(beta_vae_specs, "latent_dim"))
         self.beta = self._get_key(beta_vae_specs, "beta")
         self.ref_freq = self._get_key(beta_vae_specs, "ref_freq")
         self.existing_fitted_params = self._get_key(beta_vae_specs, "existing_fitted_params")
