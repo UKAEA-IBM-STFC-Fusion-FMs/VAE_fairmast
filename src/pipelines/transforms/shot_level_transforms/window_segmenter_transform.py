@@ -140,6 +140,7 @@ class WindowSegmenterTransform:
             if isinstance(entry, dict):
                 t = entry.get("time", None)
                 if t is not None and np.isnan(t).any():
+                    return None
                     raise ValueError(f"[ERROR] Signal '{var}' contains NaN values in its 'time' array.")
 
         # --- helpers over the available signals ---
@@ -167,7 +168,7 @@ class WindowSegmenterTransform:
                 if self.verbose:
                     print(f"Δt for {key}: {dt:.6f} s")
         if not delta_ts:
-            breakpoint()
+            return None
             raise ValueError("No valid Δt found in any available signals.")
 
         min_dt = float(np.min(delta_ts))
@@ -187,8 +188,10 @@ class WindowSegmenterTransform:
         # Special case when both windows are zero-length
         if x_win_sec == 0 and y_win_sec == 0:
             if max_dt_x is None or max_dt_y is None:
+                return None
                 raise ValueError("x_window_sec=y_window_sec=0 requires at least one present signal in each group.")
             if not np.isclose(max_dt_x, max_dt_y, rtol=1e-3):
+                return None
                 raise ValueError(
                     "When both x_window_sec and y_window_sec are 0, x_keys and y_keys must have the same sampling rate.\n"
                     f"→ max Δt_x = {max_dt_x:.6f} s\n"
@@ -198,6 +201,7 @@ class WindowSegmenterTransform:
         # Zero-length x or y: promote to one-sample window using group Δt
         if x_win_sec == 0:
             if max_dt_x is None:
+                return None
                 raise ValueError("x_window_sec=0 but no available x signal to infer Δt.")
             if self.verbose:
                 print("[INFO] x_window_sec=0 → using one-sample window with max Δt_x")
@@ -205,6 +209,7 @@ class WindowSegmenterTransform:
 
         if y_win_sec == 0:
             if max_dt_y is None:
+                return None
                 raise ValueError("y_window_sec=0 but no available y signal to infer Δt.")
             if self.verbose:
                 print("[INFO] y_window_sec=0 → using one-sample window with max Δt_y")
@@ -213,6 +218,7 @@ class WindowSegmenterTransform:
         # Stride
         stride = max_dt if self.stride_unitary else self.stride_sec
         if stride is None:
+            return None
             raise ValueError("stride_sec must be set unless stride_unitary=True")
         if stride < max_dt:
             if self.verbose:
@@ -236,6 +242,7 @@ class WindowSegmenterTransform:
                     ref_time = np.asarray(t)
                     break
         if ref_time is None:
+            return None
             raise ValueError("No available x signal with time array to drive window stepping.")
 
         start_time = float(ref_time[0])
