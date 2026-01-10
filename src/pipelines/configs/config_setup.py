@@ -30,15 +30,19 @@ class Settings:
         # Direct initialisation (safe because each class handles missing keys internally)
         if "beta-vae" in config.keys():
             self.BETA_VAE = BetaVae(config)
-        if  "conv1d" in config.keys():
-            self.CONV1D = Conv1D(config)
-            self.CONV1dENCODER = Conv1dEncoderSettings(config)
-            
+        if  "conv1d_encoder" in config.keys():
+            self.CONV1dENCODER = Conv1dEncoder(config)
+        
+        self.DATA = DataInput(config)
+        self.ENCODER_SPECS = EncoderSpecs(config)
+        self.LOCAL_PATHS = LocalPaths(config)
+        self.SCHEDULER = Scheduler(config)
         self.TIME_SEGMENTATION = TimeSettings(config)
         self.TRAINING = TrainingSettings(config)
-        self.LOCAL_PATHS = LocalPaths(config)
-        self.DATA = DataInput(config)
-        self.SCHEDULER = Scheduler(config)
+     
+
+        
+        
 
 
 # ======================================================================================================================
@@ -61,22 +65,40 @@ class BetaVae:
             return None
 
 
-
 # ======================================================================================================================
-class Conv1dEncoderSettings:
+class EncoderSpecs:
     def __init__(self, config):
         encoder_specs = config.get("encoder_specs", {})
+        
+        self.encoder_type = self._get_key(encoder_specs, "type")
+        self.activation_fn = self._get_key(encoder_specs, "activation_fn")
+        self.add_dense_layer = self._get_key(encoder_specs,"add_dense_layer")
+
+        def _get_key(self, section, key):
+            if key in section:
+                return section[key]
+            else:
+                print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
+                return None
+            
+# ======================================================================================================================
+class Conv1dEncoder:
+    def __init__(self, config):
+        conv1d_encoder = config.get("conv1d_encoder", {})
 
         # Assign None if missing, and log warnings
-        self.conv1d_in_channels = self._get_key(encoder_specs, "conv1d_in_channels")
-        self.conv1d_out_channels = self._get_key(encoder_specs, "conv1d_out_channels")
-        self.activation_fn = self._get_key(encoder_specs, "activation_fn")
+        self.conv1d_in_channels = self._get_key(conv1d_encoder, "conv1d_in_channels")
+        self.conv1d_out_channels = self._get_key(conv1d_encoder, "conv1d_out_channels")
+        self.activation_fn = self._get_key(conv1d_encoder, "activation_fn")
+        self.kernel = self._get_key(conv1d_encoder, "kernel")
+        self.stride = self._get_key(conv1d_encoder, "stride")
+        self.padding = self._get_key(conv1d_encoder, "padding")
 
     def _get_key(self, section, key):
         if key in section:
             return section[key]
         else:
-            print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
+            print(f"[Warning] Missing key '{key}' in conv1d_encoder. Setting to None.")
             return None
 
 
@@ -191,23 +213,6 @@ class DataInput:
         else:
             print(f"[Warning] Missing key '{key}' in input configuration. Setting to None.")
             return None
-
-# ======================================================================================================================
-class Conv1D:
-    def __init__(self, config):
-        conv_specs = config.get("conv1d", {})
-
-        self.kernel = self._get_key(conv_specs, "kernel")
-        self.stride = self._get_key(conv_specs, "stride")
-        self.padding = self._get_key(conv_specs, "padding")
-
-    def _get_key(self, section, key):
-        if key in section:
-            return section[key]
-        else:
-            print(f"[Warning] Missing key '{key}' in conv1d configuration. Setting to None.")
-            return None
-
     
 # ======================================================================================================================
 if __name__ == "__main__":
