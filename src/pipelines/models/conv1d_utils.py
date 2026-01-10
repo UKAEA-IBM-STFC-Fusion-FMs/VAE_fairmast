@@ -4,17 +4,19 @@ import torch.nn as nn
 
 
 def build_conv1d_encoder_decoder(SETTINGS):
-    """Build encoder and decoder specs for the conv1d model.
+    """Build encoder and decoder for the conv1d_vae model.
  
     Parameters
     ----------
     SETTINGS : Settings
-        settings from config.json.
+        Settings from the config.json.
     Returns
     -------
     dictionaries
-        encoder specs as dictionary, 
-        decoder specs as dictionary.
+        conv1d_encoder: encoder specs as dictionary, 
+        conv1d_decoder: decoder specs as dictionary.
+        intermediate_layer_size :int, length of intermediate layer between conv1d encoder and vae
+        conv1d_out_dim: int, size of the signal (nr features x time length) after the conv1d encoder
     OR 
     None if any error is encountered
         
@@ -54,39 +56,66 @@ def build_conv1d_encoder_decoder(SETTINGS):
         print(f"Missing keys in conv1d settings. Required keys {required_keys}")
         return None
     
-    # Create layer specs from SETTINGS. Retrieve nr. of channels and sig. length after each conv1d layer.
-    encoder_layer_specs, all_nr_channels, all_lengths = _conv1d_encoder_specs(SETTINGS)
+    # Create layer specs from SETTINGS. Retrieve nr. of channels and sig. length after each conv1d layers.
+    encoder_specs, all_nr_channels, all_lengths = _conv1d_encoder_specs(SETTINGS)
     
-    # Find shape after conv-encoding
-    conv_out_dim = all_nr_channels[-1] * all_lengths[-1]
+    # Find shape after conv1d-encoding
+    conv1d_out_dim = all_nr_channels[-1] * all_lengths[-1]
     
-    # Add Fully Connected Layer to encoder
+    # Add Fully Connected Layer to encoder specs
+    intermediate_layer_size = int( (conv1d_out_dim + SETTINGS.BETA_VAE.latent_dim)/2)
     FCL = {
         "type":"linear",
             "params": {
-                "in_features": conv_out_dim,
-                "out_features": int( (conv_out_dim + SETTINGS.BETA_VAE.latent_dim)/2)
+                "in_features": conv1d_out_dim,
+                "out_features": intermediate_layer_size 
             }
         }
-    
-    conv1d_specs = encoder_layer_specs # make copy before adding new layers
-    encoder_layer_specs = add_layer(encoder_layer_specs, FCL)
-    encoder_layer_specs = add_layer(encoder_layer_specs, {"type": "relu"})
+
+    conv1d_encoder_specs = encoder_specs # make copy before adding new layers
+    encoder_specs = add_layer(encoder_specs, FCL)
+    encoder_specs = add_layer(encoder_specs, {"type": SETTINGS.ENCODER_SPECS.activation_fn})
     
     # Build encoder from layers specs
-    if encoder_layer_specs is not None:
-        conv1d_encoder = SequentialBuilder(encoder_layer_specs)
+    if encoder_specs is not None:
+        conv1d_encoder = SequentialBuilder(encoder_specs)
     
-    # Build decoder specs 
+    # Build decoder specs from conv1d_encoder_specs (NB: do not use encoder_specs)
     conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(
         SETTINGS, 
-        conv1d_specs, 
+        conv1d_encoder_specs, 
         all_nr_channels,
         all_lengths,
         remove_last_activation = True)
     
+    # Add fully connected layers
     
-    return conv1d_encoder, conv1d_decoder
+    FCL2 = {
+        "type":"linear",
+            "params": {
+                "in_features": SETTINGS.BETA_VAE.latent_dim,
+                "out_features": intermediate_layer_size 
+            }
+        }
+    
+    FCL3 = {
+        "type":"linear",
+            "params": {
+                "in_features": intermediate_layer_size,
+                "out_features":  conv1d_out_dim
+            }
+        }
+    
+    
+    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,FCL2 )
+    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,{"type":SETTINGS.ENCODER_SPECS.activation_fn})
+    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,FCL3 )
+    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,{"type":SETTINGS.ENCODER_SPECS.activation_fn})
+    
+    if conv1d_decoder_specs is not None:
+        conv1d_decoder = SequentialBuilder(conv1d_decoder_specs)
+        
+    return conv1d_encoder, conv1d_decoder, intermediate_layer_size, conv1d_out_dim
 
 
 def _conv1d_out_len(L_in, k, s=1, p=0, d=1):
@@ -129,8 +158,8 @@ def _build_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_specs, enc_c
 
     Parameters
     ----------
-    SETTINGS: structure
-        configuration settings
+    SETTINGS: Settings
+        Settings from the config.json.
     encoder_layer_specs : list[dict]
         dictionary specifying encoder layers specs.
     enc_c : list[int]
