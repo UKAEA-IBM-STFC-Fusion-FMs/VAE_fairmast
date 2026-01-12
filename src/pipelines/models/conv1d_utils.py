@@ -428,6 +428,7 @@ def main():
             return 
     
     return build_conv1d_encoder_decoder(SETTINGS)  
+
 if __name__ == "__main__":
     conv1d_encoder, conv1d_decoder, intermediate_layer_size, conv1d_out_dim =  main()
     print(f"conv1d_encoder \n {conv1d_encoder}")
