@@ -25,61 +25,8 @@ class Encoder():
      
         """
 
-        encoder = None
         if SETTINGS.ENCODER_SPECS.encoder_type == "conv1d":
-            
-            # Check if conv1d and beta_vae are available in SETTINGS
-            if not hasattr(SETTINGS, "CONV1dENCODER"):
-                print("Settings for conv1d NOT found: missing 'conv1d_encoder' section in config")
-                return None
-            if not  hasattr(SETTINGS,"BETA_VAE"):
-                print("Settings for conv1d NOT found: missing 'beta_vae' section in config")
-                return None
-
-            # Check all attributes exist
-            encoder_attributes = SETTINGS.CONV1dENCODER
-            
-            required_attrs = [
-                    "conv1d_in_channels",
-                    "conv1d_out_channels",
-                    "kernel",
-                    "stride",
-                    "padding"
-                    ]
-            
-            missing = [a for a in required_attrs
-                        if not hasattr(encoder_attributes, a) or getattr(encoder_attributes, a) is None]
-
-            if missing:
-                print(f"Missing keys in conv1d settings. Required keys {required_keys}")
-                return None
-            
-            if not getattr(SETTINGS.BETA_VAE, "latent_dim", None):
-                print("Attribute latent_dim missing from SETTINGS.BETA_VAE")
-                return None
-            
-            
-            # Create layer specs from SETTINGS
-            layer_specs, signal_shape = conv1d_encoder_specs(SETTINGS)
-            
-            # Find shape after conv-encoding
-            conv_out_dim = signal_shape[0]*signal_shape[1]
-            
-            # Add Fully Connected Layer to encoder
-            FCL = {
-                "type":"linear",
-                 "params": {
-                        "in_features": conv_out_dim,
-                        "out_features": int( (conv_out_dim + SETTINGS.BETA_VAE.latent_dim)/2)
-                    }
-                }
-            
-            layer_specs = add_layer(layer_specs, FCL)
-            layer_specs = add_layer(layer_specs, {"type": "relu"})
-            
-            # Build encoder from layers specs
-            if layer_specs is not None:
-                encoder = SequentialBuilder(layer_specs)
+           encoder, decoder, intermediate_layer_size, conv1d_out_dim =  build_conv1d_encoder_decoder(SETTINGS)
             
 def conv1d_encoder_specs(SETTINGS):
     

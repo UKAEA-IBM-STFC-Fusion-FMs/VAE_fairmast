@@ -41,9 +41,35 @@ class Settings:
         self.TRAINING = TrainingSettings(config)
      
 
-        
-        
+   
+    def get_from(self, field:str, attr:str):
+        """Return attribute `attr` from `field` if it exists; otherwise None.
 
+        Parameters
+        ----------
+        field : str
+            Name of a Settings attribute (e.g., 'ENCODER_SPECS') 
+        attr : str
+            The name of the attribute to fetch from `field`.
+
+        Returns
+        -------
+        Any or None
+            The value of `field.attr`, or None if missing. Prints a helpful message on failure.
+        """
+        # Resolve field if a string is passed
+        
+        if not hasattr(self, field):
+            print(f"Settings missing field '{field}'.")
+            return None
+        target = getattr(self, field)
+
+        # Fetch attribute
+        if not hasattr(target, attr):
+            print(f"Missing attribute '{attr}' in Settings field '{field}'.")
+            return None
+
+        return getattr(target, attr)
 
 # ======================================================================================================================
 class BetaVae:
@@ -74,12 +100,12 @@ class EncoderSpecs:
         self.activation_fn = self._get_key(encoder_specs, "activation_fn")
         self.add_dense_layer = self._get_key(encoder_specs,"add_dense_layer")
 
-        def _get_key(self, section, key):
-            if key in section:
-                return section[key]
-            else:
-                print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
-                return None
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
+            return None
             
 # ======================================================================================================================
 class Conv1dEncoder:
@@ -89,7 +115,6 @@ class Conv1dEncoder:
         # Assign None if missing, and log warnings
         self.conv1d_in_channels = self._get_key(conv1d_encoder, "conv1d_in_channels")
         self.conv1d_out_channels = self._get_key(conv1d_encoder, "conv1d_out_channels")
-        self.activation_fn = self._get_key(conv1d_encoder, "activation_fn")
         self.kernel = self._get_key(conv1d_encoder, "kernel")
         self.stride = self._get_key(conv1d_encoder, "stride")
         self.padding = self._get_key(conv1d_encoder, "padding")

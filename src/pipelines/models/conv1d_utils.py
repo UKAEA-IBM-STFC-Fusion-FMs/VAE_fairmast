@@ -1,7 +1,22 @@
+import copy
+import os
 import math
+import sys
 import torch
 import torch.nn as nn
 
+REPO_ROOT = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__) if "__file__" in globals() else os.getcwd(),
+        "..",
+        "..",
+        ".."
+    )
+)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+    
+from src.pipelines.utils.layer_factory import SequentialBuilder
 
 def build_conv1d_encoder_decoder(SETTINGS):
     """Build encoder and decoder for the conv1d_vae model.
@@ -13,32 +28,37 @@ def build_conv1d_encoder_decoder(SETTINGS):
     Returns
     -------
     dictionaries
-        conv1d_encoder: encoder specs as dictionary, 
-        conv1d_decoder: decoder specs as dictionary.
-        intermediate_layer_size :int, length of intermediate layer between conv1d encoder and vae
-        conv1d_out_dim: int, size of the signal (nr features x time length) after the conv1d encoder
-    OR 
-    None if any error is encountered
-        
+        conv1d_encoder : SequentialBuilder or None
+        conv1d_decoder : SequentialBuilder or None
+        intermediate_layer_size :int, 
+        conv1d_out_dim: int, 
+        OR None if any error is encountered.     
     """
+    # Initialize
     conv1d_encoder = None
-    conv1d_decoder None 
+    conv1d_decoder = None 
+    intermediate_layer_size = None 
+    conv1d_out_dim = None
         
     # Check if conv1d and beta_vae are available in SETTINGS
     if not hasattr(SETTINGS, "CONV1dENCODER"):
-        print("Settings for conv1d NOT found: missing 'conv1d_encoder' section in config")
+        print("Settings for conv1d NOT found: missing 'CONV1dENCODER'check 'conv1d_encoder' section in config")
         return None
     
     if not  hasattr(SETTINGS,"BETA_VAE"):
-        print("Settings for conv1d NOT found: missing 'beta_vae' section in config")
+        print("Settings for conv1d NOT found: missing 'BETA_VAE, check 'beta-vae' section in config")
         return None
 
-    if not getattr(SETTINGS.BETA_VAE, "latent_dim", None):
+    if getattr(SETTINGS.BETA_VAE, "latent_dim", None) is None:
         print("Attribute latent_dim missing from SETTINGS.BETA_VAE")
         return None
     
     
-    # Check all attributes exist
+    if not hasattr(SETTINGS, "ENCODER_SPECS") or not hasattr(SETTINGS.ENCODER_SPECS, "activation_fn"):
+        print("Missing 'ENCODER_SPECS.activation_fn' in SETTINGS.")
+        return None
+
+    # Check all required attributes exist
     encoder_attributes = SETTINGS.CONV1dENCODER
     
     required_attrs = [
@@ -53,12 +73,17 @@ def build_conv1d_encoder_decoder(SETTINGS):
                 if not hasattr(encoder_attributes, a) or getattr(encoder_attributes, a) is None]
 
     if missing:
-        print(f"Missing keys in conv1d settings. Required keys {required_keys}")
+        print(f"Missing keys in conv1d settings. Required keys {required_attrs}")
         return None
     
     # Create layer specs from SETTINGS. Retrieve nr. of channels and sig. length after each conv1d layers.
     encoder_specs, all_nr_channels, all_lengths = _conv1d_encoder_specs(SETTINGS)
     
+    # Validate shapes returned
+    if not all_nr_channels or not all_lengths:
+        print("Encoder spec function returned empty channel/length lists.")
+        return None
+
     # Find shape after conv1d-encoding
     conv1d_out_dim = all_nr_channels[-1] * all_lengths[-1]
     
@@ -72,9 +97,9 @@ def build_conv1d_encoder_decoder(SETTINGS):
             }
         }
 
-    conv1d_encoder_specs = encoder_specs # make copy before adding new layers
-    encoder_specs = add_layer(encoder_specs, FCL)
-    encoder_specs = add_layer(encoder_specs, {"type": SETTINGS.ENCODER_SPECS.activation_fn})
+    conv1d_encoder_specs = copy.deepcopy(encoder_specs)  # independent clone # make copy before adding new layers
+    encoder_specs = add(encoder_specs, FCL)
+    encoder_specs = add(encoder_specs, {"type": SETTINGS.ENCODER_SPECS.activation_fn})
     
     # Build encoder from layers specs
     if encoder_specs is not None:
@@ -93,24 +118,23 @@ def build_conv1d_encoder_decoder(SETTINGS):
     FCL2 = {
         "type":"linear",
             "params": {
-                "in_features": SETTINGS.BETA_VAE.latent_dim,
-                "out_features": intermediate_layer_size 
+                "in_features": intermediate_layer_size,
+                "out_features":  conv1d_out_dim
             }
         }
     
     FCL3 = {
         "type":"linear",
             "params": {
-                "in_features": intermediate_layer_size,
-                "out_features":  conv1d_out_dim
+                "in_features": SETTINGS.BETA_VAE.latent_dim,
+                "out_features": intermediate_layer_size    
             }
         }
     
-    
-    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,FCL2 )
-    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,{"type":SETTINGS.ENCODER_SPECS.activation_fn})
-    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,FCL3 )
-    conv1d_decoder_specs = add_layer(conv1d_decoder_specs,{"type":SETTINGS.ENCODER_SPECS.activation_fn})
+    conv1d_decoder_specs = add({"type":SETTINGS.ENCODER_SPECS.activation_fn},conv1d_decoder_specs)
+    conv1d_decoder_specs = add(FCL2, conv1d_decoder_specs)
+    conv1d_decoder_specs = add({"type":SETTINGS.ENCODER_SPECS.activation_fn},conv1d_decoder_specs)
+    conv1d_decoder_specs = add(FCL3, conv1d_decoder_specs)
     
     if conv1d_decoder_specs is not None:
         conv1d_decoder = SequentialBuilder(conv1d_decoder_specs)
@@ -143,7 +167,7 @@ def _compute_conv_output_dim(in_channels, input_length, layer_specs):
             lengths.append(current_length)
             channels.append(current_channels)
 
-    return lengths, channels
+    return channels, lengths
 
 def _convt1d_needed_output_padding(L_in, L_out_target, k, s=1, p=0, d=1):
     # L_out_target = desired output of convtranspose
@@ -152,7 +176,7 @@ def _convt1d_needed_output_padding(L_in, L_out_target, k, s=1, p=0, d=1):
     op = L_out_target - base
     return op
 
-def _build_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_specs, enc_c, enc_len):
+def _build_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_specs, enc_c, enc_len,remove_last_activation):
     """Define decoder specs from the encoder specs. The decoder is a series of ConvTranspose1d
     with parametrization chosen to mirror the parameters in the encoder.
 
@@ -211,11 +235,11 @@ def _build_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_specs, enc_c
             }
             decoder_layer_specs["layers"].append(spec)
             # Add ReLU spec after each ConvTranspose1d
-            decoder_layer_specs["layers"].append({"type":  SETTINGS.CONV1dENCODER.activation_fn})
+            decoder_layer_specs["layers"].append({"type":  SETTINGS.ENCODER_SPECS.activation_fn})
             i -= 1
             
     # For standardized targets, remove last relu 
-    if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] ==  SETTINGS.CONV1dENCODER.activation_fn:
+    if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] ==  SETTINGS.ENCODER_SPECS.activation_fn:
         decoder_layer_specs["layers"].pop()   
             
     return decoder_layer_specs
@@ -246,10 +270,9 @@ def _conv1d_encoder_specs(SETTINGS):
         return None
     
     in_channels = SETTINGS.CONV1dENCODER.conv1d_in_channels
-    
         
-    if not (len( SETTINGS.CONV1dENCODER.conv1d_out_channels) == len(SETTINGS.CONV1D.kernel) \
-        == len(SETTINGS.CONV1D.stride) == len(SETTINGS.CONV1D.padding)):
+    if not (len( SETTINGS.CONV1dENCODER.conv1d_out_channels) == len(SETTINGS.CONV1dENCODER.kernel) \
+        == len(SETTINGS.CONV1dENCODER.stride) == len(SETTINGS.CONV1dENCODER.padding)):
         print(
             f"Mismatch in layer specs: "
             f"out_channels={len(out_channels_list)}, "
@@ -262,9 +285,9 @@ def _conv1d_encoder_specs(SETTINGS):
     layers = []
     for out_channels, kernel, stride, padding in zip(
         SETTINGS.CONV1dENCODER.conv1d_out_channels,
-        SETTINGS.CONV1D.kernel,
-        SETTINGS.CONV1D.stride,
-        SETTINGS.CONV1D.padding
+        SETTINGS.CONV1dENCODER.kernel,
+        SETTINGS.CONV1dENCODER.stride,
+        SETTINGS.CONV1dENCODER.padding
     ):
         layers.append({
             "type": "conv1d",
@@ -276,13 +299,13 @@ def _conv1d_encoder_specs(SETTINGS):
                 "padding": padding
             },
         })
-        layers.append({"type":   SETTINGS.CONV1dENCODER.activation_fn})
+        layers.append({"type":   SETTINGS.ENCODER_SPECS.activation_fn})
         in_channels = out_channels
     
     # Check signal shape after stack of conv layers
-    all_nr_channels, all_lengths = _compute_conv_output_dim(in_channels, input_length, {"layers": layers})
+    all_nr_channels, all_lengths = _compute_conv_output_dim(SETTINGS.CONV1dENCODER.conv1d_in_channels, input_length, {"layers": layers})
     
-    if  length <=1:
+    if  all_lengths[-1] <=1:
         print("Signal after stack of conv1d has length <=1")
         return None
     
@@ -291,13 +314,16 @@ def _conv1d_encoder_specs(SETTINGS):
     
     return conv1d_layer_specs, all_nr_channels, all_lengths
 
-def add_layer(layer_specs, new_layer):
-    """Add a new layer to the structure of layers sepcs.
+def add(l1, l2):
+    
+    """ Add l2 to l1 (or l1 to l2 when l2 is a container of layers).
 
     Parameters
     ----------
-    layer_specs : structure
-        example:
+    l1, l2 : dict
+    
+    Either
+        
         {
             "layers": [
                 {
@@ -312,8 +338,9 @@ def add_layer(layer_specs, new_layer):
                 }
             ]
         }
-    new_layer : structure
-        example:
+ 
+    OR 
+        
         {
             "type": "linear",
             "params": {
@@ -321,20 +348,26 @@ def add_layer(layer_specs, new_layer):
                 "out_features": out_features
             }
         },
-    """
     
-    # Validate input
-    if "layers" not in layer_specs or not isinstance(layer_specs["layers"], list):
-        print("layer_specs must contain a 'layers' key with a list of layers.")
-        return None
+    Returns
+        -------
+        dict
+            The updated structure after adding.
+    """
 
-    if not isinstance(new_layer, dict) or "type" not in new_layer:
-        print("new_layer must be a dict with at least a 'type' key.")
-        return None
+    
+    if "layers" in l1 and isinstance(l1["layers"], list):
+        if isinstance(l2, dict) and "type" in l2 and "layers" not in l2:
+            
+            l1["layers"].append(l2)
+            return l1
 
-    # Append the new layer
-    layer_specs["layers"].append(new_layer)
-    return layer_specs
+    if "layers" in l2 and isinstance(l2["layers"], list):
+        if isinstance(l1, dict) and "type" in l1 and "layers" not in l1:
+            
+            l2["layers"].insert(0, l1)
+            return l2
+
 
 def FullyConnectedLinearRelu(in_features, out_features):
     layer_specs = {
@@ -352,3 +385,50 @@ def FullyConnectedLinearRelu(in_features, out_features):
             ]
         }
     return layer_specs
+
+    
+def main():
+    import argparse
+    import os
+    import sys
+    
+    REPO_ROOT = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__) if "__file__" in globals() else os.getcwd(),
+            "..",
+            "..",
+            ".."
+        )
+    )
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+        
+    from src.pipelines.configs.config_setup import get_settings
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config_file_path",
+        default = "src/pipelines/configs/config_flux_loop_flux.json",
+        type=str,
+        help="Path to configuration file for the pipeline.")
+    
+    args = parser.parse_args()
+    
+    config_file_path = args.config_file_path
+    config_file_name = os.path.basename(config_file_path)
+    
+    # Load configuration from JSON file
+    if not os.path.exists(config_file_path):
+        raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
+    else:
+        try:
+            SETTINGS = get_settings(config_file_path) 
+        except Exception as e:
+            print(f"Error in loading configuration {e}")
+            return 
+    
+    return build_conv1d_encoder_decoder(SETTINGS)  
+if __name__ == "__main__":
+    conv1d_encoder, conv1d_decoder, intermediate_layer_size, conv1d_out_dim =  main()
+    print(f"conv1d_encoder \n {conv1d_encoder}")
+    print(f"conv1d_decoder \n {conv1d_decoder}")
