@@ -37,8 +37,8 @@ from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform i
 
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
-from src.pipelines.models.conv1d_vae_model import Conv1dVAE
-from src.pipelines.models.conv1d_vae_model import loss_function, create_conv1d_vae_model
+from src.pipelines.models.vae_model import Conv1dVAE
+from src.pipelines.models.vae_model import loss_function
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate
@@ -421,12 +421,8 @@ def main():
     val_dataloader = dataloaders_train_val["val"]
 
     # Create conv1d-VAE model
-    conv1d_vae_model = create_conv1d_vae_model(
-        SETTINGS,
-        datasets_train_val['val'],
-        conv1d_vae_collate_fn,
-        verbose = False
-    )
+    conv1d_vae_model = Conv1dVAE(SETTINGS)
+    
     if conv1d_vae_model is None:
         print("Model error. It was not possible to create your model")
         return

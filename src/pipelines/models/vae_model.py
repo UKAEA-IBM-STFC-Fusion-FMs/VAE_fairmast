@@ -15,7 +15,6 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
-from src.pipelines.utils.layer_factory import SequentialBuilder
 from src.pipelines.models.encoder_decoder import EncoderDecoder
 
 class Conv1dVAE(nn.Module):
@@ -112,12 +111,15 @@ if __name__ == "__main__":
         print("Conv1d conv1d_in_channels unresolved")
     else:
         in_channels = SETTINGS.CONV1dENCODER.conv1d_in_channels
-    
-    breakpoint()
+ 
     if in_channels is not None and input_length is not None:
         x = torch.randn(in_channels, input_length)
         x = x.unsqueeze(0)
-        x_recon = model(x)
+        x_recon, mu, logvar = model(x)
+        
+        rms = torch.sqrt(torch.mean((x - x_recon) ** 2))
+        print(rms)
+
     
     
     

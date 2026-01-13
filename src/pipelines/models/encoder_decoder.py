@@ -1,6 +1,5 @@
 
-from conv1d_utils import build_conv1d_encoder_decoder
-
+from .conv1d_utils import build_conv1d_encoder_decoder
 
 
 class EncoderDecoder():
