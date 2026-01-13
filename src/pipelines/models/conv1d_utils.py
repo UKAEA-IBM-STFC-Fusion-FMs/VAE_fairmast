@@ -98,13 +98,14 @@ def build_conv1d_encoder_decoder(SETTINGS):
         }
 
     conv1d_encoder_specs = copy.deepcopy(encoder_specs)  # independent clone # make copy before adding new layers
+    encoder_specs = add(encoder_specs, {"type": "flatten", "params":{"start_dim":1}})
     encoder_specs = add(encoder_specs, FCL)
     encoder_specs = add(encoder_specs, {"type": SETTINGS.ENCODER_SPECS.activation_fn})
     
     # Build encoder from layers specs
     if encoder_specs is not None:
         conv1d_encoder = SequentialBuilder(encoder_specs)
-    
+
     # Build decoder specs from conv1d_encoder_specs (NB: do not use encoder_specs)
     conv1d_decoder_specs = _build_decoder_specs_from_encoder_specs(
         SETTINGS, 
@@ -130,7 +131,16 @@ def build_conv1d_encoder_decoder(SETTINGS):
                 "out_features": intermediate_layer_size    
             }
         }
-    
+    conv1d_decoder_specs = add(
+        {
+            "type": "unflatten",
+            "params": {
+                "dim":1, 
+                "unflattened_size":(all_nr_channels[-1], all_lengths[-1])
+                }
+        },
+        conv1d_decoder_specs
+        )
     conv1d_decoder_specs = add({"type":SETTINGS.ENCODER_SPECS.activation_fn},conv1d_decoder_specs)
     conv1d_decoder_specs = add(FCL2, conv1d_decoder_specs)
     conv1d_decoder_specs = add({"type":SETTINGS.ENCODER_SPECS.activation_fn},conv1d_decoder_specs)
@@ -138,7 +148,7 @@ def build_conv1d_encoder_decoder(SETTINGS):
     
     if conv1d_decoder_specs is not None:
         conv1d_decoder = SequentialBuilder(conv1d_decoder_specs)
-        
+
     return conv1d_encoder, conv1d_decoder, intermediate_layer_size, conv1d_out_dim
 
 

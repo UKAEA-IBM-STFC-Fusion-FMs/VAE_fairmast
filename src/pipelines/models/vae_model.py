@@ -73,18 +73,6 @@ def loss_function(beta, reconstruction, target, mu, logvar):
 
 if __name__ == "__main__":
     import argparse
-    
-    REPO_ROOT = os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__) if "__file__" in globals() else os.getcwd(),
-            "..",
-            "..",
-            ".."
-        )
-    )
-    if REPO_ROOT not in sys.path:
-        sys.path.insert(0, REPO_ROOT)
-        
     from src.pipelines.configs.config_setup import get_settings
     
     
@@ -109,9 +97,29 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error in loading configuration {e}")
          
-    
-    breakpoint()
     model = Conv1dVAE(SETTINGS)
     print(model)
+    
+    # Create a synthetic signal with correct shape
+    input_length = None
+    in_channels = None
+    if not getattr(SETTINGS.TIME_SEGMENTATION, "targeted_time_stamps_per_window", None):
+        print("Conv1d (time) input_length unresolved")
+    else:
+        input_length = SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window
+    
+    if not getattr(SETTINGS.CONV1dENCODER, "conv1d_in_channels", None):
+        print("Conv1d conv1d_in_channels unresolved")
+    else:
+        in_channels = SETTINGS.CONV1dENCODER.conv1d_in_channels
+    
+    breakpoint()
+    if in_channels is not None and input_length is not None:
+        x = torch.randn(in_channels, input_length)
+        x = x.unsqueeze(0)
+        x_recon = model(x)
+    
+    
+    
         
        
