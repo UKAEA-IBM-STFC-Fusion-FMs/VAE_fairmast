@@ -47,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=1,
-    num_cols=1,
+    num_rows=5,
+    num_cols=2,
     x_max = None,
     x_min = None):
     
@@ -542,7 +542,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_pulse_schedule_i_plasma"
+    conf_file_name = "config_coil_current"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     

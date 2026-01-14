@@ -96,7 +96,7 @@ class EncoderSpecs:
     def __init__(self, config):
         encoder_specs = config.get("encoder_specs", {})
         
-        self.encoder_type = self._get_key(encoder_specs, "type")
+        self.encoder_type = self._get_key(encoder_specs, "encoder_type")
         self.activation_fn = self._get_key(encoder_specs, "activation_fn")
         self.add_dense_layer = self._get_key(encoder_specs,"add_dense_layer")
 

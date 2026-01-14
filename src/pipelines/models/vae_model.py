@@ -25,6 +25,7 @@ class Conv1dVAE(nn.Module):
         super().__init__()
         
         # =============== Encoder-Decoder =====================
+        breakpoint()
         encoder_decoder = EncoderDecoder(SETTINGS)
         
         self.encoder = encoder_decoder.encoder
