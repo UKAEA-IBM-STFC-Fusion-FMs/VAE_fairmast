@@ -22,12 +22,12 @@
     "min_increment": 0.0005,
     "weight_decay": 1e-4,
     "lr": 1e-4,
-    "num_train_samples":200,
-    "num_val_samples": 100,
-    "dataloader_batch_size": 25,
-    "train_batch_size":50,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 100,
+    "train_batch_size":200,
     "min_batch_size": 4,
-    "num_workers": 4
+    "num_workers": 6
   },
   "beta-vae":{
     "latent_dim":12,
