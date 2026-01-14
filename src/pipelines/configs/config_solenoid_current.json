@@ -23,12 +23,12 @@
     "min_increment": 0.0005,
     "weight_decay": 1e-4,
     "lr": 1e-4,
-    "num_train_samples":9259,
-    "num_val_samples": 1157,
+    "num_train_samples":1000,
+    "num_val_samples": 500,
     "dataloader_batch_size": 100,
     "train_batch_size":200,
     "min_batch_size": 4,
-    "num_workers": 1
+    "num_workers": 2
   },
   "beta-vae":{
     "latent_dim":4,
@@ -37,13 +37,13 @@
     "existing_fitted_params": true
   },
   "conv1d":{
-    "kernel":[2,5,4],
-    "stride":[2,1,1],
+    "kernel":[3,3,3],
+    "stride":[2,2,1],
     "padding":[0,0,0]
   },
   "encoder_specs":{
     "conv1d_in_channels":1,
-    "conv1d_out_channels": [12,24,48],
+    "conv1d_out_channels": [32,64,64],
     "activation_fn": "relu"
   },
   "paths": {
