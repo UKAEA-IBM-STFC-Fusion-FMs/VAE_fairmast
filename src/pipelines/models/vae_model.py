@@ -25,21 +25,19 @@ class Conv1dVAE(nn.Module):
         super().__init__()
         
         # =============== Encoder-Decoder =====================
-        breakpoint()
         encoder_decoder = EncoderDecoder(SETTINGS)
         
         self.encoder = encoder_decoder.encoder
         self.decoder = encoder_decoder.decoder
-        self.intermediate_layer_size = encoder_decoder.intermediate_layer_size 
-        self.conv1d_out_dim = encoder_decoder.conv1d_out_dim
+        self.size_before_vae = encoder_decoder.size_before_vae 
 
         # =============== VAE =====================
-        self.latent_dim = SETTINGS.get_from("BETA_VAE","latent_dim")
+        self.latent_dim = SETTINGS.get("BETA_VAE","latent_dim")
         if self.latent_dim is None:
             raise KeyError("latent dimension not found in the SETTINGS")
         
-        self.fc_mu = nn.Linear(self.intermediate_layer_size, self.latent_dim)
-        self.fc_logvar = nn.Linear(self.intermediate_layer_size, self.latent_dim)
+        self.fc_mu = nn.Linear(self.size_before_vae, self.latent_dim)
+        self.fc_logvar = nn.Linear(self.size_before_vae, self.latent_dim)
 
     def encode(self, x):
         encoded = self.encoder(x)

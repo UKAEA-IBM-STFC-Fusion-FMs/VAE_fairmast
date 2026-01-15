@@ -47,34 +47,48 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=5,
-    num_cols=2,
-    x_max = None,
-    x_min = None):
-    
+    num_rows=1,
+    num_cols=1,
+    x_max=None,
+    x_min=None
+):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
-    axes = axes.flatten()  # Flatten to 1D for easy iteration
 
-    for i in range(num_features):
-        ax = axes[i]
+    # Normalize axes to a flat list
+    if isinstance(axes, plt.Axes):
+        axes_list = [axes]
+    else:
+        axes_list = axes.ravel().tolist()
+
+    max_plots = len(axes_list)
+    plots_to_draw = min(num_features, max_plots)
+
+    # Plot
+    for i in range(plots_to_draw):
+        ax = axes_list[i]
+        data = properties[i]
+
         if x_min is not None and x_max is not None:
-                ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
-                ax.set_xlim(x_min, x_max)
+            ax.hist(data, bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
+            ax.set_xlim(x_min, x_max)
         else:
-            ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7)
+            ax.hist(data, bins=Nbins, color=color, alpha=0.7)
+
         # ax.set_title(f"{title_prefix} {i+1}")
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend([f"Ch. {i+1}: {len(properties[i])} items"])
-    
-    # Hide unused subplots if grid > num_features
-    for j in range(num_features, len(axes)):
-        axes[j].axis('off')
+        ax.legend([f"Ch. {i+1}: {len(data)} items"])
+
+    # Hide unused subplots
+    for j in range(plots_to_draw, max_plots):
+        axes_list[j].axis('off')
 
     plt.tight_layout()
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
+    plt.close(fig)
+
+
  
 def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     """Test pre-trained model 
@@ -542,7 +556,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_current"
+    conf_file_name = "config_solenoid_current"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     

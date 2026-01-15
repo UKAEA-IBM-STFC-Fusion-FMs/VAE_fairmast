@@ -426,6 +426,7 @@ def main():
     if conv1d_vae_model is None:
         print("Model error. It was not possible to create your model")
         return
+    print(f"Model: \n {conv1d_vae_model}")
     
     optimizer = torch.optim.Adam(
                 conv1d_vae_model.parameters(), 

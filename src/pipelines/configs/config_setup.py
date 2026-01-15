@@ -27,22 +27,47 @@ class Settings:
     def __init__(self, config):
         self.config = config
 
-        # Direct initialisation (safe because each class handles missing keys internally)
+        # Check presence of essential attributes in config
         if "beta-vae" in config.keys():
             self.BETA_VAE = BetaVae(config)
-        if  "conv1d_encoder" in config.keys():
+        else:
+            raise KeyError("'beta-vae' not found in config")
+        
+        if "encoder" in config.keys():
+            self.ENCODER = Encoder(config)
+        else:
+            raise KeyError("'encoder' not found in config")
+        
+        if "input" in config.keys():
+            self.DATA = DataInput(config)
+        else:
+            raise KeyError("'input' not found in config")
+        
+        if "paths" in config.keys():
+            self.LOCAL_PATHS = LocalPaths(config)
+        else:
+            raise KeyError("'paths' not found in config")
+        
+        if "time_settings" in config.keys():
+            self.TIME_SEGMENTATION = TimeSettings(config)
+        else:
+            raise KeyError("'time_settings' not found in config")
+        
+        if "training" in config.keys():
+            self.TRAINING = TrainingSettings(config)
+        else:
+            raise KeyError("'training' not found in config")
+            
+        # Non essential attributes
+        if "conv1d_encoder" in config.keys():
             self.CONV1dENCODER = Conv1dEncoder(config)
         
-        self.DATA = DataInput(config)
-        self.ENCODER_SPECS = EncoderSpecs(config)
-        self.LOCAL_PATHS = LocalPaths(config)
-        self.SCHEDULER = Scheduler(config)
-        self.TIME_SEGMENTATION = TimeSettings(config)
-        self.TRAINING = TrainingSettings(config)
-     
+        if "scheduler" in config.keys():
+            self.SCHEDULER = Scheduler(config)
+       
 
-   
-    def get_from(self, field:str, attr:str):
+     
+    def get(self, field:str, attr:str):
         """Return attribute `attr` from `field` if it exists; otherwise None.
 
         Parameters
@@ -80,7 +105,6 @@ class BetaVae:
         self.latent_dim = int(self._get_key(beta_vae_specs, "latent_dim"))
         self.beta = self._get_key(beta_vae_specs, "beta")
         self.ref_freq = self._get_key(beta_vae_specs, "ref_freq")
-        self.existing_fitted_params = self._get_key(beta_vae_specs, "existing_fitted_params")
         self.hidden_dim = self._get_key(beta_vae_specs, "hidden_dim")
 
     def _get_key(self, section, key):
@@ -92,66 +116,27 @@ class BetaVae:
 
 
 # ======================================================================================================================
-class EncoderSpecs:
+class Encoder:
     def __init__(self, config):
-        encoder_specs = config.get("encoder_specs", {})
+        encoder = config.get("encoder", {})
+        self.layers = self._get_key(encoder,"layers")
+        self.type = self._get_key(encoder,"type")
+        self.activation_fn = self._get_key(encoder,"activation_fn")
         
-        self.encoder_type = self._get_key(encoder_specs, "encoder_type")
-        self.activation_fn = self._get_key(encoder_specs, "activation_fn")
-        self.add_dense_layer = self._get_key(encoder_specs,"add_dense_layer")
-
     def _get_key(self, section, key):
         if key in section:
             return section[key]
         else:
-            print(f"[Warning] Missing key '{key}' in encoder_specs. Setting to None.")
+            print(f"[Warning] Missing key '{key}' in encoder. Setting to None.")
             return None
-            
-# ======================================================================================================================
-class Conv1dEncoder:
-    def __init__(self, config):
-        conv1d_encoder = config.get("conv1d_encoder", {})
-
-        # Assign None if missing, and log warnings
-        self.conv1d_in_channels = self._get_key(conv1d_encoder, "conv1d_in_channels")
-        self.conv1d_out_channels = self._get_key(conv1d_encoder, "conv1d_out_channels")
-        self.kernel = self._get_key(conv1d_encoder, "kernel")
-        self.stride = self._get_key(conv1d_encoder, "stride")
-        self.padding = self._get_key(conv1d_encoder, "padding")
-
-    def _get_key(self, section, key):
-        if key in section:
-            return section[key]
-        else:
-            print(f"[Warning] Missing key '{key}' in conv1d_encoder. Setting to None.")
-            return None
-
-
-# ======================================================================================================================
-class Scheduler:
-    def __init__(self, config):
-        scheduler = config.get("scheduler", {})
-    
-        self.mode = self._get_key(scheduler, 'mode') 
-        self.factor = self._get_key(scheduler, 'factor')
-        self.threshold = self._get_key(scheduler, 'threshold')
-        self.threshold_mode =  self._get_key(scheduler, 'threshold_mode')
-    
-    def _get_key(self, section, key):
-        if key in section:
-            return section[key]
-        else:
-            print(f"[Warning] Missing key '{key}' in scheduler. Setting to None.")
-            return None      
+           
 # ======================================================================================================================
 class TimeSettings:
     def __init__(self, config):
         time_specs = config.get("time_settings", {})
 
         # Assign None if missing, and log warnings
-        self.time_window_sec = self._get_key(time_specs, "time_window_sec")
         self.stride_sec = self._get_key(time_specs, "stride_sec")
-        self.offset = self._get_key(time_specs, "offset")
         self.x_window_sec = self._get_key(time_specs, "x_window_sec")
         self.y_window_sec = self._get_key(time_specs, "y_window_sec")
         self.dt_sec = self._get_key(time_specs, "dt_sec")
@@ -165,8 +150,6 @@ class TimeSettings:
             print(f"[Warning] Missing key '{key}' in time_settings. Setting to None.")
             return None
 
-
-
 # ======================================================================================================================
 class TrainingSettings:
     def __init__(self, config):
@@ -177,8 +160,6 @@ class TrainingSettings:
         self.num_epochs = self._get_key(training_specs, "num_epochs")
         self.min_nr_epochs = self._get_key(training_specs, "min_nr_epochs")
         self.patience = self._get_key(training_specs, "patience")
-        self.slope_threshold = self._get_key(training_specs, "slope_threshold")
-        self.weight_decay = self._get_key(training_specs, "weight_decay")
         self.min_increment = self._get_key(training_specs, "min_increment")
         self.dataloader_batch_size = self._get_key(training_specs, "dataloader_batch_size")
         self.train_batch_size = self._get_key(training_specs, "train_batch_size")
@@ -238,11 +219,48 @@ class DataInput:
         else:
             print(f"[Warning] Missing key '{key}' in input configuration. Setting to None.")
             return None
+        
+# ======================================================================================================================
+class Conv1dEncoder:
+    def __init__(self, config):
+        conv1d_encoder = config.get("conv1d_encoder", {})
+
+        # Assign None if missing, and log warnings
+        self.conv1d_in_channels = self._get_key(conv1d_encoder, "conv1d_in_channels")
+        self.conv1d_out_channels = self._get_key(conv1d_encoder, "conv1d_out_channels")
+        self.kernel = self._get_key(conv1d_encoder, "kernel")
+        self.stride = self._get_key(conv1d_encoder, "stride")
+        self.padding = self._get_key(conv1d_encoder, "padding")
+
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in conv1d_encoder. Setting to None.")
+            return None
+
+# ======================================================================================================================
+class Scheduler:
+    def __init__(self, config):
+        scheduler = config.get("scheduler", {})
+    
+        self.mode = self._get_key(scheduler, 'mode') 
+        self.factor = self._get_key(scheduler, 'factor')
+        self.threshold = self._get_key(scheduler, 'threshold')
+        self.threshold_mode =  self._get_key(scheduler, 'threshold_mode')
+    
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in scheduler. Setting to None.")
+            return None   
     
 # ======================================================================================================================
+
 if __name__ == "__main__":
     import json
 
-    config_file_path_ = "src/pipelines/configs/config_beta_vae.json"
+    config_file_path_ = "src/pipelines/configs/config_solenoid_current.json"
     settings = get_settings(config_file_path_)
 
