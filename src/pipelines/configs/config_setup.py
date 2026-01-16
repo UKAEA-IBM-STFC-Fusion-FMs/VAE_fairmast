@@ -68,8 +68,6 @@ class Settings:
         if "decoder" in config.keys():
             self.DECODER = Decoder(config)
        
-
-     
     def get(self, field:str, attr:str):
         """Return attribute `attr` from `field` if it exists; otherwise None.
 
@@ -108,7 +106,6 @@ class BetaVae:
         self.latent_dim = int(self._get_key(beta_vae_specs, "latent_dim"))
         self.beta = self._get_key(beta_vae_specs, "beta")
         self.ref_freq = self._get_key(beta_vae_specs, "ref_freq")
-        self.hidden_dim = self._get_key(beta_vae_specs, "hidden_dim")
 
     def _get_key(self, section, key):
         if key in section:

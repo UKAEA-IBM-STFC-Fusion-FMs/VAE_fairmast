@@ -26,7 +26,6 @@ class beta_VAE(nn.Module):
         
         # =============== Encoder-Decoder =====================
         encoder_decoder = EncoderDecoder(SETTINGS)
-        
         self.encoder = encoder_decoder.encoder
         self.decoder = encoder_decoder.decoder
         self.size_before_vae = encoder_decoder.size_before_vae 
