@@ -1,3 +1,25 @@
+"""Utilities to build encoder and decoder architectures for the beta-VAE model.
+
+These methods relies on the configuration parameters written in config json.
+Config json keys and values are store in SETTINGS. 
+If some keys are missing from SETTINGS, these methods do not work, see chek_for_missing_attributes method.
+
+
+- build_conv1d_encoder_decoder
+    This method builds the encoder and decoder by using:
+        - Stack of nn.conv1d for the encoder.
+        - Stack of nn.ConvTranspose1d for the decoder.
+    The encoder specs, i.e., layers and correspondig parameters such as: kernel, stride and padding,
+    are read from config json. The decoder config is either passed via the config file or built automatically
+    to mirror the encoder specs (see _build_convTransp_decoder_specs_from_encoder_specs)
+
+- _build_convTransp_decoder_specs_from_encoder_specs
+    This method builds the decoder specs, i.e., layers and correspondig parameters such as: kernel, stride and padding,
+    by mirroring the setting of the encoder.
+    
+    
+
+"""
 import copy
 import os
 import math
@@ -23,8 +45,8 @@ def build_conv1d_encoder_decoder(SETTINGS):
  
     Parameters
     ----------
-    SETTINGS : Settings
-        Settings from the config.json.
+    SETTINGS : Object
+        Settings obtained from the config.json.
     Returns
     -------
     dictionaries
@@ -64,31 +86,35 @@ def build_conv1d_encoder_decoder(SETTINGS):
     if encoder_specs is not None:
         conv1d_encoder = SequentialBuilder(encoder_specs)
 
-    # Build decoder specs from conv1d_encoder_specs (NB: do not use encoder_specs)
-    conv1d_decoder_specs = _build_convTransp_decoder_specs_from_encoder_specs(
-        SETTINGS, 
-        conv1d_encoder_specs, 
-        all_nr_channels,
-        all_lengths,
-        remove_last_activation = True)
-    
-    conv1d_decoder_specs = add(
-        {
-            "type": "unflatten",
-            "params": {
-                "dim":1, 
-                "unflattened_size":(all_nr_channels[-1], all_lengths[-1])
-                }
-        },
-        conv1d_decoder_specs
-        )
-    
-    # Add fully connected layers
-    L2 = active_linear(in_features = size_before_vae, out_features = conv1d_out_dim, activation_fn = SETTINGS.ENCODER.activation_fn) 
-    L3 = active_linear(in_features = SETTINGS.BETA_VAE.latent_dim, out_features = size_before_vae, activation_fn = SETTINGS.ENCODER.activation_fn) 
+    # Read decoder specs from SETTINGS is decoder key is available
+    if SETTINGS.get("DECODER","layers"):
+        conv1d_decoder_specs = {"layers": SETTINGS.DECODER.layers}
+    else:
+        # Build decoder specs from conv1d_encoder_specs (NB: do not use encoder_specs)
+        conv1d_decoder_specs = _build_convTransp_decoder_specs_from_encoder_specs(
+            SETTINGS, 
+            conv1d_encoder_specs, 
+            all_nr_channels,
+            all_lengths,
+            remove_last_activation = True)
+        
+        conv1d_decoder_specs = add(
+            {
+                "type": "unflatten",
+                "params": {
+                    "dim":1, 
+                    "unflattened_size":(all_nr_channels[-1], all_lengths[-1])
+                    }
+            },
+            conv1d_decoder_specs
+            )
+        
+        # Add fully connected layers
+        L2 = active_linear(in_features = size_before_vae, out_features = conv1d_out_dim, activation_fn = SETTINGS.ENCODER.activation_fn) 
+        L3 = active_linear(in_features = SETTINGS.BETA_VAE.latent_dim, out_features = size_before_vae, activation_fn = SETTINGS.ENCODER.activation_fn) 
 
-    conv1d_decoder_specs = add(L2, conv1d_decoder_specs)
-    conv1d_decoder_specs = add(L3, conv1d_decoder_specs)
+        conv1d_decoder_specs = add(L2, conv1d_decoder_specs)
+        conv1d_decoder_specs = add(L3, conv1d_decoder_specs)
     
     if conv1d_decoder_specs is not None:
         conv1d_decoder = SequentialBuilder(conv1d_decoder_specs)
@@ -101,8 +127,8 @@ def _build_convTransp_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_s
 
     Parameters
     ----------
-    SETTINGS: Settings
-        Settings from the config.json.
+    SETTINGS: object
+        Settings obtained from the config.json.
     encoder_layer_specs : list[dict]
         dictionary specifying encoder layers specs.
     enc_c : list[int]
@@ -164,6 +190,37 @@ def _build_convTransp_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_s
     return decoder_layer_specs
 
 def build_linear_encoder_decoder(SETTINGS):
+    """
+    Build linear encoder/decoder from SETTINGS.
+
+    Creates an encoder from `SETTINGS.ENCODER.layers`. The decoder is built either 
+    via `SETTINGS.DECODER.layers`or by mirroring the encoder's linear layers 
+    (reverse order, swap in/out features).
+    The decoder also has an extra linear layer that joins the latent space representation
+    to the output space from the encoder:
+    active_linear(SETTINGS.BETA_VAE.latent_dim -> out_dim, activation_fn)`.
+
+    Parameters
+    ----------
+    SETTINGS : object
+        Settings obtained from the config.json with:
+        - ENCODER.layers : list[dict] (linear specs with in_features/out_features)
+        - ENCODER.activation_fn : str
+        - DECODER.layers : list[dict], optional
+        - BETA_VAE.latent_dim : int
+
+    Returns
+    -------
+    tuple
+        (linear_encoder, linear_decoder, out_dim)
+        where `out_dim` is the `out_features` of the last encoder linear layer.
+    Notes
+    -----
+    Returns None early if `chek_for_missing_attributes(SETTINGS)` is truthy.
+    Only `"type" == "linear"` layers are mirrored.
+    """
+
+
     # Initialize
     linear_encoder = None
     linear_decoder = None 
@@ -176,30 +233,34 @@ def build_linear_encoder_decoder(SETTINGS):
     encoder_specs = {"layers": SETTINGS.ENCODER.layers}
     linear_encoder = SequentialBuilder(encoder_specs)
 
-    
-    decoder_specs = {"layers": []}
-    for spec in reversed(encoder_specs["layers"]):
-        if spec["type"] == "linear":
-            
-            # Retrieve out_dim of linear layer of the encoder
-            out_features = spec["params"]["out_features"]
-            in_features = spec["params"]["in_features"]
-            
-            if out_dim is None:
-                out_dim = out_features
+    # Read decoder specs from SETTINGS is decoder key is available
+    if SETTINGS.get("DECODER","layers"):
+        decoder_specs = {"layers": SETTINGS.DECODER.layers}
+    else:
+        # Build decoder by mirroring encoder
+        decoder_specs = {"layers": []}
+        for spec in reversed(encoder_specs["layers"]):
+            if spec["type"] == "linear":
+                
+                # Retrieve out_dim of linear layer of the encoder
+                out_features = spec["params"]["out_features"]
+                in_features = spec["params"]["in_features"]
+                
+                if out_dim is None:
+                    out_dim = out_features
 
-            decoder_specs["layers"].append(
-                {"type": "linear",
-                "params":{
-                    "in_features":out_features,
-                    "out_features":in_features
-                        }
-                    }   
-                )
-            decoder_specs["layers"].append({"type":SETTINGS.ENCODER.activation_fn})
-            
-    L1 = active_linear(in_features =  SETTINGS.BETA_VAE.latent_dim, out_features =out_dim, activation_fn = SETTINGS.ENCODER.activation_fn)
-    decoder_specs = add(L1, decoder_specs)
+                decoder_specs["layers"].append(
+                    {"type": "linear",
+                    "params":{
+                        "in_features":out_features,
+                        "out_features":in_features
+                            }
+                        }   
+                    )
+                decoder_specs["layers"].append({"type":SETTINGS.ENCODER.activation_fn})
+                
+        L1 = active_linear(in_features =  SETTINGS.BETA_VAE.latent_dim, out_features =out_dim, activation_fn = SETTINGS.ENCODER.activation_fn)
+        decoder_specs = add(L1, decoder_specs)
 
     if decoder_specs is not None:
         linear_decoder = SequentialBuilder(decoder_specs)  
@@ -210,7 +271,7 @@ def _conv1d_out_len(L_in, k, s=1, p=0, d=1):
     return math.floor((L_in + 2*p - d*(k-1) - 1) / s) + 1
 
 def _compute_conv_output_dim(SETTINGS, layer_specs):
-    """Compute output dimensions after Conv1d layers."""
+    """Compute output dimensions after conv1d layers configured in layer_specs."""
     
     current_channels = layer_specs["layers"][0]["params"]["in_channels"]
     current_length =  SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window
@@ -235,8 +296,28 @@ def _compute_conv_output_dim(SETTINGS, layer_specs):
     return channels, lengths
 
 def _convt1d_needed_output_padding(L_in, L_out_target, k, s=1, p=0, d=1):
-    # L_out_target = desired output of convtranspose
-    # L_in = input length to convtranspose (which equals encoder's L_out at that stage)
+    """_summary_
+
+    Parameters
+    ----------
+    L_in : int
+        input length to convtranspose (which equals encoder's L_out at that stage)
+    L_out_target : int
+        desired output of convtranspose
+    k : int
+        kernel
+    s : int, optional
+        stride, by default 1
+    p : int, optional
+        padding, by default 0
+    d : int, optional
+        dilation, by default 1
+
+    Returns
+    -------
+    int
+        difference between traget and base length
+    """
     base = (L_in - 1) * s - 2*p + d*(k-1) + 1
     op = L_out_target - base
     return op
@@ -318,7 +399,20 @@ def active_linear(in_features, out_features, activation_fn):
     return linear_plus_activation
 
 def chek_for_missing_attributes(SETTINGS):
-    
+    """
+    Validate that all required configuration attributes are present in SETTINGS.
+
+    Checks for mandatory fields used by encoder/decoder construction, including
+    time segmentation parameters, latent dimension, encoder type and activation
+    function, and (if present) Conv1D encoder settings. Prints diagnostic messages
+    for missing attributes.
+
+    Returns
+    -------
+    bool
+        True if any required attribute is missing, otherwise False.
+    """
+
     # Check if "targeted_time_stamps_per_window" exists and is not None in SETTINGS.TIME_SEGMENTATION
     if SETTINGS.get("TIME_SEGMENTATION", "targeted_time_stamps_per_window") is None:
         print("Conv1d (time) input_length unresolved")

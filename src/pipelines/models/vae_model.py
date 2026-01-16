@@ -17,7 +17,7 @@ if REPO_ROOT not in sys.path:
     
 from src.pipelines.models.encoder_decoder import EncoderDecoder
 
-class Conv1dVAE(nn.Module):
+class beta_VAE(nn.Module):
     def __init__(self, 
                  SETTINGS
                  ):
@@ -95,7 +95,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Error in loading configuration {e}")
          
-    model = Conv1dVAE(SETTINGS)
+    model = beta_VAE(SETTINGS)
     print(model)
     
     # Create a synthetic signal with correct shape

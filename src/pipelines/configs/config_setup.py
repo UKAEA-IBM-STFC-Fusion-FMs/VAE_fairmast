@@ -64,6 +64,9 @@ class Settings:
         
         if "scheduler" in config.keys():
             self.SCHEDULER = Scheduler(config)
+            
+        if "decoder" in config.keys():
+            self.DECODER = Decoder(config)
        
 
      
@@ -131,6 +134,21 @@ class Encoder:
             return None
            
 # ======================================================================================================================
+class Decoder:
+    def __init__(self, config):
+        decoder = config.get("decoder", {})
+        self.layers = self._get_key(decoder,"layers")
+        self.type = self._get_key(decoder,"type")
+        self.activation_fn = self._get_key(decoder,"activation_fn")
+        
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in decoder. Setting to None.")
+            return None
+           
+           
 class TimeSettings:
     def __init__(self, config):
         time_specs = config.get("time_settings", {})

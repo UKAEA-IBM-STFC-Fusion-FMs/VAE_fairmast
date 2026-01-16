@@ -23,7 +23,7 @@ from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform i
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
 from src.pipelines.models.vae_model import loss_function
-from src.pipelines.models.vae_model import Conv1dVAE
+from src.pipelines.models.vae_model import beta_VAE
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 from src.pipelines.utils.utils import get_train_test_val_shots
@@ -47,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=1,
-    num_cols=1,
+    num_rows=3,
+    num_cols=5,
     x_max=None,
     x_min=None
 ):
@@ -196,7 +196,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     val_dataloader = dataloaders_train_val_test["val"]
     
     # Create conv1d-VAE models
-    model = Conv1dVAE(SETTINGS)
+    model = beta_VAE(SETTINGS)
 
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -556,7 +556,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_solenoid_current"
+    conf_file_name = "config_flux_loop_flux"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     

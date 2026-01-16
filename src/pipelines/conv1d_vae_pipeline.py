@@ -37,7 +37,7 @@ from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform i
 
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
-from src.pipelines.models.vae_model import Conv1dVAE
+from src.pipelines.models.vae_model import beta_VAE
 from src.pipelines.models.vae_model import loss_function
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
@@ -421,7 +421,7 @@ def main():
     val_dataloader = dataloaders_train_val["val"]
 
     # Create conv1d-VAE model
-    conv1d_vae_model = Conv1dVAE(SETTINGS)
+    conv1d_vae_model = beta_VAE(SETTINGS)
     
     if conv1d_vae_model is None:
         print("Model error. It was not possible to create your model")
