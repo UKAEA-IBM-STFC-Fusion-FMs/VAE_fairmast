@@ -47,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=3,
-    num_cols=5,
+    num_rows=1,
+    num_cols=1,
     x_max=None,
     x_min=None
 ):
@@ -435,17 +435,20 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     max_loss = max(loss)
 
     try:
-        bins = np.arange(min_loss, 0.1 + 1e-4, 1e-4)
+        bins = np.linspace(min_loss, max_loss, 200)
     except Exception as e:
         print(f"Error creating bins: {e}")
         bins = 100  # fallback to default number of bins
 
+    p95_loss = float(np.quantile(loss, 0.95))  # 95th percentile
+    
     fig, ax = plt.subplots()
     ax.hist(loss, bins=bins)
+    ax.axvline(p95_loss, color='red', linestyle='--', linewidth=1.5, label=f'95% threshold: {p95_loss:.4g}')
     ax.set_xlabel('Validation total loss')
     ax.set_yscale('log')
     ax.set_title(signal + "total loss")
-    ax.legend([f'Batches: {len(loss)}'])
+    ax.legend([f'Batches: {len(loss)}', f'95% threshold: {p95_loss:.4g}'])
     plt.show()
     fig.savefig(file_path + f"/{this_signal}_TotalLoss.pdf")
 
@@ -453,13 +456,15 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     fig, ax = plt.subplots()
     min_rmse = min(rmse)
     max_rmse = max(rmse)
-    bins = np.arange(min_loss, max_rmse + 1e-2, 1e-2)
-
+    bins = np.linspace(min_loss, max_rmse, 200)
+    p95_rmse = float(np.quantile(rmse, 0.95))
+    
     fig, ax = plt.subplots()
     ax.hist(rmse, bins=bins)
+    ax.axvline(p95_rmse, color='red', linestyle='--', linewidth=1.5, label=f'95% threshold: {p95_rmse:.4g}')
     ax.set_xlabel('RMSE')
     ax.set_yscale('log')
-    ax.legend([f'Items: {len(rmse)}'])
+    ax.legend([f'Items: {len(rmse)}', f'95% threshold: {p95_rmse:.4g}'])
     ax.set_title(signal + "RMSE")
     fig.savefig(file_path + f"/{this_signal}_RMSE.pdf")
  
@@ -556,7 +561,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_flux_loop_flux"
+    conf_file_name = "config_pulse_schedule_i_plasma"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     
