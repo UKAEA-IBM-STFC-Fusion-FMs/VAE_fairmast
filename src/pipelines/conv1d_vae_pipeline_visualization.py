@@ -41,16 +41,13 @@ else:
 
 def plot_histograms(
     properties,
-    Nbins,
     color,
     x_label,
     y_label,
     title_prefix,
     file_name,
-    num_rows=1,
-    num_cols=1,
-    x_max=None,
-    x_min=None
+    num_rows=2,
+    num_cols=2
 ):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
@@ -69,16 +66,18 @@ def plot_histograms(
         ax = axes_list[i]
         data = properties[i]
 
-        if x_min is not None and x_max is not None:
-            ax.hist(data, bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
-            ax.set_xlim(x_min, x_max)
-        else:
-            ax.hist(data, bins=Nbins, color=color, alpha=0.7)
+        q95 = float(np.quantile(data,0.95))
+        
+        min_data = min(data)
+        max_data = float(np.quantile(data,0.9973))
+        
+        bins = np.linspace(min_data, max_data, 100)
+        ax.hist(data, bins=bins, color=color, alpha=0.7, range=(min_data, max_data))
+        ax.axvline(q95, color='green', linestyle='--', linewidth=1.5, label=f'95% threshold: {q95:.4g}')
 
-        # ax.set_title(f"{title_prefix} {i+1}")
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend([f"Ch. {i+1}: {len(data)} items"])
+        ax.legend([f"Ch. {i+1}: {len(data)} items", f'95% threshold: {q95:.4g}'])
 
     # Hide unused subplots
     for j in range(plots_to_draw, max_plots):
@@ -87,7 +86,6 @@ def plot_histograms(
     plt.tight_layout()
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close(fig)
-
 
  
 def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
@@ -371,7 +369,6 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
 
     plot_histograms(
         correlations_,
-        100,
         'blue',
         x_label="Correlations",
         y_label="frequency",
@@ -380,14 +377,11 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     
     plot_histograms(
         rel_errors,
-        100,
         'red',
         x_label="Relative absolute errors",
         y_label="frequency",
         title_prefix=f'',
-        file_name= f'{output_dir}{this_signal}_rel_errors.pdf',
-        x_max = 1,
-        x_min = 0)
+        file_name= f'{output_dir}{this_signal}_rel_errors.pdf')
     
     signal = this_signal
     file_path = output_dir
@@ -432,7 +426,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     # Total loss
     loss = loss_vs_batch
     min_loss = min(loss)
-    max_loss = max(loss)
+    max_loss = float(np.quantile(loss, 0.9973))
 
     try:
         bins = np.linspace(min_loss, max_loss, 200)
@@ -561,7 +555,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_pulse_schedule_i_plasma"
+    conf_file_name = "config_coil_voltage"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     

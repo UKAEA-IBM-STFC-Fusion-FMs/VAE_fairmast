@@ -169,8 +169,14 @@ def train_conv1d_vae_model(
             if verbose:
                 print(f"Elapsed time DataLoader {time.time()-start}")
           
-            device_average_process_time = 0
+            # Initialiaze gradient
+            optimizer.zero_grad()
+            
+            # Timing 
             start_device = time.time()
+            device_average_process_time = 0
+            
+            # Start loop for training over batch samples
             for group_idx, stacked_tensor in batch.items():
                 x = stacked_tensor.to(device)
                 
@@ -180,9 +186,7 @@ def train_conv1d_vae_model(
                 total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
                 # Backward pass
-                optimizer.zero_grad()
                 total_loss.backward()
-                optimizer.step()
                 
                 train_losses += total_loss.item()
                 train_recon_losses += recon_loss.item()
@@ -191,7 +195,10 @@ def train_conv1d_vae_model(
                 
                 device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
-               
+            
+            # Update model
+            optimizer.step()
+              
             if verbose:
                 print(f"Batch processing time {device_average_process_time:.2f}")      
             start = time.time()
@@ -257,8 +264,13 @@ def train_conv1d_vae_model(
 
         if verbose:
             print(
-                f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
+                f"Train Loss: {avg_train_loss:.6f}, Train reco: {avg_train_recon}, Train KL: {avg_train_kl}"
             )
+            print(
+                f"Val Loss: {avg_val_loss:.6f}, Val reco: {avg_val_recon}, Val KL: {avg_val_kl}"
+            )
+            
+         
 
         # Save best model
         if  best_losses - avg_val_loss > SETTINGS.TRAINING.min_increment:

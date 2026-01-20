@@ -237,8 +237,9 @@ def _build_convTransp_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_s
 
     # Reverse loop over encoder layers    
     i=len(enc_len)-1
+
     for spec in reversed(encoder_layer_specs["layers"]):
-        if spec["type"]!= (SETTINGS.ENCODER.activation_fn and "conv1d"):
+        if spec["type"] != SETTINGS.ENCODER.activation_fn and spec["type"] != "conv1d":
             raise ValueError(
                 "Encoder architecture is different from what is expected. "
                 "Automatic building of decoder specs from encoder specs only works "
@@ -356,7 +357,7 @@ def build_linear_encoder_decoder(SETTINGS):
         # Build decoder by mirroring encoder
         decoder_specs = {"layers": []}
         for spec in reversed(encoder_specs["layers"]):
-            if spec["type"]!= (SETTINGS.ENCODER.activation_fn and "linear"):
+            if spec["type"]!= SETTINGS.ENCODER.activation_fn and spec["type"]!= "linear":
                 raise ValueError(
                     "Encoder architecture is different from what is expected. "
                     "Automatic building of decoder specs from encoder specs only works "
