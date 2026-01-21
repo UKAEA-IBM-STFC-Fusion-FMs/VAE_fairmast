@@ -27,7 +27,7 @@ from src.pipelines.models.vae_model import beta_VAE
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 from src.pipelines.utils.utils import get_train_test_val_shots
-from src.pipelines.conv1d_vae_pipeline import initialize_datasets, initialize_dataloaders
+from src.pipelines.vae_pipeline import initialize_datasets, initialize_dataloaders
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 
 # Determine device to train on
@@ -46,8 +46,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=2,
-    num_cols=2
+    num_rows=1,
+    num_cols=1
 ):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
@@ -197,7 +197,10 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     model = beta_VAE(SETTINGS)
 
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    print(f"Epoch of the best model: {checkpoint['epoch']}")
+    
     model.load_state_dict(checkpoint['model_state_dict'])
+    
     model.to(device)
     model.eval()
 
@@ -555,7 +558,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_voltage"
+    conf_file_name = "config_pulse_schedule_i_plasma"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     

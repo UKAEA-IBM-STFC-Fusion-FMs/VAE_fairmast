@@ -103,7 +103,7 @@ def initialize_dataloaders(
     return dataloaders_
 
 
-def train_conv1d_vae_model(
+def train_vae_model(
     SETTINGS,
     model,
     optimizer,
@@ -282,7 +282,7 @@ def train_conv1d_vae_model(
             model_path = os.path.join(
                 output_dir, f"best_conv1d_vae_{signal_name}.pt"
             )
-            
+            print(f"BEST LOSS FOUND, epoch {epoch}")
             torch.save({
                 'model_state_dict': model.state_dict(),        
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -433,15 +433,15 @@ def main():
     val_dataloader = dataloaders_train_val["val"]
 
     # Create conv1d-VAE model
-    conv1d_vae_model = beta_VAE(SETTINGS)
+    vae_model = beta_VAE(SETTINGS)
     
-    if conv1d_vae_model is None:
+    if vae_model is None:
         print("Model error. It was not possible to create your model")
         return
-    print(f"Model: \n {conv1d_vae_model}")
+    print(f"Model: \n {vae_model}")
     
     optimizer = torch.optim.Adam(
-                conv1d_vae_model.parameters(), 
+                vae_model.parameters(), 
                 lr = SETTINGS.TRAINING.lr
                 )
 
@@ -456,10 +456,10 @@ def main():
     ########### Use this block to continue training from a specific checkpoint ####
     # model_path = "src/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
-    # conv1d_vae_model.load_state_dict(checkpoint['model_state_dict'])
-    # conv1d_vae_model.to('cuda')
+    # vae_model.load_state_dict(checkpoint['model_state_dict'])
+    # vae_model.to('cuda')
     # optimizer = torch.optim.Adam(
-    #         conv1d_vae_model.parameters())
+    #         vae_model.parameters())
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # optimizer.param_groups[0]['lr'] = SETTINGS.TRAINING.lr
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -468,7 +468,7 @@ def main():
     # Save model architecture
     with open(os.path.join(output_directory, "model.json"),'w') as f:
        json.dump(
-            str(conv1d_vae_model),
+            str(vae_model),
             f,
             indent=4
             )
@@ -480,11 +480,11 @@ def main():
     except Exception as e:
         print(f"Error copying config file: {e}")
         
-    if conv1d_vae_model:
+    if vae_model:
         start = time.time()
-        best_model_states, training_loss_curves = train_conv1d_vae_model(
+        best_model_states, training_loss_curves = train_vae_model(
             SETTINGS,
-            conv1d_vae_model,
+            vae_model,
             optimizer,
             scheduler,
             device,
