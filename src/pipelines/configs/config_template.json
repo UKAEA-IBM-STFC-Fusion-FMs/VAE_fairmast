@@ -20,16 +20,16 @@
     "patience":5,
     "min_increment": 0.0005,
     "lr": 1e-4,
-    "num_train_samples":1000,
-    "num_val_samples": 500,
-    "dataloader_batch_size": 100,
-    "train_batch_size":200,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 200,
+    "train_batch_size":400,
     "min_batch_size": 4,
-    "num_workers": 2
+    "num_workers": 4
   },
   "beta-vae":{
     "latent_dim":4,
-    "beta":0.0005,
+    "beta":0.00005,
     "ref_freq": 0.001
   },
   "encoder":{
@@ -37,9 +37,24 @@
     "activation_fn": "relu",
     "layers": [
       {"type": "linear", "params": {"in_features": 20, "out_features": 80}}, 
+      {"type":"layer_norm", "params":{"normalized_shape":80}},
       {"type": "relu"},
       {"type": "linear", "params": {"in_features": 80, "out_features": 40}}, 
+      {"type":"layer_norm", "params":{"normalized_shape":40}},
       {"type": "relu"}
+    ]
+  },
+  "decoder":{
+    "type": "linear",
+    "activation_fn": "relu",
+    "layers": [
+      {"type": "linear", "params": {"in_features": 4, "out_features": 40}},
+      {"type":"layer_norm", "params":{"normalized_shape":40}},
+      {"type": "relu"},
+      {"type": "linear", "params": {"in_features": 40, "out_features": 80}}, 
+      {"type":"layer_norm", "params":{"normalized_shape":80}},
+      {"type": "relu"},
+      {"type": "linear", "params": {"in_features": 80, "out_features": 20}}
     ]
   },
   "paths": {
