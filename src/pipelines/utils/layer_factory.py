@@ -43,6 +43,10 @@ class LayerFactory:
         self.register("max_pool1d", nn.MaxPool1d)
         self.register("avg_pool1d", nn.AvgPool1d)
         self.register("adaptive_avg_pool1d", nn.AdaptiveAvgPool1d)
+        
+        # Flattening
+        self.register("flatten", nn.Flatten)
+        self.register("unflatten", nn.Unflatten)
     
     def register(self, name: str, layer_class: Type[nn.Module]):
         """Register a new layer type."""

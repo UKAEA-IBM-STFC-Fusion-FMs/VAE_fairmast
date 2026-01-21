@@ -37,8 +37,8 @@ from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform i
 
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
-from src.pipelines.models.conv1d_vae_model import Conv1dVAE
-from src.pipelines.models.conv1d_vae_model import loss_function, create_conv1d_vae_model
+from src.pipelines.models.vae_model import beta_VAE
+from src.pipelines.models.vae_model import loss_function
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate
@@ -103,7 +103,7 @@ def initialize_dataloaders(
     return dataloaders_
 
 
-def train_conv1d_vae_model(
+def train_vae_model(
     SETTINGS,
     model,
     optimizer,
@@ -169,8 +169,14 @@ def train_conv1d_vae_model(
             if verbose:
                 print(f"Elapsed time DataLoader {time.time()-start}")
           
-            device_average_process_time = 0
+            # Initialiaze gradient
+            optimizer.zero_grad()
+            
+            # Timing 
             start_device = time.time()
+            device_average_process_time = 0
+            
+            # Start loop for training over batch samples
             for group_idx, stacked_tensor in batch.items():
                 x = stacked_tensor.to(device)
                 
@@ -180,9 +186,7 @@ def train_conv1d_vae_model(
                 total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
                 # Backward pass
-                optimizer.zero_grad()
                 total_loss.backward()
-                optimizer.step()
                 
                 train_losses += total_loss.item()
                 train_recon_losses += recon_loss.item()
@@ -191,7 +195,10 @@ def train_conv1d_vae_model(
                 
                 device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
-               
+            
+            # Update model
+            optimizer.step()
+              
             if verbose:
                 print(f"Batch processing time {device_average_process_time:.2f}")      
             start = time.time()
@@ -257,8 +264,13 @@ def train_conv1d_vae_model(
 
         if verbose:
             print(
-                f"Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}"
+                f"Train Loss: {avg_train_loss:.6f}, Train reco: {avg_train_recon}, Train KL: {avg_train_kl}"
             )
+            print(
+                f"Val Loss: {avg_val_loss:.6f}, Val reco: {avg_val_recon}, Val KL: {avg_val_kl}"
+            )
+            
+         
 
         # Save best model
         if  best_losses - avg_val_loss > SETTINGS.TRAINING.min_increment:
@@ -270,7 +282,7 @@ def train_conv1d_vae_model(
             model_path = os.path.join(
                 output_dir, f"best_conv1d_vae_{signal_name}.pt"
             )
-            
+            print(f"BEST LOSS FOUND, epoch {epoch}")
             torch.save({
                 'model_state_dict': model.state_dict(),        
                 'optimizer_state_dict': optimizer.state_dict(),
@@ -421,18 +433,15 @@ def main():
     val_dataloader = dataloaders_train_val["val"]
 
     # Create conv1d-VAE model
-    conv1d_vae_model = create_conv1d_vae_model(
-        SETTINGS,
-        datasets_train_val['val'],
-        conv1d_vae_collate_fn,
-        verbose = False
-    )
-    if conv1d_vae_model is None:
+    vae_model = beta_VAE(SETTINGS)
+    
+    if vae_model is None:
         print("Model error. It was not possible to create your model")
         return
+    print(f"Model: \n {vae_model}")
     
     optimizer = torch.optim.Adam(
-                conv1d_vae_model.parameters(), 
+                vae_model.parameters(), 
                 lr = SETTINGS.TRAINING.lr
                 )
 
@@ -447,10 +456,10 @@ def main():
     ########### Use this block to continue training from a specific checkpoint ####
     # model_path = "src/pipelines/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
     # checkpoint = torch.load(model_path)
-    # conv1d_vae_model.load_state_dict(checkpoint['model_state_dict'])
-    # conv1d_vae_model.to('cuda')
+    # vae_model.load_state_dict(checkpoint['model_state_dict'])
+    # vae_model.to('cuda')
     # optimizer = torch.optim.Adam(
-    #         conv1d_vae_model.parameters())
+    #         vae_model.parameters())
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # optimizer.param_groups[0]['lr'] = SETTINGS.TRAINING.lr
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
@@ -459,7 +468,7 @@ def main():
     # Save model architecture
     with open(os.path.join(output_directory, "model.json"),'w') as f:
        json.dump(
-            str(conv1d_vae_model),
+            str(vae_model),
             f,
             indent=4
             )
@@ -471,11 +480,11 @@ def main():
     except Exception as e:
         print(f"Error copying config file: {e}")
         
-    if conv1d_vae_model:
+    if vae_model:
         start = time.time()
-        best_model_states, training_loss_curves = train_conv1d_vae_model(
+        best_model_states, training_loss_curves = train_vae_model(
             SETTINGS,
-            conv1d_vae_model,
+            vae_model,
             optimizer,
             scheduler,
             device,

@@ -22,12 +22,12 @@ from src.pipelines.transforms.signal_level_transforms.pretrained_stdscale_normal
 from src.pipelines.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
 from src.pipelines.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.pipelines.configs.config_setup import get_settings
-from src.pipelines.models.conv1d_vae_model import Conv1dVAE, loss_function
-from src.pipelines.models.conv1d_encoder_decoder_specs import build_conv1d_encoder_decoder
+from src.pipelines.models.vae_model import loss_function
+from src.pipelines.models.vae_model import beta_VAE
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate as Conv1dVAECollate
 from src.pipelines.utils.utils import get_train_test_val_shots
-from src.pipelines.conv1d_vae_pipeline import initialize_datasets, initialize_dataloaders, create_conv1d_vae_model
+from src.pipelines.vae_pipeline import initialize_datasets, initialize_dataloaders
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 
 # Determine device to train on
@@ -41,74 +41,19 @@ else:
 
 def plot_histograms(
     properties,
-    Nbins,
     color,
     x_label,
     y_label,
     title_prefix,
     file_name,
-    num_rows=1,
-    num_cols=1,
-    x_max=None,
-    x_min=None
-):
-    num_features = len(properties)
-    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
-
-    # Normalize axes to a flat list
-    if isinstance(axes, plt.Axes):
-        axes_list = [axes]
-    else:
-        axes_list = axes.ravel().tolist()
-
-    max_plots = len(axes_list)
-    plots_to_draw = min(num_features, max_plots)
-
-    # Plot
-    for i in range(plots_to_draw):
-        ax = axes_list[i]
-        data = properties[i]
-
-        if x_min is not None and x_max is not None:
-            ax.hist(data, bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
-            ax.set_xlim(x_min, x_max)
-        else:
-            ax.hist(data, bins=Nbins, color=color, alpha=0.7)
-
-        # ax.set_title(f"{title_prefix} {i+1}")
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.legend([f"Ch. {i+1}: {len(data)} items"])
-
-    # Hide unused subplots
-    for j in range(plots_to_draw, max_plots):
-        axes_list[j].axis('off')
-
-    plt.tight_layout()
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close(fig)
-
-def plot_histograms_old(
-    properties,
-    Nbins,
-    color,
-    x_label,
-    y_label,
-    title_prefix,
-    file_name,
-    num_rows=1,
-    num_cols=1,
+    num_rows=3,
+    num_cols=4,
     x_max = None,
     x_min = None):
     
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
-    
-    if isinstance(axes, plt.Axes):
-        axes_list = [axes]
-    else:
-        # axes is a numpy array for multiple subplots
-        axes_list = axes.ravel().tolist()
+    axes = axes.flatten()  # Flatten to 1D for easy iteration
 
     for i in range(num_features):
         ax = axes[i]
@@ -120,15 +65,16 @@ def plot_histograms_old(
         # ax.set_title(f"{title_prefix} {i+1}")
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
-        ax.legend([f"Ch. {i+1}: {len(properties[i])} items"])
-    
-    # Hide unused subplots if grid > num_features
-    for j in range(num_features, len(axes)):
-        axes[j].axis('off')
+        ax.legend([f"Ch. {i+1}: {len(data)} items", f'95% threshold: {q95:.4g}'])
+
+    # Hide unused subplots
+    for j in range(plots_to_draw, max_plots):
+        axes_list[j].axis('off')
 
     plt.tight_layout()
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close()
+    plt.close(fig)
+
  
 def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     """Test pre-trained model 
@@ -236,15 +182,13 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     val_dataloader = dataloaders_train_val_test["val"]
     
     # Create conv1d-VAE models
-    model = create_conv1d_vae_model(
-        SETTINGS,
-        datasets_train_val_test['val'],
-        conv1d_vae_collate_fn,
-        verbose = False
-    )
+    model = beta_VAE(SETTINGS)
 
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    print(f"Epoch of the best model: {checkpoint['epoch']}")
+    
     model.load_state_dict(checkpoint['model_state_dict'])
+    
     model.to(device)
     model.eval()
 
@@ -416,7 +360,6 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
 
     plot_histograms(
         correlations_,
-        100,
         'blue',
         x_label="Correlations",
         y_label="frequency",
@@ -425,14 +368,11 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     
     plot_histograms(
         rel_errors,
-        100,
         'red',
         x_label="Relative absolute errors",
         y_label="frequency",
         title_prefix=f'',
-        file_name= f'{output_dir}{this_signal}_rel_errors.pdf',
-        x_max = 1,
-        x_min = 0)
+        file_name= f'{output_dir}{this_signal}_rel_errors.pdf')
     
     signal = this_signal
     file_path = output_dir
@@ -477,20 +417,23 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     # Total loss
     loss = loss_vs_batch
     min_loss = min(loss)
-    max_loss = max(loss)
+    max_loss = float(np.quantile(loss, 0.9973))
 
     try:
-        bins = np.arange(min_loss, 0.1 + 1e-4, 1e-4)
+        bins = np.linspace(min_loss, max_loss, 200)
     except Exception as e:
         print(f"Error creating bins: {e}")
         bins = 100  # fallback to default number of bins
 
+    p95_loss = float(np.quantile(loss, 0.95))  # 95th percentile
+    
     fig, ax = plt.subplots()
     ax.hist(loss, bins=bins)
+    ax.axvline(p95_loss, color='red', linestyle='--', linewidth=1.5, label=f'95% threshold: {p95_loss:.4g}')
     ax.set_xlabel('Validation total loss')
     ax.set_yscale('log')
     ax.set_title(signal + "total loss")
-    ax.legend([f'Batches: {len(loss)}'])
+    ax.legend([f'Batches: {len(loss)}', f'95% threshold: {p95_loss:.4g}'])
     plt.show()
     fig.savefig(file_path + f"/{this_signal}_TotalLoss.pdf")
 
@@ -498,13 +441,15 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     fig, ax = plt.subplots()
     min_rmse = min(rmse)
     max_rmse = max(rmse)
-    bins = np.arange(min_loss, max_rmse + 1e-2, 1e-2)
-
+    bins = np.linspace(min_loss, max_rmse, 200)
+    p95_rmse = float(np.quantile(rmse, 0.95))
+    
     fig, ax = plt.subplots()
     ax.hist(rmse, bins=bins)
+    ax.axvline(p95_rmse, color='red', linestyle='--', linewidth=1.5, label=f'95% threshold: {p95_rmse:.4g}')
     ax.set_xlabel('RMSE')
     ax.set_yscale('log')
-    ax.legend([f'Items: {len(rmse)}'])
+    ax.legend([f'Items: {len(rmse)}', f'95% threshold: {p95_rmse:.4g}'])
     ax.set_title(signal + "RMSE")
     fig.savefig(file_path + f"/{this_signal}_RMSE.pdf")
  
@@ -601,7 +546,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_solenoid_current"
+    conf_file_name = "config_currents"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     
