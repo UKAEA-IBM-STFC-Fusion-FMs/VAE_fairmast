@@ -11,7 +11,7 @@ The encoer architectures used in the training were 2:
 - The first and most used one is a stack of conv1d layers.
 - The second and less frequent one is a series of dense layers.
 
-## decoder
+## Decoder
 The decoder decompresses **z** to return **x**.
 
 The decoder applies the inverse encoder transform in reverse order.
@@ -43,7 +43,7 @@ If you want to pass a decoder architecture, this can be done by adding a decoder
 
   If a decoder structure is not passed, then the code tries to write one automatically from the encoder. This works only for certain encoder architectures.
 
-  From the home of your project: ```python src/pipelines/vae_pipeline.py --config_file_path src/pipelines/config/config_template.json
+  From the home of your project: ```python src/pipelines/vae_pipeline.py --config_file_path src/pipelines/config/config_template.json```
 
 
 
