@@ -76,7 +76,7 @@ def add(l1, l2):
                     }
                 },
                 {
-                    "type": "relu"
+                    "type": "activation_fn"
                 }
             ]
         }
@@ -123,13 +123,13 @@ def build_conv1d_encoder_decoder(SETTINGS):
 
     ********* IMPORTANT *****************
             The automatic building of the decoder from encoder specs only works for encoders built of
-            only conv1d and relu layers, for example:
+            only conv1d and activation_fn layers, for example:
             {"type": "conv1d", "params": {"in_channels": 15, "out_channels": 64, "kernel_size": 5, "stride": 2, "padding": 0}}, 
-            {"type": "relu"}, 
+            {"type": "activation_fn"}, 
             {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 2, "padding": 0}}, 
-            {"type": "relu"}, 
+            {"type": "activation_fn"}, 
             {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 4, "stride": 1, "padding": 0}}, 
-            {"type": "relu"}
+            {"type": "activation_fn"}
  
     Parameters
     ----------
@@ -280,7 +280,7 @@ def _build_convTransp_decoder_specs_from_encoder_specs(SETTINGS, encoder_layer_s
             decoder_layer_specs["layers"].append({"type":  SETTINGS.ENCODER.activation_fn})
             i -= 1
             
-    # For standardized targets, remove last relu 
+    # For standardized targets, remove last activation_fn 
     if remove_last_activation and decoder_layer_specs["layers"][-1]["type"] ==  SETTINGS.ENCODER.activation_fn:
         decoder_layer_specs["layers"].pop()   
             
@@ -301,9 +301,9 @@ def build_linear_encoder_decoder(SETTINGS):
                     The automatic building of the decoder from encoder specs only works for encoders built of
                     only linear and SETTINGS.ENCODER.activation_fn layers, for example:
                     {"type": "linear", "params": {"in_features": 20, "out_features": 80}}, 
-                    {"type": "relu"},
+                    {"type": "activation_fn"},
                     {"type": "linear", "params": {"in_features": 80, "out_features": 40}}, 
-                    {"type": "relu"}
+                    {"type": "activation_fn"}
                     
     Parameters
     ----------

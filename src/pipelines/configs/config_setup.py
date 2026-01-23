@@ -214,6 +214,8 @@ class DataInput:
         local_specs = config.get("local", None)
         input_specs = config.get("input", {})
 
+        self.cache_data =  config.get("cache_data", True)
+        
         self.local = local_specs if local_specs is not None else None
         if self.local is None:
             print("[Warning] Missing 'local' section in configuration. Setting to None.")

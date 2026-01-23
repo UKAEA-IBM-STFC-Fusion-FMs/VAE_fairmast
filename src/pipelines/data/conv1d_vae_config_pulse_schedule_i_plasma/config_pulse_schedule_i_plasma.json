@@ -1,0 +1,55 @@
+{
+  "input": {
+    "data_names": [
+      ["pulse_schedule","i_plasma"]
+    ],
+    "target_names": [
+       ["pulse_schedule","i_plasma"]
+      ]
+  },
+  "time_settings":{
+    "x_window_sec": 0.005,
+    "y_window_sec": 0.0002,
+    "dt_sec": 0.0, 
+    "stride_sec": 0.0035,
+    "stride_unitary": true,
+    "targeted_time_stamps_per_window": 20
+  },
+  "training": {
+    "num_epochs": 30,
+    "min_nr_epochs": 10,
+    "patience":5,
+    "min_increment": 0.0005,
+    "lr": 0.5e-3,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 200,
+    "train_batch_size":400,
+    "min_batch_size": 4,
+    "num_workers": 6
+  },
+  "beta-vae":{
+    "latent_dim":3,
+    "beta":0.005,
+    "ref_freq": 0.001
+  },
+   "encoder":{
+    "type": "conv1d",
+    "activation_fn": "relu",
+    "layers": [
+      {"type": "conv1d", "params": {"in_channels": 1, "out_channels": 32, "kernel_size": 5, "stride": 2, "padding": 0}}, 
+      {"type": "relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 32, "out_channels": 64, "kernel_size": 4, "stride": 1, "padding": 0}}, 
+      {"type": "relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 5, "stride": 1, "padding": 0}}, 
+      {"type": "relu"}
+    ]
+  },
+"paths": {
+    "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
+    "joblib_directory": "/home/ir-lore2/ImputerModels/",
+    "global_mean_std_path": "fairmast_tools/metadata/2025-09-22_stdscaling",
+    "data_output_directory": "src/pipelines/data/output/"
+  },
+  "local": true
+}

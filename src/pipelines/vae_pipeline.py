@@ -169,8 +169,7 @@ def train_vae_model(
             if verbose:
                 print(f"Elapsed time DataLoader {time.time()-start}")
           
-            # Initialiaze gradient
-            optimizer.zero_grad()
+          
             
             # Timing 
             start_device = time.time()
@@ -186,7 +185,11 @@ def train_vae_model(
                 total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
                 # Backward pass
+                # Initialiaze gradient
+                optimizer.zero_grad()
                 total_loss.backward()
+                # Update model
+                optimizer.step()
                 
                 train_losses += total_loss.item()
                 train_recon_losses += recon_loss.item()
@@ -196,8 +199,7 @@ def train_vae_model(
                 device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
             
-            # Update model
-            optimizer.step()
+            
               
             if verbose:
                 print(f"Batch processing time {device_average_process_time:.2f}")      
@@ -323,7 +325,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "src/pipelines/configs/config_flux_loop_flux.json",
+        default = "src/pipelines/configs/config_b_field_tor_probe_saddle_voltage.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -417,7 +419,8 @@ def main():
         shots={"train": train_shots, "val": val_shots, "test": []},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
-        local_flag=SETTINGS.DATA.local
+        local_flag=SETTINGS.DATA.local,
+        cache_data=SETTINGS.DATA.cache_data
     )
     
     conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)

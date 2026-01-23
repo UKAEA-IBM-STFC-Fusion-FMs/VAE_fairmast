@@ -46,23 +46,35 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=3,
-    num_cols=4,
-    x_max = None,
-    x_min = None):
-    
+    num_rows=1,
+    num_cols=1
+):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
-    axes = axes.flatten()  # Flatten to 1D for easy iteration
 
-    for i in range(num_features):
-        ax = axes[i]
-        if x_min is not None and x_max is not None:
-                ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7, range=(x_min, x_max))
-                ax.set_xlim(x_min, x_max)
-        else:
-            ax.hist(properties[i], bins=Nbins, color=color, alpha=0.7)
-        # ax.set_title(f"{title_prefix} {i+1}")
+    # Normalize axes to a flat list
+    if isinstance(axes, plt.Axes):
+        axes_list = [axes]
+    else:
+        axes_list = axes.ravel().tolist()
+
+    max_plots = len(axes_list)
+    plots_to_draw = min(num_features, max_plots)
+
+    # Plot
+    for i in range(plots_to_draw):
+        ax = axes_list[i]
+        data = properties[i]
+
+        q95 = float(np.quantile(data,0.95))
+        
+        min_data = min(data)
+        max_data = float(np.quantile(data,0.9973))
+        
+        bins = np.linspace(min_data, max_data, 100)
+        ax.hist(data, bins=bins, color=color, alpha=0.7, range=(min_data, max_data))
+        ax.axvline(q95, color='green', linestyle='--', linewidth=1.5, label=f'95% threshold: {q95:.4g}')
+
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
         ax.legend([f"Ch. {i+1}: {len(data)} items", f'95% threshold: {q95:.4g}'])
@@ -546,7 +558,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_currents"
+    conf_file_name = "config_summary_ip"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/pipelines/data/output/" + f"{directory_name}/"
     
