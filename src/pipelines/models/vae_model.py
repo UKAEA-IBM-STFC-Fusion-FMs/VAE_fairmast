@@ -136,7 +136,9 @@ if __name__ == "__main__":
     Generate and test a beta_VAE model created by using the config SETTINGS for a given MAST signal.
     SETTINGS is created automatically by passing the path to the config.json file when calling 
        
-       ```python vae_model.py --config_file_path path_to_config_file```
+       ```python vae_model.py --config_file_path path_to_config_file.json```
+       
+    An example of config_file_path is: "src/pipelines/data/conv1d_vae_config_coil_current/config_coil_current.json"
 
     Raises
     ------
