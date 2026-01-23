@@ -68,15 +68,91 @@ def loss_function(beta, reconstruction, target, mu, logvar):
     return total_loss, reconstruction_loss, kl_loss
 
 
+def get_model_state(model:beta_VAE, model_path:str):
+    """Retrieve the state dictionary of a model saved at model_path
+
+    Parameters
+    ----------
+    model : beta_VAE
+        This is an empty model initialized with the expected architecture, i.e., beta_VAE.
+    model_path : str
+        path to the saved model. The saved model MUST contain a model_state_dict key.
+    """
+    
+    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
+    
+
+def test_model_reco(model, in_channels, input_length):
+    """Generate rnd tensor of shape(in_channels, input_length).
+       Reconstruct the tensor with the model and print the RMS-error.
+
+    Parameters
+    ----------
+    model: beta_VAE
+        Model for beta-VAE.
+    in_channels : int
+        Number of channels in the tensor.
+    input_length : int
+        Length of each channel.
+
+    Returns
+    -------
+    Tuple of tensors, one for the generated input signal and one for the reconstructed.
+    """
+   
+    x = torch.randn(in_channels, input_length)
+    x = x.unsqueeze(0)
+    x_recon, mu, logvar = model(x)
+    
+    rms = torch.sqrt(torch.mean((x - x_recon) ** 2))
+    print(rms)
+
+    return x, x_recon
+    
+
+
+def test_model_state_dic_retrieval(model, model_home_directory, nr_channels, length):
+    
+    for name in os.listdir(model_home_directory):
+        model_path = os.path.join(model_home_directory, name)
+        if os.path.isfile(model_path) and name.endswith(".pt"):
+            break
+            
+    model = get_model_state(model, model_path)
+    x = torch.randn(nr_channels, length)
+    x = x.unsqueeze(0)
+    mu, logvar = model.encode(x)
+    x_recon = model.decode(mu)
+
+    print(f"Input: {x}")
+    print(f"Latent representation: {mu}")
+    print(f"Decoded: {x_recon}")    
+        
+        
 if __name__ == "__main__":
+    """
+    Generate and test a beta_VAE model created by using the config SETTINGS for a given MAST signal.
+    SETTINGS is created automatically by passing the path to the config.json file when calling 
+       
+       ```python vae_model.py --config_file_path path_to_config_file```
+
+    Raises
+    ------
+    FileNotFoundError
+        OR
+    KeyError
+        
+    """
+    # Retrieve SETTINGS for the model configuration
     import argparse
     from src.pipelines.configs.config_setup import get_settings
-    
     
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "src/pipelines/configs/config_flux_loop_flux.json",
+        default = "src/pipelines/data/conv1d_vae_config_coil_current/config_coil_current.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -84,7 +160,8 @@ if __name__ == "__main__":
     
     config_file_path = args.config_file_path
     config_file_name = os.path.basename(config_file_path)
-    
+    model_home_directory = os.path.dirname(config_file_path)
+
     # Load configuration from JSON file
     if not os.path.exists(config_file_path):
         raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
@@ -93,30 +170,22 @@ if __name__ == "__main__":
             SETTINGS = get_settings(config_file_path) 
         except Exception as e:
             print(f"Error in loading configuration {e}")
-         
+    
+    # Create model for the retrieved SETTINGS
     model = beta_VAE(SETTINGS)
-    print(model)
     
-    # Create a synthetic signal with correct shape
-    input_length = None
-    in_channels = None
-    if not getattr(SETTINGS.TIME_SEGMENTATION, "targeted_time_stamps_per_window", None):
-        print("Conv1d (time) input_length unresolved")
-    else:
-        input_length = SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window
-    
-    if not getattr(SETTINGS.CONV1dENCODER, "conv1d_in_channels", None):
-        print("Conv1d conv1d_in_channels unresolved")
-    else:
-        in_channels = SETTINGS.CONV1dENCODER.conv1d_in_channels
- 
-    if in_channels is not None and input_length is not None:
-        x = torch.randn(in_channels, input_length)
-        x = x.unsqueeze(0)
-        x_recon, mu, logvar = model(x)
-        
-        rms = torch.sqrt(torch.mean((x - x_recon) ** 2))
-        print(rms)
+    # Get signal number of channels and length
+    try:
+        nr_channels = SETTINGS.ENCODER.layers[0]["params"]["in_channels"]
+        length = SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window 
+    except:
+        raise KeyError("Either 'in_channels' or 'targeted_time_stamps_per_window' could not be found in SETTINGS")
+
+    # Run tests
+    #1
+    test_model_reco(model, nr_channels,length)
+    #2
+    test_model_state_dic_retrieval(model, model_home_directory, nr_channels,length)
 
     
     

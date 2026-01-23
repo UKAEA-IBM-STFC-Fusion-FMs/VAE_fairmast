@@ -168,9 +168,7 @@ def train_vae_model(
                 print(f"Batch idx: {batch_idx}")
             if verbose:
                 print(f"Elapsed time DataLoader {time.time()-start}")
-          
-          
-            
+
             # Timing 
             start_device = time.time()
             device_average_process_time = 0
@@ -184,9 +182,9 @@ def train_vae_model(
                 # Compute loss
                 total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
 
-                # Backward pass
                 # Initialiaze gradient
                 optimizer.zero_grad()
+                # Backward pass
                 total_loss.backward()
                 # Update model
                 optimizer.step()
@@ -199,8 +197,6 @@ def train_vae_model(
                 device_average_process_time += (time.time()-start_device)
                 start_device = time.time()
             
-            
-              
             if verbose:
                 print(f"Batch processing time {device_average_process_time:.2f}")      
             start = time.time()
@@ -272,8 +268,6 @@ def train_vae_model(
                 f"Val Loss: {avg_val_loss:.6f}, Val reco: {avg_val_recon}, Val KL: {avg_val_kl}"
             )
             
-         
-
         # Save best model
         if  best_losses - avg_val_loss > SETTINGS.TRAINING.min_increment:
             best_losses = avg_val_loss
