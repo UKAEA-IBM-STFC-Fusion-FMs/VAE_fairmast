@@ -42,6 +42,10 @@ class beta_VAE(nn.Module):
         encoded = self.encoder(x)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
+        
+        assert torch.isfinite(mu).all(), "mu has NaN/Inf"
+        assert torch.isfinite(logvar).all(), "logvar has NaN/Inf"
+
         return mu, logvar
 
     def reparameterize(self, mu, logvar):
@@ -59,10 +63,26 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar
 
 
-def loss_function(beta, reconstruction, target, mu, logvar):
+def loss_function(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
     """β-VAE loss function"""
+    
+    
+    if not torch.isfinite(mu).all():
+        raise ValueError("mu contains NaN/Inf")
+    if not torch.isfinite(logvar).all():
+        raise ValueError("logvar contains NaN/Inf")
+
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
-    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())        
+    
+    if clamp_logvar is not None:
+        logvar_clamped = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
+    else:
+        logvar_clamped = logvar
+
+    var = torch.exp(logvar_clamped)
+    kl_per_dim = 0.5 * (var + mu.pow(2) - 1.0 - logvar_clamped)
+    kl_loss = kl_per_dim.sum(dim=1).mean() 
+     
     total_loss = reconstruction_loss + beta * kl_loss
     
     return total_loss, reconstruction_loss, kl_loss

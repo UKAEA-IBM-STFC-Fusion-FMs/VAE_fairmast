@@ -8,6 +8,7 @@
 """      
 from collections import defaultdict, Counter
 import torch
+from typing import List, Dict, Any
 
 def first_item(batch):
     return batch[0]
@@ -167,6 +168,58 @@ class Conv1dVAECollate_multiple_signals():
 
         return collated
 
+
+class WindowsCollate:
+
+    def __call__(self, batch: List[Dict[str, Any]]):
+        all_windows = []
+        lengths = []
+
+        for sample in batch:
+            # Skip empties and normalize [sample] → sample
+            if not sample:
+                lengths.append(0)
+                continue
+
+            if isinstance(sample, list):
+                sample = sample[0]
+                if not sample:
+                    lengths.append(0)
+                    continue
+
+            if not isinstance(sample, dict) or len(sample) == 0:
+                lengths.append(0)
+                continue
+
+            # windows: List[Tensor(C, T)]
+            windows = next(iter(sample.values()), [])
+            if not windows:
+                lengths.append(0)
+                continue
+
+            
+            cleaned = []
+            for j, w in enumerate(windows):
+                if not isinstance(w, torch.Tensor): 
+                    continue
+                if not torch.isfinite(w).all(): 
+                    print("Tensor window contains contain non-finite entries.")
+                    continue
+                cleaned.append(w)
+
+            t = torch.stack(cleaned, dim=0)   # (len(sample), C, T)
+            all_windows.append(t)
+            lengths.append(t.shape[0])
+
+        if not all_windows:
+            # Return a consistent empty batch; we don't know (C, T) here, so (0, 0, 0) is safest.
+            # If you know C,T at construction time, pre-store them and return (0, C, T)
+            empty_x = torch.empty(0, 0, 0)  # or torch.empty(0, C, T)
+            return {"x": empty_x, "lengths": torch.zeros(0, dtype=torch.int32)}
+     
+        x = torch.cat(all_windows, dim=0)  # (N_total, C, T)
+        return {"x": x, "lengths": torch.tensor(lengths, dtype=torch.int32)}
+       
 
 class Conv1dVAECollate():
     """Collate samples in a batch.

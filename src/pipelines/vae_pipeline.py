@@ -1,5 +1,6 @@
 import argparse
 from collections import defaultdict
+import copy
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,7 +42,7 @@ from src.pipelines.models.vae_model import beta_VAE
 from src.pipelines.models.vae_model import loss_function
 from src.pipelines.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
 from src.pipelines.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
-from src.pipelines.collate_functions.collate_functions import Conv1dVAECollate
+from src.pipelines.collate_functions.collate_functions import WindowsCollate
 from src.pipelines.utils.utils import get_train_test_val_shots
 
 
@@ -82,7 +83,9 @@ def initialize_dataloaders(
         num_workers,
         shuffle=True,
         drop_last=False,
-        persistent_workers=True
+        prefetch_factor = 1,
+        pin_memory = True,
+        persistent_workers = False
     ):
     
     dataloaders_ = {"train": None, "val": None}
@@ -120,91 +123,109 @@ def train_vae_model(
     
     # Signal name
     _, signal_name = SETTINGS.DATA.data_names[0]
-
+    
     # Training tracking
     best_losses = float("inf")
-    best_model_states = {}
     
     # State tracking
     loss_curves = {
-        'train_total': [],
-        'train_recon': [],
-        'train_kl': [],
-        'val_total': [],
-        'val_recon': [],
-        'val_kl': []
+        'train_total': [],'train_recon': [],'train_kl': [],
+        'val_total': [], 'val_recon': [], 'val_kl': []
     }
     
     epochs_no_improvement = 0
     lr_history = []
-        
+    
+    sub_batch_size = SETTINGS.TRAINING.train_batch_size
+    
+    model.to(device)
+    
     stop_early = False
     for epoch in range(SETTINGS.TRAINING.num_epochs):
+        
         if stop_early:
             break
         
         if verbose:
-            print(f"\nEpoch {epoch+1}\n")
-
-        # Training phase
-        if verbose:
+            print(f"\n Epoch {epoch+1} \n")
             print("Training phase")
        
-        model.to(device)
+        # Send model to device for training
         model.train()
-            
-        train_losses = 0
-        train_recon_losses = 0
-        train_kl_losses = 0
+        
+        # Initialize loss variables
+        train_losses = train_recon_losses = train_kl_losses = 0.0
         train_counts =  0
         
-        start = time.time()
+        # Timing 
+        t_0_dataloader = time.time()
+        
         for batch_idx, batch in enumerate(train_dataloader):
-            
-            if batch is None:
-                continue
+            x = batch["x"]
+
+            if x.numel() == 0:
+                continue  # skip empty batch
             
             if verbose:
                 print(f"Batch idx: {batch_idx}")
-            if verbose:
-                print(f"Elapsed time DataLoader {time.time()-start}")
+                print(f"Elapsed time DataLoader {time.time()-t_0_dataloader}")
 
+            total_tensors = x.size(0)
+            
             # Timing 
-            start_device = time.time()
-            device_average_process_time = 0
+            t_0_model_train = time.time()
+            device_process_time = 0
             
-            # Start loop for training over batch samples
-            for group_idx, stacked_tensor in batch.items():
-                x = stacked_tensor.to(device)
+            # Initialiaze gradient
+            optimizer.zero_grad()
+            
+            for start in range(0, total_tensors, sub_batch_size):
+                end = min(start + sub_batch_size, total_tensors)
                 
-                x_recon, mu, logvar = model(x)
+                x_sub_batch = x[start:end].to(device, non_blocking=True)
 
-                # Compute loss
-                total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
+                x_recon, mu, logvar = model(x_sub_batch)
+                
+                if (not torch.isfinite(mu).all()) or (not torch.isfinite(logvar).all()):
+                    print(f"[warn] Skipping micro-batch {start}:{end} (non-finite mu/logvar)")
+                    continue
 
-                # Initialiaze gradient
-                optimizer.zero_grad()
-                # Backward pass
-                total_loss.backward()
-                # Update model
-                optimizer.step()
+                # Compute losses
+                try:
+                    loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar)
+                    
+                    if not torch.isfinite(loss):
+                        if verbose:
+                            print(f"[warn] skip micro-batch {start}:{end} (non-finite loss)")
+                        continue
+                    
+                except ValueError as e:
+                    print(f"Error in loss function calculation: {e}")
+                    continue
                 
-                train_losses += total_loss.item()
-                train_recon_losses += recon_loss.item()
-                train_kl_losses += kl_loss.item()
-                train_counts += 1
+                # Update gradients (gradients are summed at each iteration)
+                sub_tensors = x_sub_batch.size(0)
+                (loss * (sub_tensors/total_tensors)).backward()
+            
+                device_process_time += (time.time()-t_0_model_train)
+                t_0_model_train = time.time()
+        
+                # Keep track of losses across epochs
+                train_losses += loss.item() * sub_tensors
+                train_recon_losses += recon_loss.item() * sub_tensors
+                train_kl_losses += kl_loss.item() * sub_tensors
+                train_counts += sub_tensors
                 
-                device_average_process_time += (time.time()-start_device)
-                start_device = time.time()
+            # Update model
+            optimizer.step()
             
             if verbose:
-                print(f"Batch processing time {device_average_process_time:.2f}")      
-            start = time.time()
+                print(f"Batch processing time {device_process_time:.2f}")      
+            t_0_dataloader = time.time()
+          
     
         # Validation phase
-        val_losses = 0
-        val_recon_losses = 0
-        val_kl_losses = 0
+        val_losses = val_recon_losses = val_kl_losses = 0.0
         val_counts = 0
 
         model.eval()
@@ -214,21 +235,45 @@ def train_vae_model(
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(val_dataloader):
+                x = batch["x"]
+                
+                if x.numel() == 0:
+                    continue  # skip empty batch
+            
                 if verbose:
                     print(f"Batch idx: {batch_idx}")
 
-                for group_idx, stacked_tensor in batch.items():
-                    x = stacked_tensor.to(device)
+                total_tensors = x.size(0)
+                
+                for start in range(0, total_tensors, sub_batch_size):
+                    end = min(start + sub_batch_size, total_tensors)
+                
+                    x_sub_batch = x[start:end].to(device, non_blocking=True)
+                    sub_tensors = x_sub_batch.size(0)
                     
-                    x_recon, mu, logvar = model(x)
+                    x_recon, mu, logvar = model(x_sub_batch)
+                
+                    if (not torch.isfinite(mu).all()) or (not torch.isfinite(logvar).all()):
+                        if verbose:
+                            print(f"[warn] Skipping micro-batch {start}:{end} (non-finite mu/logvar)")
+                        continue
 
                     # Compute loss
-                    total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
+                    try:
+                        loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar)
+                        if not (torch.isfinite(loss) and torch.isfinite(recon_loss) and torch.isfinite(kl_loss)):
+                            if verbose:
+                                print(f"[warn] Skipping micro-batch {start}:{end} (non-finite loss)")
+                            continue
 
-                    val_losses += total_loss.item()
-                    val_recon_losses += recon_loss.item()
-                    val_kl_losses += kl_loss.item()
-                    val_counts += 1
+                    except ValueError as e:
+                        print(f"Error in loss function calculation: {e}")
+                        continue
+                    
+                    val_losses += loss.item() * sub_tensors 
+                    val_recon_losses += recon_loss.item() * sub_tensors 
+                    val_kl_losses += kl_loss.item() * sub_tensors 
+                    val_counts += sub_tensors 
 
         # Store loss curves and print epoch results
         if  train_counts > 0:
@@ -270,13 +315,16 @@ def train_vae_model(
             
         # Save best model
         if  best_losses - avg_val_loss > SETTINGS.TRAINING.min_increment:
-            best_losses = avg_val_loss
-            best_model_states = model.state_dict()
             epochs_no_improvement = 0
-
+        else:
+            epochs_no_improvement +=1 
+        
+        if  best_losses  > avg_val_loss:
+            best_losses = avg_val_loss
+            
             # Save best model state
             model_path = os.path.join(
-                output_dir, f"best_conv1d_vae_{signal_name}.pt"
+                output_dir, f"best_vae_{signal_name}.pt"
             )
             print(f"BEST LOSS FOUND, epoch {epoch}")
             torch.save({
@@ -285,8 +333,6 @@ def train_vae_model(
                 'scheduler_state_dict': scheduler.state_dict(),
                 'epoch': epoch
             }, model_path)    
-        else:
-            epochs_no_improvement +=1 
         
         # Stop early
         if epochs_no_improvement >= SETTINGS.TRAINING.patience and epoch > SETTINGS.TRAINING.min_nr_epochs:
@@ -303,7 +349,6 @@ def train_vae_model(
             }
             json.dump(data, f, indent=4)
                
-    return best_model_states, loss_curves
 
 def main():
     mp.set_start_method("spawn", force=True)
@@ -319,7 +364,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "src/pipelines/configs/config_b_field_tor_probe_saddle_voltage.json",
+        default = "src/pipelines/configs/config_b_field_tor_probe_saddle_voltage_2.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -417,15 +462,18 @@ def main():
         cache_data=SETTINGS.DATA.cache_data
     )
     
-    conv1d_vae_collate_fn = Conv1dVAECollate(SETTINGS.TRAINING.train_batch_size)
+    vae_collate_fn = WindowsCollate()
     dataloaders_train_val = initialize_dataloaders(
-        datasets=datasets_train_val,
-        collate_function=conv1d_vae_collate_fn,
-        batch_size= SETTINGS.TRAINING.dataloader_batch_size,
-        num_workers=num_workers,
-        shuffle=True,
-        persistent_workers=True
+        datasets = datasets_train_val,
+        collate_function = vae_collate_fn,
+        batch_size = SETTINGS.TRAINING.dataloader_batch_size,
+        num_workers = num_workers,
+        shuffle = True,
+        prefetch_factor = 1,
+        pin_memory = True,
+        persistent_workers = True
     )
+    
     train_dataloader = dataloaders_train_val["train"]
     val_dataloader = dataloaders_train_val["val"]
 
@@ -479,7 +527,7 @@ def main():
         
     if vae_model:
         start = time.time()
-        best_model_states, training_loss_curves = train_vae_model(
+        train_vae_model(
             SETTINGS,
             vae_model,
             optimizer,
