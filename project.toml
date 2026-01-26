@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vae_fairmast"
+version = "0.1.0"
+description = "xxx"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }  # or whatever you choose later
+authors = [
+  { name = "XXX" }
+]
+
+#[project.urls]
+#"Homepage" = "https://gitlab.stfc.ac.uk/hncdi-fusion-plasma-modelling/VAE_fairmast"
+
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+#  "Operating System :: OS Independent",
+]
+
+# We deliberately do NOT list torch/numpy/etc here, because we assume
+# they come from the benchmark repo environment.
+# Otherwise, you can populate the dependencies field
+dependencies = [
+#    "torch>=2.2",
+]
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["vae_pipeline*"]
