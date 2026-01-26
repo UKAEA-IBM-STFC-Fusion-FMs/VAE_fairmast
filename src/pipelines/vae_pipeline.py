@@ -83,8 +83,8 @@ def initialize_dataloaders(
         num_workers,
         shuffle=True,
         drop_last=False,
-        prefetch_factor = 1,
-        pin_memory = True,
+        prefetch_factor = 2,
+        pin_memory = False,
         persistent_workers = False
     ):
     
@@ -101,6 +101,9 @@ def initialize_dataloaders(
                 shuffle=shuffle,
                 drop_last=drop_last,
                 collate_fn=collate_function,
+                prefetch_factor = prefetch_factor,
+                pin_memory = pin_memory,
+                persistent_workers = persistent_workers
             )
 
     return dataloaders_
@@ -128,10 +131,7 @@ def train_vae_model(
     best_losses = float("inf")
     
     # State tracking
-    loss_curves = {
-        'train_total': [],'train_recon': [],'train_kl': [],
-        'val_total': [], 'val_recon': [], 'val_kl': []
-    }
+    loss_curves = {'train_total': [],'train_recon': [],'train_kl': [],'val_total': [], 'val_recon': [], 'val_kl': []}
     
     epochs_no_improvement = 0
     lr_history = []
@@ -177,12 +177,12 @@ def train_vae_model(
             device_process_time = 0
             
             # Initialiaze gradient
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
             
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
-                x_sub_batch = x[start:end].to(device, non_blocking=True)
+                x_sub_batch = x[start:end].to(device)
 
                 x_recon, mu, logvar = model(x_sub_batch)
                 
@@ -205,8 +205,12 @@ def train_vae_model(
                 
                 # Update gradients (gradients are summed at each iteration)
                 sub_tensors = x_sub_batch.size(0)
-                (loss * (sub_tensors/total_tensors)).backward()
-            
+                # (loss * (sub_tensors/total_tensors)).backward()
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                
                 device_process_time += (time.time()-t_0_model_train)
                 t_0_model_train = time.time()
         
@@ -217,7 +221,7 @@ def train_vae_model(
                 train_counts += sub_tensors
                 
             # Update model
-            optimizer.step()
+            # optimizer.step()
             
             if verbose:
                 print(f"Batch processing time {device_process_time:.2f}")      
@@ -248,7 +252,7 @@ def train_vae_model(
                 for start in range(0, total_tensors, sub_batch_size):
                     end = min(start + sub_batch_size, total_tensors)
                 
-                    x_sub_batch = x[start:end].to(device, non_blocking=True)
+                    x_sub_batch = x[start:end].to(device)
                     sub_tensors = x_sub_batch.size(0)
                     
                     x_recon, mu, logvar = model(x_sub_batch)
@@ -364,7 +368,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "src/pipelines/configs/config_b_field_tor_probe_saddle_voltage_2.json",
+        default = "src/pipelines/configs/config_b_field_tor_probe_saddle_voltage.json",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -469,9 +473,9 @@ def main():
         batch_size = SETTINGS.TRAINING.dataloader_batch_size,
         num_workers = num_workers,
         shuffle = True,
-        prefetch_factor = 1,
-        pin_memory = True,
-        persistent_workers = True
+        prefetch_factor = 2,
+        pin_memory = False,
+        persistent_workers = False
     )
     
     train_dataloader = dataloaders_train_val["train"]
