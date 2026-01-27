@@ -15,10 +15,10 @@
   },
   "training": {
     "num_epochs": 40,
-    "min_nr_epochs": 35,
+    "min_nr_epochs": 15,
     "patience":5,
     "min_increment": 0.0005,
-    "lr": 1e-4,
+    "lr": 5e-3,
     "num_train_samples":9259,
     "num_val_samples": 1157,
     "dataloader_batch_size": 100,
@@ -33,16 +33,14 @@
   },
    "encoder":{
     "type": "conv1d",
-    "activation_fn": "relu",
+    "activation_fn": "leaky_relu",
     "layers": [
       {"type": "conv1d", "params": {"in_channels": 10, "out_channels": 64, "kernel_size": 5, "stride": 1, "padding": 0}}, 
-      {"type": "relu"}, 
+      {"type": "leaky_relu"}, 
       {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 5, "stride": 1, "padding": 0}}, 
-      {"type": "relu"}, 
+      {"type": "leaky_relu"}, 
       {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 4, "stride": 2, "padding": 0}}, 
-      {"type": "relu"},
-      {"type": "conv1d", "params": {"in_channels": 256, "out_channels": 256, "kernel_size": 3, "stride": 2, "padding": 0}}, 
-      {"type": "relu"}
+      {"type": "leaky_relu"}
     ]
   },
   "paths": {
