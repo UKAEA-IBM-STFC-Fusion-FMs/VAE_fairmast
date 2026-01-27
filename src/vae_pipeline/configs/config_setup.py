@@ -277,6 +277,6 @@ class Scheduler:
 if __name__ == "__main__":
     import json
 
-    config_file_path_ = "src/pipelines/configs/config_solenoid_current.json"
+    config_file_path_ = "src/vae_pipeline/configs/config_solenoid_current.json"
     settings = get_settings(config_file_path_)
 

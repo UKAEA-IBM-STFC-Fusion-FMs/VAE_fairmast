@@ -10,8 +10,8 @@ import itertools
 from torch.utils.data import DataLoader
 
 from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
-from src.pipelines.preprocessing.sampled_shot_list import yamane_sampled_shot_list
-from src.pipelines.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
+from src.vae_pipeline.preprocessing.sampled_shot_list import yamane_sampled_shot_list
+from src.vae_pipeline.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
 
 # Compute project root relative to this file
 REPO_ROOT = os.path.abspath(os.path.join(

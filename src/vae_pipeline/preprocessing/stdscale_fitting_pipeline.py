@@ -22,11 +22,11 @@ if REPO_ROOT not in sys.path:
 # print(f"REPO_ROOT: {REPO_ROOT}")
 
 from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
-from src.pipelines.utils.utils import read_data_split_csv
+from src.vae_pipeline.utils.utils import read_data_split_csv
 
-from src.pipelines.utils.utils import ComposeTransforms
+from src.vae_pipeline.utils.utils import ComposeTransforms
 
-from src.pipelines.transforms.signal_level_transforms.reshape_lcfs_transform import (
+from src.vae_pipeline.transforms.signal_level_transforms.reshape_lcfs_transform import (
     ReshapeLcfsTransform
 )
 

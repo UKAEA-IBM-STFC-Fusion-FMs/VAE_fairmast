@@ -63,14 +63,8 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar
 
 
-def loss_function(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
+def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
     """β-VAE loss function"""
-    
-    
-    if not torch.isfinite(mu).all():
-        raise ValueError("mu contains NaN/Inf")
-    if not torch.isfinite(logvar).all():
-        raise ValueError("logvar contains NaN/Inf")
 
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
@@ -87,6 +81,20 @@ def loss_function(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0,
     
     return total_loss, reconstruction_loss, kl_loss
 
+def loss_function_global_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
+    """β-VAE loss function"""
+    
+    reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
+    
+    if clamp_logvar is not None:
+       logvar = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
+    else:
+        logvar = logvar
+
+    kl_loss = 0.5 * torch.mean(-1 - logvar + mu.pow(2) + logvar.exp())        
+    total_loss = reconstruction_loss + beta * kl_loss
+    
+    return total_loss, reconstruction_loss, kl_loss
 
 def get_model_state(model:beta_VAE, model_path:str):
     """Retrieve the state dictionary of a model saved at model_path
