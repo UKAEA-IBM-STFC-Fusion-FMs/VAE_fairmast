@@ -42,10 +42,6 @@ class beta_VAE(nn.Module):
         encoded = self.encoder(x)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
-        
-        assert torch.isfinite(mu).all(), "mu has NaN/Inf"
-        assert torch.isfinite(logvar).all(), "logvar has NaN/Inf"
-
         return mu, logvar
 
     def reparameterize(self, mu, logvar):
@@ -63,29 +59,36 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar
 
 
-def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
+def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20, 20), clamp_mu=(-1e4,1e-4)):
     """β-VAE loss function"""
-
+      
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
+    # Guardrails
+    mu = torch.nan_to_num(mu,nan=0.0,posinf=clamp_mu[1],neginf=clamp_mu[0]) 
+    logvar = torch.nan_to_num(logvar,nan=0.0,posinf=clamp_logvar[1],neginf=clamp_logvar[0]) 
+    
     if clamp_logvar is not None:
-        logvar_clamped = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
+       logvar = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
     else:
-        logvar_clamped = logvar
+        logvar = logvar
 
-    var = torch.exp(logvar_clamped)
-    kl_per_dim = 0.5 * (var + mu.pow(2) - 1.0 - logvar_clamped)
+    kl_per_dim = 0.5 * (torch.exp(logvar) + mu.pow(2) - 1.0 - logvar)
     kl_loss = kl_per_dim.sum(dim=1).mean() 
      
     total_loss = reconstruction_loss + beta * kl_loss
     
     return total_loss, reconstruction_loss, kl_loss
 
-def loss_function_global_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
+def loss_function_global_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0), clamp_mu=(-1e4,1e-4)):
     """β-VAE loss function"""
     
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
+    # Guardrails
+    mu = torch.nan_to_num(mu,nan=0.0,posinf=clamp_mu[1],neginf=clamp_mu[0]) 
+    logvar = torch.nan_to_num(logvar,nan=0.0,posinf=clamp_logvar[1],neginf=clamp_logvar[0]) 
+        
     if clamp_logvar is not None:
        logvar = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
     else:

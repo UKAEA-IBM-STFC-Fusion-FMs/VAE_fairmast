@@ -187,11 +187,11 @@ def train_vae_model(
                                         
                 # Compute loss
                 try:
-                    loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-200.0, 200.0))
+                    loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0), clamp_mu=(None,None))
             
-                    loss = torch.nan_to_num(loss,nan=0.0,posinf=1e4,neginf=1e4) 
-                    recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=1e4,neginf=1e4) 
-                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=1e4,neginf=1e4) 
+                    loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
+                    recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
+                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None) 
 
                 except ValueError as e:
                     print(f"Error in loss function calculation: {e}")
@@ -253,11 +253,11 @@ def train_vae_model(
                                         
                     # Compute loss
                     try:
-                        loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-200.0, 200.0))
+                        loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
                
-                        loss = torch.nan_to_num(loss,nan=0.0,posinf=1e4,neginf=1e4) 
-                        recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=1e4,neginf=1e4) 
-                        kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=1e4,neginf=1e4) 
+                        loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
+                        recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
+                        kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None) 
 
                     except ValueError as e:
                         print(f"Error in loss function calculation: {e}")
