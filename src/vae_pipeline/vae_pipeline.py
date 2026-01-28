@@ -128,7 +128,7 @@ def train_vae_model(
     _, signal_name = SETTINGS.DATA.data_names[0]
     
     # Training tracking
-    best_val_losse = float("inf")
+    best_val_loss = float("inf")
     
     # State tracking
     loss_curves = {'train_total': [],'train_recon': [],'train_kl': [],'val_total': [], 'val_recon': [], 'val_kl': []}
@@ -173,7 +173,7 @@ def train_vae_model(
             total_tensors = x.size(0)
             
             # Initialiaze gradient
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
             
             # Timing 
             t_0_model_train = time.time()
@@ -199,11 +199,11 @@ def train_vae_model(
             
                 # Update gradients (gradients are summed at each iteration)
                 sub_tensors = x_sub_batch.size(0)
-                (loss * (sub_tensors/total_tensors)).backward()
+                # (loss * (sub_tensors/total_tensors)).backward()
 
-                # optimizer.zero_grad()
-                # loss.backward()
-                # optimizer.step()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
                 
                 device_process_time += (time.time()-t_0_model_train)
                 t_0_model_train = time.time()
@@ -215,7 +215,7 @@ def train_vae_model(
                 train_counts += sub_tensors
                 
             # Update model
-            optimizer.step()
+            # optimizer.step()
             
             if verbose:
                 print(f"Batch processing time {device_process_time:.2f}")      
