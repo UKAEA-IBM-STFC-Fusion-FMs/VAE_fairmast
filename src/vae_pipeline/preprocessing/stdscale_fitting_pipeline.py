@@ -21,7 +21,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 # print(f"REPO_ROOT: {REPO_ROOT}")
 
-from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
+from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset
 from src.vae_pipeline.utils.utils import read_data_split_csv
 
 from src.vae_pipeline.utils.utils import ComposeTransforms

@@ -16,7 +16,7 @@ REPO_ROOT = os.path.abspath(
     )
 )
 if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
-from fairmast_tools.MAST_tools.MAST_dataset import MastDataset, CachedDataset
+from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from src.vae_pipeline.utils.utils import ComposeTransforms
 from src.vae_pipeline.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import StdScalingTransform
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
@@ -642,7 +642,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_current_3"
+    conf_file_name = "config_coil_current"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     

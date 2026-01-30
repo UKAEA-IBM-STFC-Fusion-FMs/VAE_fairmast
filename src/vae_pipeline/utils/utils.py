@@ -9,7 +9,7 @@ import numpy as np
 import itertools
 from torch.utils.data import DataLoader
 
-from fairmast_tools.MAST_tools.MAST_dataset import MastDataset
+from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset
 from src.vae_pipeline.preprocessing.sampled_shot_list import yamane_sampled_shot_list
 from src.vae_pipeline.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
 

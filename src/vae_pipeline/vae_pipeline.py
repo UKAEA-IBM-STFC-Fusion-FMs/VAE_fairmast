@@ -11,6 +11,7 @@ import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 import time
+import yaml
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -22,15 +23,14 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from fairmast_tools.MAST_tools.MAST_dataset import MastDataset, CachedDataset
+from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 
 from src.vae_pipeline.utils.utils import (
     read_data_split_csv, ComposeTransforms
 )
 
-from src.vae_pipeline.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import (
-    StdScalingTransform
-)
+
+from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
 
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
@@ -41,7 +41,7 @@ from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
+from src.vae_pipeline.transforms.shot_level_transforms.combine_signals_transform import CombineSignalsTransform
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 
@@ -53,7 +53,8 @@ def initialize_datasets(
         shot_transforms, 
         local_flag=False,
         cache_data=True,
-        other_mast_settings={}
+        other_mast_settings={},
+        return_incomplete_shots = False
     ):
     
     datasets_ = {"train": None, "val": None}
@@ -67,7 +68,8 @@ def initialize_datasets(
                 source_signal_list=sources_and_signals,
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
-                other_mast_settings=other_mast_settings
+                other_mast_settings=other_mast_settings,
+                return_incomplete_shots = return_incomplete_shots
             )
             
     if cache_data:
@@ -83,8 +85,6 @@ def initialize_dataloaders(
         num_workers,
         shuffle=True,
         drop_last=False,
-        prefetch_factor = 2,
-        pin_memory = False,
         persistent_workers = False
     ):
     
@@ -101,8 +101,6 @@ def initialize_dataloaders(
                 shuffle=shuffle,
                 drop_last=drop_last,
                 collate_fn=collate_function,
-                prefetch_factor = prefetch_factor,
-                pin_memory = pin_memory,
                 persistent_workers = persistent_workers
             )
 
@@ -127,6 +125,9 @@ def train_vae_model(
     # Signal name
     _, signal_name = SETTINGS.DATA.data_names[0]
     
+    # Beta for VAE
+    beta = SETTINGS.BETA_VAE.beta
+    
     # Training tracking
     best_val_loss = float("inf")
     
@@ -135,6 +136,7 @@ def train_vae_model(
     
     epochs_no_improvement = 0
     lr_history = []
+    beta_history = []
     
     sub_batch_size = SETTINGS.TRAINING.train_batch_size
     
@@ -173,7 +175,7 @@ def train_vae_model(
             total_tensors = x.size(0)
             
             # Initialiaze gradient
-            # optimizer.zero_grad()
+            optimizer.zero_grad()
             
             # Timing 
             t_0_model_train = time.time()
@@ -187,11 +189,11 @@ def train_vae_model(
                                         
                 # Compute loss
                 try:
-                    loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0), clamp_mu=(None,None))
+                    loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0), clamp_mu=(None,None))
             
                     loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
                     recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
-                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None) 
+                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None)       
 
                 except ValueError as e:
                     print(f"Error in loss function calculation: {e}")
@@ -199,11 +201,7 @@ def train_vae_model(
             
                 # Update gradients (gradients are summed at each iteration)
                 sub_tensors = x_sub_batch.size(0)
-                # (loss * (sub_tensors/total_tensors)).backward()
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                (loss * (sub_tensors/total_tensors)).backward()
                 
                 device_process_time += (time.time()-t_0_model_train)
                 t_0_model_train = time.time()
@@ -215,7 +213,7 @@ def train_vae_model(
                 train_counts += sub_tensors
                 
             # Update model
-            # optimizer.step()
+            optimizer.step()
             
             if verbose:
                 print(f"Batch processing time {device_process_time:.2f}")      
@@ -253,7 +251,7 @@ def train_vae_model(
                                         
                     # Compute loss
                     try:
-                        loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
+                        loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
                
                         loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
                         recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
@@ -287,6 +285,13 @@ def train_vae_model(
             avg_val_recon = float("inf")
             avg_val_kl = float("inf")
         
+        # Adapt beta after a few epochs from the start
+        if epoch > SETTINGS.TRAINING.patience:
+            w1= 0.7
+            w2= 1-w1
+            beta = w1*beta + w2*(0.1*avg_val_recon/avg_val_kl )
+        
+        beta_history.append(beta)
         lr_history.append(optimizer.param_groups[0]['lr'])
         scheduler.step()  
 
@@ -340,11 +345,13 @@ def train_vae_model(
         print(f"Training losses {loss_curves['train_total']}")
         print(f"Validation losses {loss_curves['val_total']}")
         print(f"lr history {lr_history}")
-    
+        print(f"beta history {beta_history}")
+        
         with open(os.path.join(output_dir, 'loss_curves.json'), 'w') as f:
             data = {
                 'Loss': loss_curves,
-                'lr_history': lr_history
+                'lr_history': lr_history,
+                'beta_history':beta_history
             }
             json.dump(data, f, indent=4)
                
@@ -415,17 +422,19 @@ def main():
     )
     
     #Get mean and std for signal transformation
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
-        dict_mean = pickle.load(f)
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
-        dict_std = pickle.load(f)
+    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
+    #     dict_mean = pickle.load(f)
+    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
+    #     dict_std = pickle.load(f)
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_stats_metadata.yaml"), "r") as f:
+        dict_stats_metadata = yaml.safe_load(f)
 
 
     # Signal-level transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_mean[var], dict_std[var]),
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
                 ImputerTransform()
             ]
         )
@@ -438,8 +447,9 @@ def main():
             All signals in the list will be merged into one, if compatible")
         shot_transforms = ComposeTransforms(
             [
-                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                ConcatenateSignalsAfterTimeSegmentation(),
+                # WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                # ConcatenateSignalsAfterTimeSegmentation(),
+                CombineSignalsTransform(),
                 Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
             ]
         )
@@ -458,7 +468,8 @@ def main():
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
-        cache_data=SETTINGS.DATA.cache_data
+        cache_data=SETTINGS.DATA.cache_data,
+        return_incomplete_shots = False
     )
     
     vae_collate_fn = WindowsCollate()
@@ -468,8 +479,6 @@ def main():
         batch_size = SETTINGS.TRAINING.dataloader_batch_size,
         num_workers = num_workers,
         shuffle = True,
-        prefetch_factor = 2,
-        pin_memory = False,
         persistent_workers = False
     )
     

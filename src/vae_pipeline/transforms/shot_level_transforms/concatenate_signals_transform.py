@@ -107,7 +107,7 @@ class ConcatenateSignalsAfterTimeSegmentation():
         - "time": 1D ndarray of length T
         - "values": ndarray of shape (sum_i F_i, T)
     """ 
-    def __call__(self, list_samples):
+    def __call__(self, list_samples, signal_place_holder=None):
 
         new_list_samples = []
         
@@ -129,10 +129,13 @@ class ConcatenateSignalsAfterTimeSegmentation():
 
                 if not isinstance(t, np.ndarray) or t.ndim != 1:
                     raise ValueError(f"[ERROR] Signal '{signal_name}' 'time' must be a 1D np.ndarray.")
+                
                 if np.isnan(t).any():
                     raise ValueError(f"[ERROR] Signal '{signal_name}' contains NaN in its 'time' array.")
+                
                 if not isinstance(v, np.ndarray):
                     raise ValueError(f"[ERROR] Signal '{signal_name}' 'values' must be an np.ndarray.") 
+                
                 if v.shape[1] != t.shape[0]:
                     raise ValueError(
                         f"[ERROR] Signal '{signal_name}' values.shape[1] must match len(time). "
