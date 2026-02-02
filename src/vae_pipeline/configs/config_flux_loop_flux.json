@@ -14,11 +14,11 @@
     "targeted_time_stamps_per_window": 25
   },
   "training": {
-    "num_epochs": 45,
-    "min_nr_epochs": 35,
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
     "patience":5,
     "min_increment": 0.0005,
-    "lr": 1e-4,
+    "lr": 0.5e-3,
     "num_train_samples":9259,
     "num_val_samples": 1157,
     "dataloader_batch_size": 100,
@@ -33,21 +33,21 @@
   },
   "encoder":{
     "type": "conv1d",
-    "activation_fn": "relu",
+    "activation_fn": "leaky_relu",
     "layers": [
       {"type": "conv1d", "params": {"in_channels": 15, "out_channels": 64, "kernel_size": 5, "stride": 2, "padding": 0}}, 
-      {"type": "relu"}, 
+      {"type": "leaky_relu"}, 
       {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 2, "padding": 0}}, 
-      {"type": "relu"}, 
+      {"type": "leaky_relu"}, 
       {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 4, "stride": 1, "padding": 0}}, 
-      {"type": "relu"}
+      {"type": "leaky_relu"}
     ]
   },
   "paths": {
     "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
     "joblib_directory": "/home/ir-lore2/ImputerModels/",
-    "global_mean_std_path": "fairmast_tools/metadata/2025-09-22_stdscaling",
-    "data_output_directory": "src/pipelines/data/output/"
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
   },
   "local": true,
   "cache_data": true

@@ -69,7 +69,8 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
                 other_mast_settings=other_mast_settings,
-                return_incomplete_shots = return_incomplete_shots
+                return_incomplete_shots = return_incomplete_shots,
+                remove_outliers = True
             )
             
     if cache_data:
@@ -134,6 +135,8 @@ def train_vae_model(
     # State tracking
     loss_curves = {'train_total': [],'train_recon': [],'train_kl': [],'val_total': [], 'val_recon': [], 'val_kl': []}
     
+    # Clamp tuple
+    clamp_logvar = (-50,50)
     epochs_no_improvement = 0
     lr_history = []
     beta_history = []
@@ -189,7 +192,7 @@ def train_vae_model(
                                         
                 # Compute loss
                 try:
-                    loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0), clamp_mu=(None,None))
+                    loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=clamp_logvar , clamp_mu=(None,None))
             
                     loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
                     recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
@@ -251,7 +254,7 @@ def train_vae_model(
                                         
                     # Compute loss
                     try:
-                        loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
+                        loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar= clamp_logvar,clamp_mu=(None,None))
                
                         loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
                         recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
@@ -502,7 +505,7 @@ def main():
              optimizer,
              T_0 = SETTINGS.TRAINING.num_epochs,
              T_mult = 1, 
-             eta_min = 1e-5
+             eta_min = 5e-5
             )
   
     ########### Use this block to continue training from a specific checkpoint ####

@@ -176,6 +176,8 @@ if __name__ == "__main__":
     FileNotFoundError
         OR
     KeyError
+        This error appears if the encoder in use is not a conv1d. This test routine is meant 
+        to be used with conv1d encoders.
         
     """
     # Retrieve SETTINGS for the model configuration

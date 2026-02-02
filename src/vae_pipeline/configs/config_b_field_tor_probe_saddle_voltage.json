@@ -16,7 +16,7 @@
     "targeted_time_stamps_per_window": 250
   },
   "training": {
-    "num_epochs": 40,
+    "num_epochs": 45,
     "min_nr_epochs": 35,
     "patience":5,
     "min_increment": 0.0005,
@@ -24,12 +24,12 @@
     "num_train_samples":9259,
     "num_val_samples": 1157,
     "dataloader_batch_size": 32,
-    "train_batch_size": 500,
+    "train_batch_size": 450,
     "num_workers": 3
   },
   "beta-vae":{
     "latent_dim":8,
-    "beta":0.00005,
+    "beta":0.0001,
     "ref_freq": 0.001
   },
   "encoder":{
@@ -40,19 +40,17 @@
       {"type": "leaky_relu"}, 
       {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 25, "stride": 2, "padding": 0}}, 
       {"type": "leaky_relu"}, 
-      {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 9, "stride": 2, "padding": 0}}, 
+      {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 15, "stride": 2, "padding": 0}}, 
       {"type": "leaky_relu"}, 
-      {"type": "conv1d", "params": {"in_channels": 256, "out_channels": 256, "kernel_size": 5, "stride": 2, "padding": 0}}, 
-      {"type": "leaky_relu"},
-      {"type": "conv1d", "params": {"in_channels": 256, "out_channels": 256, "kernel_size": 4, "stride": 1, "padding": 0}},
+      {"type": "conv1d", "params": {"in_channels": 256, "out_channels": 256, "kernel_size": 10, "stride": 2, "padding": 0}}, 
       {"type": "leaky_relu"}
     ]
   },
   "paths": {
     "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
     "joblib_directory": "/home/ir-lore2/ImputerModels/",
-    "global_mean_std_path": "fairmast_tools/metadata/2025-09-22_stdscaling",
-    "data_output_directory": "src/pipelines/data/output/"
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
   },
   "local": true,
   "cache_data": false

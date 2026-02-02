@@ -15,11 +15,11 @@
     "targeted_time_stamps_per_window": 20
   },
   "training": {
-    "num_epochs": 40,
-    "min_nr_epochs": 35,
+    "num_epochs": 60,
+    "min_nr_epochs": 50,
     "patience":5,
     "min_increment": 0.0005,
-    "lr": 1e-4,
+    "lr": 1e-3,
     "num_train_samples":9259,
     "num_val_samples": 1157,
     "dataloader_batch_size": 200,
@@ -29,39 +29,39 @@
   },
   "beta-vae":{
     "latent_dim":4,
-    "beta":0.00005,
+    "beta":0.001,
     "ref_freq": 0.001
   },
   "encoder":{
     "type": "linear",
-    "activation_fn": "relu",
+    "activation_fn": "leaky_relu",
     "layers": [
       {"type": "linear", "params": {"in_features": 20, "out_features": 80}}, 
       {"type":"layer_norm", "params":{"normalized_shape":80}},
-      {"type": "relu"},
+      {"type": "leaky_relu"},
       {"type": "linear", "params": {"in_features": 80, "out_features": 40}}, 
       {"type":"layer_norm", "params":{"normalized_shape":40}},
-      {"type": "relu"}
+      {"type": "leaky_relu"}
     ]
   },
   "decoder":{
     "type": "linear",
-    "activation_fn": "relu",
+    "activation_fn": "leaky_relu",
     "layers": [
       {"type": "linear", "params": {"in_features": 4, "out_features": 40}},
       {"type":"layer_norm", "params":{"normalized_shape":40}},
-      {"type": "relu"},
+      {"type": "leaky_relu"},
       {"type": "linear", "params": {"in_features": 40, "out_features": 80}}, 
       {"type":"layer_norm", "params":{"normalized_shape":80}},
-      {"type": "relu"},
+      {"type": "leaky_relu"},
       {"type": "linear", "params": {"in_features": 80, "out_features": 20}}
     ]
   },
   "paths": {
     "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
     "joblib_directory": "/home/ir-lore2/ImputerModels/",
-    "global_mean_std_path": "fairmast_tools/metadata/2025-09-22_stdscaling",
-    "data_output_directory": "src/pipelines/data/output/"
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
   },
   "local": true
 }

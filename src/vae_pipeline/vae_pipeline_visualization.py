@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
+import yaml
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -18,7 +19,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from src.vae_pipeline.utils.utils import ComposeTransforms
-from src.vae_pipeline.transforms.signal_level_transforms.pretrained_stdscale_normalize_transform import StdScalingTransform
+from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
 from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.configs.config_setup import get_settings
@@ -46,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=3,
-    num_cols=4
+    num_rows=8,
+    num_cols=5
 ):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
@@ -137,16 +138,19 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     this_signal = signal_name
     
     # Get mean and std for signal transformation
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
-        dict_mean = pickle.load(f)
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
-        dict_std = pickle.load(f)
-        
+    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
+    #     dict_mean = pickle.load(f)
+    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
+    #     dict_std = pickle.load(f)
+       
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_stats_metadata.yaml"), "r") as f:
+        dict_stats_metadata = yaml.safe_load(f)
+ 
     # Signal-level transform map
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_mean[var], dict_std[var]),
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
                 ImputerTransform(),
             ]
         )
@@ -197,13 +201,21 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     model = beta_VAE(SETTINGS)
 
     checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
-    print(f"Epoch of the best model: {checkpoint['epoch']}")
+    epoch_best_model = checkpoint['epoch']
+    print(f"Epoch of the best model: {epoch_best_model}")
     
     model.load_state_dict(checkpoint['model_state_dict'])
     
     model.to(device)
     model.eval()
 
+    with open(os.path.join(output_dir, "loss_curves.json"), 'r') as file:
+        data = json.load(file)
+
+    # Validation loss values
+    beta_history = data["beta_history"]
+    beta = beta_history[int(epoch_best_model)]
+    
     loss_vs_batch = []
     correlations_ = []
     rel_errors = []
@@ -317,7 +329,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
                                         
                 # Compute loss
                 try:
-                    total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
+                    total_loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
             
                     total_loss = torch.nan_to_num(total_loss,nan=0.0,posinf=None,neginf=None) 
                     recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
@@ -475,15 +487,13 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     
     with open(os.path.join(file_path, "loss_curves.json"), 'r') as file:
         data = json.load(file)
-
-    # Validation loss values
-    beta = SETTINGS.BETA_VAE.beta
+        
     val_loss = data["Loss"]["val_total"]
     val_recon_loss = data["Loss"]["val_recon"]
-    val_kl_loss  =  np.array(data["Loss"]["val_kl"])*beta
+    val_kl_loss  =  np.array(data["Loss"]["val_kl"])*np.asarray(beta_history)
     train_loss = data["Loss"]["train_total"]
     train_recon_loss = data["Loss"]["train_recon"]
-    train_kl_loss =  np.array(data["Loss"]["train_kl"])*beta
+    train_kl_loss =  np.array(data["Loss"]["train_kl"])*np.asarray(beta_history)
     # Epochs
     epochs = list(range(1, len(val_loss) + 1))
 
@@ -497,10 +507,10 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     fig, ax = plt.subplots()
     ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation total" )
     ax.plot(epochs, val_recon_loss, linestyle='dashed', color='blue', label="Validation recon")
-    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * {beta}")
+    ax.plot(epochs, val_kl_loss, linestyle='dotted', color='blue', label=f"Validation kl * beta")
     ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training total")
     ax.plot(epochs, train_recon_loss, linestyle='dashed',color='red', label="Training recon")
-    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * {beta}")
+    ax.plot(epochs, train_kl_loss, linestyle='dotted',color='red', label=f"Training kl * beta")
     ax.set_yscale('log')
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
@@ -642,7 +652,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_current"
+    conf_file_name = "config_b_field_pol_probe_ccbv_field"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     

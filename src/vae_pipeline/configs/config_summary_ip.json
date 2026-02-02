@@ -15,8 +15,8 @@
     "targeted_time_stamps_per_window": 20
   },
   "training": {
-    "num_epochs": 40,
-    "min_nr_epochs": 35,
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
     "patience":5,
     "min_increment": 0.0005,
     "lr": 1e-4,
@@ -29,7 +29,7 @@
   },
   "beta-vae":{
     "latent_dim":2,
-    "beta":0.00005,
+    "beta":0.001,
     "ref_freq": 0.001
   },
   "encoder":{
@@ -49,8 +49,8 @@
   "paths": {
     "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
     "joblib_directory": "/home/ir-lore2/ImputerModels/",
-    "global_mean_std_path": "fairmast_tools/metadata/2025-09-22_stdscaling",
-    "data_output_directory": "src/pipelines/data/output/"
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
   },
   "local": true,
   "cache_data": true
