@@ -399,7 +399,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
             }
             json.dump(data, f, indent=4)
     except Exception as e:
-        print(f"{e}")
+        print(f"Error opening test_loss.json {e}")
         
     try:  
         fig, axs = plt.subplots(2, figsize=(8, 6))
@@ -418,7 +418,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
 
         plt.savefig(output_dir + f"{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
-        print(f"{e}")
+        print(f"Error in making flattened_reconstruction.pdf {e}")
     
     try:
        
@@ -464,7 +464,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
         plt.savefig(output_dir + f"{this_signal}_image_reconstruction.pdf")
 
     except Exception as e:
-        print(f"{e}")
+        print(f"Error in making image_reconstruction.pdf {e}")
 
     plot_histograms(
         correlations_,
@@ -579,7 +579,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
             axs[i].set_xlabel("Time")
             axs[i].legend()
         except Exception as e:
-            print(f"e")
+            print(f"Error in making batch_reconstruction_comparison.pdf {e}")
 
     plt.savefig(output_dir + "/batch_reconstruction_comparison.pdf", dpi=300, bbox_inches='tight')
     plt.show()
@@ -652,7 +652,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_b_field_pol_probe_ccbv_field"
+    conf_file_name = "config_summary_ip_linear"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     
