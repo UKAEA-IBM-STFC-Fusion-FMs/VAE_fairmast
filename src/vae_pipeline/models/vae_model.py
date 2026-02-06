@@ -44,7 +44,10 @@ class beta_VAE(nn.Module):
         logvar = self.fc_logvar(encoded)
         return mu, logvar
 
-    def reparameterize(self, mu, logvar):
+    def reparameterize(self, mu, logvar, sampling: bool = True):
+        if not sampling:
+            # Deterministic: use the posterior mean
+            return mu
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
@@ -52,11 +55,12 @@ class beta_VAE(nn.Module):
     def decode(self, z):
         return self.decoder(z)
 
-    def forward(self, x):
+    def forward(self, x, sampling: bool = True):
         mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
+        z = self.reparameterize(mu, logvar, sampling=sampling)
         x_recon = self.decode(z)
         return x_recon, mu, logvar
+
 
 
 def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20, 20), clamp_mu=(-1e4,1e-4)):
