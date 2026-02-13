@@ -116,7 +116,9 @@ def train_vae_model(
     device,
     train_dataloader, 
     val_dataloader, 
-    output_dir, 
+    output_dir,
+    use_amp=True, 
+    grad_clip=1.0,   
     verbose=False,
     ):
     
@@ -157,6 +159,7 @@ def train_vae_model(
        
         # Send model to device for training
         model.train()
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
         
         # Initialize loss variables
         train_losses = train_recon_losses = train_kl_losses = 0.0
@@ -170,41 +173,61 @@ def train_vae_model(
 
             if x.numel() == 0:
                 continue  # skip empty batch
-            
+
             if verbose:
                 print(f"Batch idx: {batch_idx}")
                 print(f"Elapsed time DataLoader {time.time()-t_0_dataloader}")
 
+            x = x.to(device)
             total_tensors = x.size(0)
             
             # Initialiaze gradient
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             
             # Timing 
             t_0_model_train = time.time()
             device_process_time = 0
+            
+            any_backwards = False
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
-                x_sub_batch = x[start:end].to(device)
-
-                x_recon, mu, logvar = model(x_sub_batch)
-                                        
-                # Compute loss
+                x_sub_batch = x[start:end]
+                
                 try:
-                    loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=clamp_logvar , clamp_mu=(None,None))
-            
-                    loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
-                    recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
-                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None)       
-
+                    with torch.cuda.amp.autocast(enabled=use_amp):
+                        x_recon, mu, logvar = model(x_sub_batch)
+                        loss, recon_loss, kl_loss = loss_function(
+                            beta,
+                            x_recon,
+                            x_sub_batch,
+                            mu,
+                            logvar,
+                            clamp_logvar=clamp_logvar,
+                            clamp_mu=(None, None),
+                        )
                 except ValueError as e:
-                    print(f"Error in loss function calculation: {e}")
+                    # skip this sub-batch
+                    print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+                    continue
+
+
+                if (not torch.isfinite(loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
+                    print(
+                        f"[batch {batch_idx} {start}:{end}] non-finite loss components "
+                        f"(loss finite={torch.isfinite(loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
+                    )
                     continue
             
                 # Update gradients (gradients are summed at each iteration)
                 sub_tensors = x_sub_batch.size(0)
-                (loss * (sub_tensors/total_tensors)).backward()
+                effective_loss = loss * (sub_tensors / float(total_tensors))
+
+                if use_amp:
+                    scaler.scale(effective_loss).backward()
+                else:
+                    effective_loss.backward()
+                any_backward = True
                 
                 device_process_time += (time.time()-t_0_model_train)
                 t_0_model_train = time.time()
@@ -214,9 +237,29 @@ def train_vae_model(
                 train_recon_losses += recon_loss.item() * sub_tensors
                 train_kl_losses += kl_loss.item() * sub_tensors
                 train_counts += sub_tensors
+            
+            if not any_backward:
+                if verbose:
+                    print(f"[batch {batch_idx}] no valid sub-batches; skipping optimizer step")
+                continue  
+
+            total_norm = None
+            if grad_clip and grad_clip > 0:
+                total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
+
+                # Guard against NaN/Inf grad norm
+                if torch.isnan(total_norm) or torch.isinf(total_norm):
+                    if verbose:
+                        print(f"[batch {batch_idx}] bad grad norm {total_norm}; skipping step")
+                    continue
                 
             # Update model
-            optimizer.step()
+            if use_amp:
+                scaler.unscale_(optimizer)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
             
             if verbose:
                 print(f"Batch processing time {device_process_time:.2f}")      
@@ -254,14 +297,20 @@ def train_vae_model(
                                         
                     # Compute loss
                     try:
-                        loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar= clamp_logvar,clamp_mu=(None,None))
-               
-                        loss = torch.nan_to_num(loss,nan=0.0,posinf=None,neginf=None) 
-                        recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
-                        kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None) 
-
+                        with torch.cuda.amp.autocast(enabled=use_amp):
+                            x_recon, mu, logvar = model(x_sub_batch)
+                            loss, recon_loss, kl_loss = loss_function(
+                                beta,
+                                x_recon,
+                                x_sub_batch,
+                                mu,
+                                logvar,
+                                clamp_logvar=clamp_logvar,
+                                clamp_mu=(None, None),
+                            )
                     except ValueError as e:
-                        print(f"Error in loss function calculation: {e}")
+                        # skip this sub-batch
+                        print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
                         continue
                     
                     val_losses += loss.item() * sub_tensors 
@@ -292,7 +341,10 @@ def train_vae_model(
         if epoch > SETTINGS.TRAINING.patience:
             w1= 0.7
             w2= 1-w1
-            beta = w1*beta + w2*(0.1*avg_val_recon/avg_val_kl )
+            if avg_val_kl > 0:
+                beta = w1*beta + w2*(0.1*avg_val_recon/avg_val_kl )
+            else:
+                beta = beta
         
         beta_history.append(beta)
         lr_history.append(optimizer.param_groups[0]['lr'])
@@ -450,9 +502,8 @@ def main():
             All signals in the list will be merged into one, if compatible")
         shot_transforms = ComposeTransforms(
             [
-                # WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                # ConcatenateSignalsAfterTimeSegmentation(),
-                CombineSignalsTransform(),
+                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+                ConcatenateSignalsAfterTimeSegmentation(),
                 Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
             ]
         )
@@ -505,21 +556,18 @@ def main():
              optimizer,
              T_0 = SETTINGS.TRAINING.num_epochs,
              T_mult = 1, 
-             eta_min = 5e-5
+             eta_min = 1e-4
             )
   
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config10_part3/best_conv1d_vae_magnetics-flux_loop_flux.pt"
-    # checkpoint = torch.load(model_path)
+    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config_power_nbi_2/best_vae_power_nbi.pt"
+    # checkpoint = torch.load(model_path, map_location='cuda')
     # vae_model.load_state_dict(checkpoint['model_state_dict'])
     # vae_model.to('cuda')
-    # optimizer = torch.optim.Adam(
-    #         vae_model.parameters())
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    # optimizer.param_groups[0]['lr'] = SETTINGS.TRAINING.lr
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
-
+  
     # Save model architecture
     with open(os.path.join(output_directory, "model.json"),'w') as f:
        json.dump(

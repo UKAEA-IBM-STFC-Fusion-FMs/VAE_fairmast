@@ -47,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=8,
-    num_cols=5
+    num_rows=2,
+    num_cols=2
 ):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
@@ -89,7 +89,7 @@ def plot_histograms(
     plt.close(fig)
 
  
-def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
+def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     """Test pre-trained model 
 
     Parameters
@@ -232,79 +232,8 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
     max_error = float("-inf")
     best_loss = float("inf")
     minimum_error = float("inf")
+    clamp_logvar = (-50,50)
 
-    
-    # with torch.no_grad(): 
-    #     for batch_idx, batch in enumerate(val_dataloader):
-            
-    #         print(f"Batch idx {batch_idx}")
-            
-    #         if batch is None:
-    #             continue
-            
-            
-    #         # if batch_idx==1:
-    #         #     break
-                
-    #         for group_idx, stacked_tensor in batch.items():
-                
-    #             # if group_idx ==1:
-    #             #     break
-                
-    #             x = stacked_tensor.to(device)
-    #             x_recon, mu, logvar = model(x)
-
-    #             # Compute loss
-    #             total_loss, recon_loss, kl_loss = loss_function(SETTINGS.BETA_VAE.beta, x_recon, x, mu, logvar)
-    #             loss_vs_batch.append(total_loss.item())  
-                
-    #             if total_loss.item() < best_loss:
-    #                 best_loss = total_loss.item()
-                    
-    #             num_channels = x.shape[1]
-    #             if not correlations_:
-    #                 correlations_ = [[] for _ in range(num_channels)]
-    #             if not rel_errors:
-    #                 rel_errors = [[] for _ in range(num_channels)]
-
-    #             # Compute correlations
-    #             correl = correlations(x, x_recon)
-    #             if isinstance(correl, torch.Tensor):
-    #                 correl = correl.cpu().tolist()
-    #             for i, corr_values in enumerate(zip(*correl)):
-    #                 correlations_[i].extend(corr_values)
-
-    #             # Compute errors
-    #             errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(x, x_recon)
-    #             if isinstance(errors, torch.Tensor):
-    #                 errors = errors.cpu().tolist()
-    #             for i, error_values in enumerate(zip(*errors)):
-    #                 rel_errors[i].extend(error_values)
-
-    #             # Compute RMSE
-    #             rmse.extend(get_RMSE(x,x_recon).tolist())
-                
-    #             #Track best reconstruction
-    #             if minimum < minimum_error:
-    #                 minimum_error = minimum
-    #                 if 0 <= min_index < x.shape[0]:
-    #                     x_best_input = x[min_index].cpu()
-    #                     x_best_recon = x_recon[min_index].cpu()
-    #                 else:
-    #                     print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
-                
-    #             # Track worst reconstruction
-    #             if maximum > max_error:
-    #                 max_error = maximum
-    #                 if 0<= max_index < x.shape[0]:
-    #                     x_worst_input = x[max_index].cpu()
-    #                     x_worst_recon = x_recon[max_index].cpu()
-                    
-    #         # Track first sample in each batch
-    #         if len(x_input_N) <= N:
-    #             x_input_N.append(x[0])
-    #             x_recon_N.append(x_recon[0])
-    
     sub_batch_size = SETTINGS.TRAINING.train_batch_size            
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
@@ -317,6 +246,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
             
             print(f"Batch idx: {batch_idx}")
 
+            x = x.to(device)
             total_tensors = x.size(0)
             
             for start in range(0, total_tensors, sub_batch_size):
@@ -329,15 +259,21 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
                                         
                 # Compute loss
                 try:
-                    total_loss, recon_loss, kl_loss = loss_function(beta, x_recon, x_sub_batch, mu, logvar,  clamp_logvar=(-20.0, 20.0),clamp_mu=(None,None))
-            
-                    total_loss = torch.nan_to_num(total_loss,nan=0.0,posinf=None,neginf=None) 
-                    recon_loss = torch.nan_to_num(recon_loss,nan=0.0,posinf=None,neginf=None) 
-                    kl_loss = torch.nan_to_num(kl_loss,nan=0.0,posinf=None,neginf=None) 
-                    loss_vs_batch.append(total_loss.item()) 
-                    
+                    with torch.cuda.amp.autocast(enabled=use_amp):
+                        x_recon, mu, logvar = model(x_sub_batch)
+                        total_loss, recon_loss, kl_loss = loss_function(
+                            beta,
+                            x_recon,
+                            x_sub_batch,
+                            mu,
+                            logvar,
+                            clamp_logvar=clamp_logvar,
+                            clamp_mu=(None, None),
+                        )
+                        loss_vs_batch.append(total_loss.item())
                 except ValueError as e:
-                    print(f"Error in loss function calculation: {e}")
+                    # skip this sub-batch
+                    print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
                     continue
                 
                 
@@ -345,6 +281,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS):
                     best_loss = total_loss.item()
                     
                 num_channels = x_sub_batch.shape[1]
+                
                 if not correlations_:
                     correlations_ = [[] for _ in range(num_channels)]
                 if not rel_errors:
@@ -652,7 +589,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_summary_ip_linear"
+    conf_file_name = "config_coil_voltage_test"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     
@@ -660,4 +597,4 @@ if __name__ == "__main__":
     
     source, signal_name = SETTINGS.DATA.data_names[0]
 
-    test_model(source, signal_name, output_dir, SETTINGS)
+    test_model(source, signal_name, output_dir, SETTINGS, use_amp=True)

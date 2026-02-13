@@ -1,0 +1,73 @@
+{
+  "input": {
+    "data_names": [
+      ["pf_active","coil_voltage"]
+    ],
+    "target_names": [["pf_active","coil_voltage"]]
+  },
+  "time_settings":{
+    "x_window_sec": 0.005,
+    "y_window_sec": 0.0002,
+    "dt_sec": 0.0, 
+    "stride_sec": 0.0035,
+    "stride_unitary": true,
+    "targeted_time_stamps_per_window": 20
+  },
+  "training": {
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
+    "patience":5,
+    "min_increment": 0.0005,
+    "lr": 1e-3,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 100,
+    "train_batch_size":200,
+    "min_batch_size": 4,
+    "num_workers": 6
+  },
+  "beta-vae":{
+    "latent_dim":5,
+    "beta":0.001,
+    "ref_freq": 0.001
+  },
+  "encoder":{
+    "type": "conv1d_conv1d_transpose",
+    "activation_fn": "leaky_relu",
+    "layers": [
+      {"type": "conv1d", "params": {"in_channels": 4, "out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 32, "out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 1, "padding": 0}}, 
+      {"type": "leaky_relu"},
+      {"type": "adaptive_avg_pool1d","params":{"output_size":1}},
+      {"type": "flatten", "params":{}},
+      {"type": "linear", "params":{"in_features": 128, "out_features": 64}},
+      {"type": "leaky_relu"}
+    ]
+  },
+
+    "decoder": {
+    "type": "conv1d_conv1d_transpose",
+    "activation_fn": "leaky_relu",
+    "layers": [
+        { "type": "linear", "params": { "in_features": 5, "out_features": 2304 } },
+        { "type": "leaky_relu" },
+        { "type": "unflatten", "params": {"dim":1, "unflattened_size": [128, 18] }},
+        { "type": "conv_transpose1d", "params": { "in_channels": 128, "out_channels": 64, "kernel_size": 3, "stride": 1, "padding": 0 } },
+        { "type": "leaky_relu" }, 
+        { "type": "conv_transpose1d", "params": { "in_channels": 64, "out_channels": 32, "kernel_size": 3, "stride": 1, "padding": 1 } },
+        { "type": "leaky_relu" },  
+        { "type": "conv_transpose1d", "params": { "in_channels": 32, "out_channels": 4, "kernel_size": 3, "stride": 1, "padding": 1 } },
+    ]
+    },
+  "paths": {
+    "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
+    "joblib_directory": "/home/ir-lore2/ImputerModels/",
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
+  },
+  "local": true,
+  "cache_data": true
+}

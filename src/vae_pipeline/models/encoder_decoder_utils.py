@@ -115,6 +115,38 @@ def add(l1, l2):
             l1["layers"].extend(l2["layers"])
             return l1 
 
+def quick_build_from_config(SETTINGS):
+    if _chek_for_missing_attributes(SETTINGS):
+        return None
+    
+    # Get encoder specs
+    encoder_specs = {"layers": SETTINGS.ENCODER.layers}
+    
+    # Build encoder from layers specs
+    if encoder_specs["layers"]:
+        conv1d_encoder = SequentialBuilder(encoder_specs)
+        
+    
+    # Read decoder specs from SETTINGS is decoder key is available
+    if SETTINGS.get("DECODER","layers"):
+        decoder_specs = {"layers": SETTINGS.DECODER.layers}
+    else:
+        raise KeyError("Decoder specs not available in config file")
+    
+    # Build decoder from layers specs
+    if decoder_specs["layers"]:
+        conv1d_decoder = SequentialBuilder(decoder_specs)
+
+    # Ger the size of last linear layer
+    out_layer_size = None
+    for spec in reversed(encoder_layer_specs["layers"]):
+        if spec["type"] == "linear": 
+            out_layer_size = spec["params"]["out_features"]
+            break
+
+    return conv1d_encoder, conv1d_decoder, out_layer_size
+        
+    
 def build_conv1d_encoder_decoder(SETTINGS):
     """Build encoder and decoder for the conv1d_vae model. 
     The encoder specs are stored in the SETTINGS. 
