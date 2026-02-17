@@ -73,7 +73,11 @@ class Conv1dVAETransform:
                     continue
                 
                 # Crop or keep as is
-                cropped_values = values[:, :self.targeted_signal_length]
+                if len(values.shape) > 1:
+                    cropped_values = values[:, :self.targeted_signal_length]
+                else:
+                    cropped_values = values[:self.targeted_signal_length]
+                        
                 all_signals[signal_name].append(torch.tensor(cropped_values, dtype=torch.float32))
 
         if all_signals:

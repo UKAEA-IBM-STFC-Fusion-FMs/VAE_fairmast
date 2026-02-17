@@ -125,7 +125,6 @@ def quick_build_from_config(SETTINGS):
     # Build encoder from layers specs
     if encoder_specs["layers"]:
         conv1d_encoder = SequentialBuilder(encoder_specs)
-        
     
     # Read decoder specs from SETTINGS is decoder key is available
     if SETTINGS.get("DECODER","layers"):
@@ -139,7 +138,7 @@ def quick_build_from_config(SETTINGS):
 
     # Ger the size of last linear layer
     out_layer_size = None
-    for spec in reversed(encoder_layer_specs["layers"]):
+    for spec in reversed(encoder_specs["layers"]):
         if spec["type"] == "linear": 
             out_layer_size = spec["params"]["out_features"]
             break

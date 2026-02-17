@@ -13,7 +13,7 @@ class EncoderDecoder():
         if SETTINGS.ENCODER.type == "linear":
             results = build_linear_encoder_decoder(SETTINGS)
         
-        if SETTINGS.ENCODER.type == "conv1d_":
+        if SETTINGS.ENCODER.type == "encoder_decoder":
             results = quick_build_from_config(SETTINGS)
             
         if results is None:

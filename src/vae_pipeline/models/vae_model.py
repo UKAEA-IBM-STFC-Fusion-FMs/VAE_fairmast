@@ -63,13 +63,12 @@ class beta_VAE(nn.Module):
 
 
 
-def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20, 20), clamp_mu=(-1e4,1e-4)):
+def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20, 20)):
     """β-VAE loss function"""
       
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
     # Guardrails
-    mu = torch.nan_to_num(mu,nan=0.0,posinf=clamp_mu[1],neginf=clamp_mu[0]) 
     logvar = torch.nan_to_num(logvar,nan=0.0,posinf=clamp_logvar[1],neginf=clamp_logvar[0]) 
     
     if clamp_logvar is not None:
@@ -84,13 +83,12 @@ def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_log
     
     return total_loss, reconstruction_loss, kl_loss
 
-def loss_function_global_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0), clamp_mu=(-1e4,1e-4)):
+def loss_function_global_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20.0, 20.0)):
     """β-VAE loss function"""
     
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
     # Guardrails
-    mu = torch.nan_to_num(mu,nan=0.0,posinf=clamp_mu[1],neginf=clamp_mu[0]) 
     logvar = torch.nan_to_num(logvar,nan=0.0,posinf=clamp_logvar[1],neginf=clamp_logvar[0]) 
         
     if clamp_logvar is not None:
