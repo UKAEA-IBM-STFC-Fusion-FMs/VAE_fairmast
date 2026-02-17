@@ -41,7 +41,8 @@ from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
-from src.vae_pipeline.transforms.shot_level_transforms.combine_signals_transform import CombineSignalsTransform
+from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
+from src.vae_pipeline.transforms.shot_level_transforms.cast_1D_transform import Cast1DTransform
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 
@@ -118,7 +119,7 @@ def train_vae_model(
     val_dataloader, 
     output_dir,
     use_amp=True, 
-    grad_clip=1.0,   
+    grad_clip=1,   
     verbose=False,
     ):
     
@@ -159,7 +160,7 @@ def train_vae_model(
        
         # Send model to device for training
         model.train()
-        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
         
         # Initialize loss variables
         train_losses = train_recon_losses = train_kl_losses = 0.0
@@ -203,8 +204,7 @@ def train_vae_model(
                             x_sub_batch,
                             mu,
                             logvar,
-                            clamp_logvar=clamp_logvar,
-                            clamp_mu=(None, None),
+                            clamp_logvar=clamp_logvar
                         )
                 except ValueError as e:
                     # skip this sub-batch
@@ -292,9 +292,7 @@ def train_vae_model(
                 
                     x_sub_batch = x[start:end].to(device)
                     sub_tensors = x_sub_batch.size(0)
-                    
-                    x_recon, mu, logvar = model(x_sub_batch)
-                                        
+                                                        
                     # Compute loss
                     try:
                         with torch.cuda.amp.autocast(enabled=use_amp):
@@ -305,8 +303,7 @@ def train_vae_model(
                                 x_sub_batch,
                                 mu,
                                 logvar,
-                                clamp_logvar=clamp_logvar,
-                                clamp_mu=(None, None),
+                                clamp_logvar=clamp_logvar
                             )
                     except ValueError as e:
                         # skip this sub-batch
@@ -504,6 +501,7 @@ def main():
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
                 ConcatenateSignalsAfterTimeSegmentation(),
+                Cast1DTransform(),
                 Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
             ]
         )

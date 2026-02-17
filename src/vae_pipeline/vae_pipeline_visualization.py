@@ -268,7 +268,6 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                             mu,
                             logvar,
                             clamp_logvar=clamp_logvar,
-                            clamp_mu=(None, None),
                         )
                         loss_vs_batch.append(total_loss.item())
                 except ValueError as e:
@@ -589,7 +588,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_voltage_test"
+    conf_file_name = "config_coil_voltage"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     
