@@ -56,7 +56,6 @@ class Conv1dVAETransform:
         self.targeted_signal_length = targeted_signal_length
 
     def __call__(self, list_samples):
-        breakpoint()
         all_signals = defaultdict(list)
 
         # Loop trhough all window_index
