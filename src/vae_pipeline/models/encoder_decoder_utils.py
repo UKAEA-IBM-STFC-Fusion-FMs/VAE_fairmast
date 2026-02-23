@@ -143,11 +143,12 @@ def quick_build_from_config(SETTINGS):
         if spec["type"] == "linear": 
             out_layer_size = spec["params"]["out_features"]
             break
-        if spec["type"] == "conv1d":
+        if spec["type"] == "conv1d" or spec["type"] == "conv2d":
             # Get signal shape after conv1d encoder
             all_nr_channels, all_lengths = _compute_conv_output_dim(SETTINGS, encoder_specs)
             out_layer_size = all_nr_channels[-1] * all_lengths[-1]
             break
+
     if out_layer_size == None:
         raise ValueError("out_layer_size indetermined, check 'encode' field in config file")
     
@@ -505,7 +506,7 @@ def _compute_conv_output_dim(SETTINGS, layer_specs):
     channels = [current_channels]
     
     for spec in layer_specs["layers"]:
-        if spec["type"] == "conv1d":
+        if spec["type"] == "conv1d" or spec["type"] == "conv2d":
             params = spec.get("params", {})
             kernel_size = params.get("kernel_size", 1)
             stride = params.get("stride", 1)
