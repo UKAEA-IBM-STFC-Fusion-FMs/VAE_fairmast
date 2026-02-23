@@ -36,7 +36,6 @@ class ImputerTransform(object):
         self.imputer = SimpleImputer(missing_values=np.nan, strategy="mean")
         
     def __call__(self, sample):
-        
         # Retireve "values" and "time" from the sample
         try:
             vals, time = sample["values"], sample["time"]
@@ -53,27 +52,37 @@ class ImputerTransform(object):
             # Compute means along rows, ignoring NaNs
             row_means = np.nanmean(vals, axis=1)
             
-            # Replace NaN with corresponding mean
-            for i in range(vals.shape[0]):
-                ith_channel = vals[i]
-                ith_channel[np.isnan(ith_channel)] = row_means[i]
-                vals[i] = ith_channel
-                
-            # Check for empty channels
+            # Use imputer.fit_transform
             if np.any(np.isnan(row_means)):
                 vals = self.imputer.fit_transform(vals)
-                
+            else:
+                # Replace NaN with corresponding mean
+                vals = np.where(np.isnan(vals), row_means[:, None], vals)
+                        
         elif vals.ndim == 1:
             if np.any(np.isnan(vals)):
                 mean_val = np.nanmean(vals)
-                if np.isnan(mean_val):  # means all values were NaN
+                if np.isnan(mean_val):
                     return None
                 else:
                     vals[np.isnan(vals)] = mean_val          
         else:
-            print("Error in imputer_transform.py, vals dimension must be 1 or 2.")
-            return None
-                             
+            # Compute row means for each slice of the 3D-tensor
+            row_means = np.nanmean(vals, axis=1) 
+            
+            # Identify slices where any row mean is NaN
+            bad = np.isnan(row_means).any(axis=0) 
+            # Identify good slices
+            good = ~bad 
+            
+            # Imputer for bad slices 
+            for k in np.where(bad)[0]: 
+                vals[:, :, k] = 0
+
+            # Vectorized fill for good slices 
+            means = row_means[:, good][:, None, :] 
+            vals[:, :, good] = np.where(np.isnan(vals[:, :, good]), means, vals[:, :, good])
+            
         return {"values":vals, "time":time}
     
     

@@ -165,14 +165,14 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
                 ConcatenateSignalsAfterTimeSegmentation(),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
             ]
         )
     else:
         shot_transforms = ComposeTransforms(
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
             ]
         )
     

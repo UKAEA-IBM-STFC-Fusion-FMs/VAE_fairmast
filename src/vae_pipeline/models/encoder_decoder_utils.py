@@ -23,6 +23,7 @@ import math
 import sys
 import torch
 import torch.nn as nn
+import warnings
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -136,13 +137,20 @@ def quick_build_from_config(SETTINGS):
     if decoder_specs["layers"]:
         conv1d_decoder = SequentialBuilder(decoder_specs)
 
-    # Ger the size of last linear layer
+    # Ger the size of last linear or conv1d layer
     out_layer_size = None
     for spec in reversed(encoder_specs["layers"]):
         if spec["type"] == "linear": 
             out_layer_size = spec["params"]["out_features"]
             break
-
+        if spec["type"] == "conv1d":
+            # Get signal shape after conv1d encoder
+            all_nr_channels, all_lengths = _compute_conv_output_dim(SETTINGS, encoder_specs)
+            out_layer_size = all_nr_channels[-1] * all_lengths[-1]
+            break
+    if out_layer_size == None:
+        raise ValueError("out_layer_size indetermined, check 'encode' field in config file")
+    
     return conv1d_encoder, conv1d_decoder, out_layer_size
         
     
@@ -195,7 +203,7 @@ def build_conv1d_encoder_decoder(SETTINGS):
     # Size of intermediate layer (if any) before latent space representation
     size_before_vae = int( (conv1d_out_dim + SETTINGS.BETA_VAE.latent_dim)/2)
     #size_before_vae = conv1d_out_dim
-    
+
     # Add layers to encoder specs    
     encoder_specs = add(encoder_specs, {"type": "flatten", "params":{"start_dim":1}})
     L1 = active_linear(in_features = conv1d_out_dim, out_features = size_before_vae, activation_fn = SETTINGS.ENCODER.activation_fn)
@@ -440,9 +448,21 @@ def _chek_for_missing_attributes(SETTINGS):
 
     # Check if "targeted_time_stamps_per_window" exists and is not None in SETTINGS.TIME_SEGMENTATION
     if SETTINGS.get("TIME_SEGMENTATION", "targeted_time_stamps_per_window") is None:
-        print("Conv1d (time) input_length unresolved")
+        print("Number of time stamps in a time window unresolved")
         return True
 
+    if SETTINGS.get("WINDOWsSHAPE", "window_channels") is None:
+        print("Number of channels in a time window unresolved")
+        return True
+    
+    if SETTINGS.get("WINDOWsSHAPE", "window_length") is None:
+        print("Length of a time window unresolved")
+        return True
+    
+    if SETTINGS.get("WINDOWsSHAPE", "window_length") != SETTINGS.get("TIME_SEGMENTATION", "targeted_time_stamps_per_window"):
+        warnings.warn("window_length != len(targeted_time_stamps_per_window). Check if this is intended. \
+                      This behaviour is common for 'Psi' signal.",  UserWarning)
+    
     # Check if "latent_dim" exists and is not None in SETTINGS.BETA_VAE
     if SETTINGS.get("BETA_VAE", "latent_dim") is None:
         print("Attribute latent_dim missing from SETTINGS.BETA_VAE")
@@ -479,7 +499,7 @@ def _compute_conv_output_dim(SETTINGS, layer_specs):
     """Compute output dimensions after conv1d layers configured in layer_specs."""
     
     current_channels = layer_specs["layers"][0]["params"]["in_channels"]
-    current_length =  SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window
+    current_length =  SETTINGS.WINDOWsSHAPE.window_length
     
     lengths = [current_length]
     channels = [current_channels]
@@ -491,7 +511,6 @@ def _compute_conv_output_dim(SETTINGS, layer_specs):
             stride = params.get("stride", 1)
             padding = params.get("padding", 0)
             out_channels = params.get("out_channels", current_channels)
-
             current_length =  _conv1d_out_len(current_length, kernel_size, stride, padding)
             current_channels = out_channels
             

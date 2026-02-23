@@ -502,14 +502,14 @@ def main():
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
                 ConcatenateSignalsAfterTimeSegmentation(),
                 Cast1DTransform(),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
             ]
         )
     else:
         shot_transforms = ComposeTransforms(
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window),
+                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
             ]
         )
 
@@ -558,7 +558,8 @@ def main():
             )
   
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config_power_nbi_2/best_vae_power_nbi.pt"
+    # model_path = "src/vae_pipeline/data/trained_VAEs/conv1d_vae_config_b_field_tor_probe_saddle_voltage/best_vae_b_field_tor_probe_saddle_voltage.pt"
+    # print(f"RESUMING TRAINING from {model_path}")
     # checkpoint = torch.load(model_path, map_location='cuda')
     # vae_model.load_state_dict(checkpoint['model_state_dict'])
     # vae_model.to('cuda')

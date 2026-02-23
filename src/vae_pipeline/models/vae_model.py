@@ -213,10 +213,10 @@ if __name__ == "__main__":
     
     # Get signal number of channels and length
     try:
-        nr_channels = SETTINGS.ENCODER.layers[0]["params"]["in_channels"]
-        length = SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window 
+        nr_channels = SETTINGS.WINDOWsSHAPE.window_channels
+        length = SETTINGS.WINDOWsSHAPE.window_length 
     except:
-        raise KeyError("Either 'in_channels' or 'targeted_time_stamps_per_window' could not be found in SETTINGS")
+        raise KeyError("Either 'window_channels' or 'window_length' could not be found in SETTINGS")
 
     # Run tests
     #1

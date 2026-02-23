@@ -56,7 +56,7 @@ class Conv1dVAETransform:
         self.targeted_signal_length = targeted_signal_length
 
     def __call__(self, list_samples):
-       
+        breakpoint()
         all_signals = defaultdict(list)
 
         # Loop trhough all window_index
@@ -72,12 +72,9 @@ class Conv1dVAETransform:
                 if values.shape[-1] < self.targeted_signal_length:
                     continue
                 
-                # Crop or keep as is
-                if len(values.shape) > 1:
-                    cropped_values = values[:, :self.targeted_signal_length]
-                else:
-                    cropped_values = values[:self.targeted_signal_length]
-                        
+                # Slice last dimension (or keep as is)
+                cropped_values = values[..., :self.targeted_signal_length]
+                      
                 all_signals[signal_name].append(torch.tensor(cropped_values, dtype=torch.float32))
 
         if all_signals:

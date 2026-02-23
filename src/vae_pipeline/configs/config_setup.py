@@ -57,7 +57,12 @@ class Settings:
             self.TRAINING = TrainingSettings(config)
         else:
             raise KeyError("'training' not found in config")
-            
+        
+        if "windowed_data_specs" in config.keys():
+            self.WINDOWsSHAPE = WindowShape(config)
+        else:
+            raise KeyError("'windowed_data_specs' not found in config")
+        
         # Non essential attributes
         if "conv1d_encoder" in config.keys():
             self.CONV1dENCODER = Conv1dEncoder(config)
@@ -164,7 +169,20 @@ class TimeSettings:
         else:
             print(f"[Warning] Missing key '{key}' in time_settings. Setting to None.")
             return None
-
+# ======================================================================================================================
+class WindowShape:
+    def __init__(self, config):
+        window_specs = config.get("windowed_data_specs",{})
+    
+        self.window_channels = self._get_key(window_specs, "window_channels")
+        self.window_length = self._get_key(window_specs,"window_length")
+    
+    def _get_key(self, section, key):
+        if key in section:
+            return section[key]
+        else:
+            print(f"[Warning] Missing key '{key}' in window_data_specs configuration. Setting to None.")
+            return None   
 # ======================================================================================================================
 class TrainingSettings:
     def __init__(self, config):
