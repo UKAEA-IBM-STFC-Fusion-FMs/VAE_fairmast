@@ -58,12 +58,11 @@ class Conv1dVAETransform:
     def __call__(self, list_samples):
         all_signals = defaultdict(list)
 
-        # Loop trhough all window_index
+        # Loop trhough window_index
         if not list_samples or list_samples is None:
             return None
-        
+
         for windowed_signal in list_samples:
-            # Add signals
             for signal_name, signal_data in windowed_signal["x"].items():
                
                 values = signal_data["values"]

@@ -40,13 +40,13 @@ class WindowsCollate:
 
             
             cleaned = []
-            for j, w in enumerate(windows):
-                if not isinstance(w, torch.Tensor): 
+            for j, window in enumerate(windows):
+                if not isinstance(window, torch.Tensor): 
                     continue
-                if not torch.isfinite(w).all(): 
+                if not torch.isfinite(window).all(): 
                     print("Tensor window contains contain non-finite entries.")
                     continue
-                cleaned.append(w)
+                cleaned.append(window)
 
             t = torch.stack(cleaned, dim=0)   # (len(sample), C, T)
             all_windows.append(t)

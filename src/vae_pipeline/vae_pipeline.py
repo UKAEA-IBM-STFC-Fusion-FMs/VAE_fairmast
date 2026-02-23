@@ -189,14 +189,20 @@ def train_vae_model(
             t_0_model_train = time.time()
             device_process_time = 0
             
-            any_backwards = False
+            any_backward = False
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
                 x_sub_batch = x[start:end]
                 
+                # Videos or 3D signals 
+                if x_sub_batch.ndim == 4: # Including batch dimension
+                    B, H, W, T = x_sub_batch.shape
+                    x_sub_batch = x_sub_batch.view(B, H, W * T)   
+
                 try:
-                    with torch.cuda.amp.autocast(enabled=use_amp):
+                    with torch.amp.autocast('cuda', enabled=use_amp):
+                        
                         x_recon, mu, logvar = model(x_sub_batch)
                         loss, recon_loss, kl_loss = loss_function(
                             beta,
@@ -285,17 +291,24 @@ def train_vae_model(
                 if verbose:
                     print(f"Batch idx: {batch_idx}")
 
+                x = x.to(device)
                 total_tensors = x.size(0)
                 
                 for start in range(0, total_tensors, sub_batch_size):
                     end = min(start + sub_batch_size, total_tensors)
                 
-                    x_sub_batch = x[start:end].to(device)
+                    x_sub_batch = x[start:end]
+                    
+                     # Videos or 3D signals 
+                    if x_sub_batch.ndim == 4: # Including batch dimension
+                        B, H, W, T = x_sub_batch.shape
+                        x_sub_batch = x_sub_batch.view(B, H, W * T)   
+                        
                     sub_tensors = x_sub_batch.size(0)
                                                         
                     # Compute loss
                     try:
-                        with torch.cuda.amp.autocast(enabled=use_amp):
+                        with torch.amp.autocast('cuda', enabled=use_amp):
                             x_recon, mu, logvar = model(x_sub_batch)
                             loss, recon_loss, kl_loss = loss_function(
                                 beta,
@@ -502,14 +515,14 @@ def main():
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
                 ConcatenateSignalsAfterTimeSegmentation(),
                 Cast1DTransform(),
-                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
             ]
         )
     else:
         shot_transforms = ComposeTransforms(
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
             ]
         )
 
