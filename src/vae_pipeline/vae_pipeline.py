@@ -194,15 +194,14 @@ def train_vae_model(
                 end = min(start + sub_batch_size, total_tensors)
                 
                 x_sub_batch = x[start:end]
-                
+
                 # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
-                # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
-                if x_sub_batch.ndim == 4 and SETTINGS.ENCODER.type == "conv2d":
+                # we must permute the indeces of our tensor to agree with the PyTorch conv2d convention.
+                if x_sub_batch.ndim == 4:
                     x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
 
                 try:
                     with torch.amp.autocast('cuda', enabled=use_amp):
-                        
                         x_recon, mu, logvar = model(x_sub_batch)
                         loss, recon_loss, kl_loss = loss_function(
                             beta,
@@ -302,7 +301,7 @@ def train_vae_model(
                     
                     # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
                     # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
-                    if x_sub_batch.ndim == 4 and SETTINGS.ENCODER.type == "conv2d":
+                    if x_sub_batch.ndim == 4:
                         x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
                     
                                                         

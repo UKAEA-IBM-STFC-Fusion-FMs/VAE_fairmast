@@ -15,7 +15,7 @@ class WindowsCollate:
     def __call__(self, batch: List[Dict[str, Any]]):
         all_windows = []
         lengths = []
-
+        
         for sample in batch:
             # Skip empties and normalize [sample] → sample
             if not sample:
@@ -38,7 +38,6 @@ class WindowsCollate:
                 lengths.append(0)
                 continue
 
-            
             cleaned = []
             for j, window in enumerate(windows):
                 if not isinstance(window, torch.Tensor): 
@@ -46,9 +45,15 @@ class WindowsCollate:
                 if not torch.isfinite(window).all(): 
                     print("Tensor window contains contain non-finite entries.")
                     continue
-                cleaned.append(window)
+                
+                # Transpose signals with shape (N,1) before stacking them, this happens for windows length = 1.
+                if window.shape[-1]==1:
+                    cleaned.append(window.T)
+                else:
+                    cleaned.append(window)
 
             t = torch.stack(cleaned, dim=0)   # (len(sample), C, T)
+                
             all_windows.append(t)
             lengths.append(t.shape[0])
 
@@ -57,7 +62,7 @@ class WindowsCollate:
             # If you know C,T at construction time, pre-store them and return (0, C, T)
             empty_x = torch.empty(0, 0, 0)  # or torch.empty(0, C, T)
             return {"x": empty_x, "lengths": torch.zeros(0, dtype=torch.int32)}
-     
+
         x = torch.cat(all_windows, dim=0)  # (N_total, C, T)
         return {"x": x, "lengths": torch.tensor(lengths, dtype=torch.int32)}
        
