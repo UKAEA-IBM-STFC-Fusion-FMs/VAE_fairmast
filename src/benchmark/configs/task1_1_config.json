@@ -1,0 +1,21 @@
+{
+  "training": {
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
+    "lr": 0.5e-3,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 1,
+    "train_batch_size":1,
+    "num_workers": 0
+  },
+  "paths": {
+    "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "vae_directory": "src/vae_pipeline/data/trained_VAEs/",
+    "output_directory": "src/benchmark/data/output"
+  },
+  "local": true,
+  "cache_data": true,
+  "task": 1
+}
