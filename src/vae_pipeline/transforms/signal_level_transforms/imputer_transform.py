@@ -1,8 +1,6 @@
 import numpy as np
 import os
 import sys
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -32,8 +30,6 @@ class ImputerTransform(object):
     Return:
     signal after imputation of NaN entires.
     """
-    def __init__(self):
-        self.imputer = SimpleImputer(missing_values=np.nan, strategy="mean")
         
     def __call__(self, sample):
         # Retireve "values" and "time" from the sample
@@ -46,26 +42,30 @@ class ImputerTransform(object):
         if vals is None or time is None:
             return None
         
-        
-        if vals.ndim == 2:
-            
-            # Compute means along rows, ignoring NaNs
-            row_means = np.nanmean(vals, axis=1)
-            
-            # Use imputer.fit_transform
-            if np.any(np.isnan(row_means)):
-                vals = self.imputer.fit_transform(vals)
-            else:
-                # Replace NaN with corresponding mean
-                vals = np.where(np.isnan(vals), row_means[:, None], vals)
-                        
-        elif vals.ndim == 1:
+        if vals.ndim == 1:
             if np.any(np.isnan(vals)):
                 mean_val = np.nanmean(vals)
                 if np.isnan(mean_val):
                     return None
                 else:
-                    vals[np.isnan(vals)] = mean_val          
+                    vals[np.isnan(vals)] = mean_val  
+        elif vals.ndim == 2:
+            
+            # Compute means along rows, ignoring NaNs
+            row_means = np.nanmean(vals, axis=1)
+            
+            # Compute means along columns, ignoring NaNs
+            col_means = np.nanmean(vals, axis=0)
+            col_fill = col_means.copy()
+            col_fill[np.isnan(col_fill)] = 0.0
+
+            # Replace rows containing all NaN with col_fill
+            rows_all_nan = np.all(np.isnan(vals), axis=1)
+            vals[rows_all_nan] = col_fill
+
+            # Fill the remaining NaN
+            vals = np.where(np.isnan(vals), row_means[:, None], vals)  
+                  
         else:
             # Compute row means for each slice of the 3D-tensor
             row_means = np.nanmean(vals, axis=1) 
@@ -79,7 +79,7 @@ class ImputerTransform(object):
             for k in np.where(bad)[0]: 
                 vals[:, :, k] = 0
 
-            # Vectorized fill for good slices 
+            # Fill for good slices 
             means = row_means[:, good][:, None, :] 
             vals[:, :, good] = np.where(np.isnan(vals[:, :, good]), means, vals[:, :, good])
             

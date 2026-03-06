@@ -47,8 +47,8 @@ def plot_histograms(
     y_label,
     title_prefix,
     file_name,
-    num_rows=2,
-    num_cols=2
+    num_rows=1,
+    num_cols=1
 ):
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
@@ -165,14 +165,14 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
                 ConcatenateSignalsAfterTimeSegmentation(),
-                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
             ]
         )
     else:
         shot_transforms = ComposeTransforms(
             [
                 WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.WINDOWsSHAPE.window_length),
+                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
             ]
         )
     
@@ -254,13 +254,18 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             
                 x_sub_batch = x[start:end].to(device)
                 sub_tensors = x_sub_batch.size(0)
-                    
+                
+                # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
+                # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
+                if x_sub_batch.ndim == 4:
+                    x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous()                                
+                                                        
                 x_recon, mu, logvar = model(x_sub_batch)
                                         
                 # Compute loss
                 try:
-                    with torch.cuda.amp.autocast(enabled=use_amp):
-                        x_recon, mu, logvar = model(x_sub_batch)
+                    with torch.amp.autocast('cuda', enabled=use_amp):
+                        x_recon, mu, logvar = model(x=x_sub_batch, sampling = False)
                         total_loss, recon_loss, kl_loss = loss_function(
                             beta,
                             x_recon,
@@ -285,7 +290,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                     correlations_ = [[] for _ in range(num_channels)]
                 if not rel_errors:
                     rel_errors = [[] for _ in range(num_channels)]
-
+                # breakpoint()
                 # Compute correlations
                 correl = correlations(x_sub_batch, x_recon)
                 if isinstance(correl, torch.Tensor):
@@ -588,7 +593,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_coil_voltage"
+    conf_file_name = "config_thomson_n_e"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     

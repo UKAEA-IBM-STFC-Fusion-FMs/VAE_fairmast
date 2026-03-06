@@ -214,7 +214,7 @@ class LocalPaths:
         paths_specs = config.get("paths", {})
 
         self.global_mean_std_path = self._get_key(paths_specs, "global_mean_std_path")
-        self.joblib_directory = self._get_key(paths_specs, "joblib_directory")
+        self.data_split_csv_path = self._get_key(paths_specs, "data_split_csv_path")
         self.data_split_csv_path = self._get_key(paths_specs, "data_split_csv_path")
         self.data_output_directory = self._get_key(paths_specs, "data_output_directory")
 
@@ -228,12 +228,11 @@ class LocalPaths:
 # ======================================================================================================================
 class DataInput:
     def __init__(self, config):
-        local_specs = config.get("local", None)
-        input_specs = config.get("input", {})
+        self.local = config.get("local", True)
 
         self.cache_data =  config.get("cache_data", True)
         
-        self.local = local_specs if local_specs is not None else None
+
         if self.local is None:
             print("[Warning] Missing 'local' section in configuration. Setting to None.")
 

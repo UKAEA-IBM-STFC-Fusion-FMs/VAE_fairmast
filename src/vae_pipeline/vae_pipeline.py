@@ -482,7 +482,7 @@ def main():
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
         max_index_for_test = None,
-        csv_path = "fairmast_tools/metadata/2025-05-12/data_splits.csv"
+        csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
     #Get mean and std for signal transformation

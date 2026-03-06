@@ -137,7 +137,7 @@ def quick_build_from_config(SETTINGS):
     if decoder_specs["layers"]:
         conv1d_decoder = SequentialBuilder(decoder_specs)
 
-    # Ger the size of last linear or conv1d layer
+    # Get the size of last linear or conv1d layer
     out_layer_size = None
     for spec in reversed(encoder_specs["layers"]):
         if spec["type"] == "linear": 
