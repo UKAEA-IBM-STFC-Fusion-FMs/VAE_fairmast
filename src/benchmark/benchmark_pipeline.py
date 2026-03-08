@@ -36,8 +36,32 @@ from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.vae_pipeline.vae_pipeline import initialize_datasets, initialize_dataloaders
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 
-from src.benchmark.utils import load_task_config, load_model_settings, parse_args
+from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model
+from src.vae_pipeline.models.vae_model import beta_VAE
 
+def train_model(
+    train_dataloader:DataLoader,
+    vae_input_models: list[beta_VAE],
+    vae_actuator_models: list[beta_VAE],
+    vae_output_models: list[beta_VAE]
+    ):
+    
+    for batch_idx, batch_ in enumerate(train_dataloader):
+        breakpoint()
+        
+        print(f"\nBatch {batch_idx}")
+        # print(batch_)
+        shot_id, window_index, x_train, y_train = batch_
+
+        print(f"The list of shot ID is  {batch_['shot_id'].item()}")
+        print(f"The list of window Index is {batch_['window_index'].item()}")
+
+        print(f"The x_train has been collated to shape (B, ..., T), , {[arr.shape for arr in batch_['x']]}")
+        # print("Mean x_train", [torch.nanmean(arr) for arr in x_train])
+        # print("Std x_train", [np.nanstd(arr) for arr in x_train])
+
+        print(f"The y_train has been collated to shape (B, ..., T), {[arr.shape for arr in batch_['y']]}")
+        
 def main():
     args = parse_args()
 
@@ -54,7 +78,7 @@ def main():
 
     # Load model settings
     try:
-        SETTINGS: Settings = load_model_settings(config_model_file_path)
+        SETTINGS: SettingsBenchmark = load_benchmark_settings(config_model_file_path)
     except Exception as e:
         print(f"[ERROR] {e}")
         return
@@ -130,40 +154,48 @@ def main():
         persistent_workers = False
     )
     
-    for batch_idx, batch_ in enumerate(train_dataloader):
-        breakpoint()
+    # Load input VAEs 
+    # ----------------------------------------
+    if SETTINGS.LOCAL_PATHS.input_vae_models:
+        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("input_name")):
+            if signal_name not in SETTINGS.LOCAL_PATHS.input_vae_models[i]:
+                raise ValueError("Rectify order of input_vae_models in confij.json to agree with the order in your task settings")
         
-        print(f"\nBatch {batch_idx}")
-        # print(batch_)
-        shot_id, window_index, x_train, y_train = batch_
+        vae_input_models = [load_vae_model(os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, this_vae)) 
+                            for this_vae in SETTINGS.LOCAL_PATHS.input_vae_models]
+        
+        none_indices = [i for i, v in enumerate(vae_input_models) if v is None]
 
-        print(f"The list of shot ID is  {batch_['shot_id'].item()}")
-        print(f"The list of window Index is {batch_['window_index'].item()}")
-
-        print(f"The x_train has been collated to shape (B, ..., T), , {[arr.shape for arr in batch_['x']]}")
-        # print("Mean x_train", [torch.nanmean(arr) for arr in x_train])
-        # print("Std x_train", [np.nanstd(arr) for arr in x_train])
-
-        print(f"The y_train has been collated to shape (B, ..., T), {[arr.shape for arr in batch_['y']]}")
+        if none_indices:
+            print(f"No vae found at indices: {none_indices}")
+            
+    else:
+        print(f"vae paths for inut signals not specified in {config_task_file_path}")
     
 
-    # Dataloaders
-    ###########################################################
-    # vae_collate_fn = WindowsCollate()
-    # dataloaders_train_val = initialize_dataloaders(
-    #     datasets = datasets_train_val,
-    #     collate_function = vae_collate_fn,
-    #     batch_size = SETTINGS.TRAINING.dataloader_batch_size,
-    #     num_workers =  SETTINGS.TRAINING.num_workers,
-    #     shuffle = True,
-    #     persistent_workers = False
-    # )
+    # Load actuator VAEs 
+    # ----------------------------------------
+    if SETTINGS.LOCAL_PATHS.actuator_vae_models:
+        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("actuator_name")):
+            if signal_name not in SETTINGS.LOCAL_PATHS.actuator_vae_models[i]:
+                raise ValueError("Rectify order of actuator_vae_models in confij.json to agree with the order in your task settings")
+            
+        vae_actuator_models = [load_vae_model(os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, this_vae)) 
+                               for this_vae in SETTINGS.LOCAL_PATHS.actuator_vae_models]
     
-    # train_dataloader = dataloaders_train_val["train"]
-    # val_dataloader = dataloaders_train_val["val"]
     
- 
+    # Load output VAEs 
+    # ----------------------------------------
+    if SETTINGS.LOCAL_PATHS.output_vae_models:
+        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("output_name")):
+            if signal_name not in SETTINGS.LOCAL_PATHS.output_vae_models[i]:
+                raise ValueError("Rectify order of output_vae_models in confij.json to agree with the order in your task settings")
+        
+        vae_output_models = [load_vae_model(SETTINGS.LOCAL_PATHS.vae_directory, this_vae) 
+                            for this_vae in SETTINGS.LOCAL_PATHS.output_vae_models] 
     
+    
+    # Start training
     
     
 if __name__ == "__main__":
