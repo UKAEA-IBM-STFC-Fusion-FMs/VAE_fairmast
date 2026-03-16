@@ -14,7 +14,10 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
 from fairmast_data_processing.src.MAST_benchmark.tools.utils import get_config_from_yaml
-from src.benchmark.configs.benchmark_setup import get_settings
+from src.benchmark.configs.benchmark_setup import get_benchmark_settings
+from src.vae_pipeline.configs.config_setup import get_settings
+from src.vae_pipeline.models.vae_model import beta_VAE
+
 
 def load_task_config(yaml_file_path: str):
     """Load YAML configuration."""
@@ -26,12 +29,12 @@ def load_task_config(yaml_file_path: str):
         raise RuntimeError(f"Failed to load YAML config from '{yaml_file_path}': {e}") from e
 
 
-def load_model_settings(config_file_path: str):
+def load_benchmark_settings(config_file_path: str):
     """Load JSON settings."""
     if not os.path.exists(config_file_path):
         raise FileNotFoundError(f"JSON configuration file not found: {config_file_path}")
     try:
-        return get_settings(config_file_path)
+        return get_benchmark_settings(config_file_path)
     except Exception as e:
         raise RuntimeError(f"Failed to load JSON config from '{config_file_path}': {e}") from e
 
@@ -53,3 +56,30 @@ def parse_args():
         help="Path to configuration JSON file for the pipeline."
     )
     return parser.parse_args()
+
+
+def load_vae_model(config_path:str):
+    """
+    config_path : str
+        Path to the config.json containing parameters for initializing the model
+    """
+    
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file {config_path} not found.") 
+    else:
+        try:
+            settings = get_settings(config_path) 
+        except Exception as e:
+            print(f"Error in loading configuration {e}")
+            return None
+    
+    try:
+        model = beta_VAE(settings)
+    except Exception as e:
+        print(f"Error in initializing vae model: {e}")
+        return None
+            
+    return model
+    
+
+    

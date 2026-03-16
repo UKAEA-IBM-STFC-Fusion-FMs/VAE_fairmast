@@ -31,7 +31,9 @@ from src.vae_pipeline.utils.utils import (
 
 
 from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
-
+from fairmast_data_processing.src.MAST_benchmark.tools.transforms.reshape_lcfs_transform import (
+    ReshapeLcfsTransform,
+)
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
@@ -58,8 +60,8 @@ def initialize_datasets(
         return_incomplete_shots = False
     ):
     
-    datasets_ = {"train": None, "val": None}
-    data_set_types = ["train", "val"]
+    datasets_ = {"train": None, "val": None, "test": None}
+    data_set_types = ["train", "val", "test"]
     
     for data_set_type in data_set_types:
         if shots[data_set_type]:
@@ -77,6 +79,7 @@ def initialize_datasets(
     if cache_data:
         datasets_["train"] = CachedDataset(datasets_["train"])
         datasets_["val"]   = CachedDataset(datasets_["val"]) 
+        datasets_["test"] = CachedDataset(datasets_["test"]) 
            
     return datasets_
 
@@ -90,9 +93,9 @@ def initialize_dataloaders(
         persistent_workers = False
     ):
     
-    dataloaders_ = {"train": None, "val": None}
+    dataloaders_ = {"train": None, "val": None, "test": None}
 
-    data_set_types = ["train", "val"]
+    data_set_types = ["train", "val", "test"]
     
     for data_set_type in data_set_types:
         if datasets[data_set_type]:
@@ -248,6 +251,9 @@ def train_vae_model(
                     print(f"[batch {batch_idx}] no valid sub-batches; skipping optimizer step")
                 continue  
 
+            if use_amp:
+                scaler.unscale_(optimizer)
+
             total_norm = None
             if grad_clip and grad_clip > 0:
                 total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
@@ -256,11 +262,12 @@ def train_vae_model(
                 if torch.isnan(total_norm) or torch.isinf(total_norm):
                     if verbose:
                         print(f"[batch {batch_idx}] bad grad norm {total_norm}; skipping step")
+                    if use_amp:
+                        scaler.update()
                     continue
                 
             # Update model
             if use_amp:
-                scaler.unscale_(optimizer)
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -499,6 +506,7 @@ def main():
         var: ComposeTransforms(
             [   
                 StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                ReshapeLcfsTransform(),
                 ImputerTransform()
             ]
         )
@@ -506,24 +514,12 @@ def main():
     }
 
     # Shot-level transform map
-    if len(SETTINGS.DATA.data_names)>1: # Merge signals
-        print("WARNING: current pipeline supports single signal analysis only.\
-            All signals in the list will be merged into one, if compatible")
-        shot_transforms = ComposeTransforms(
-            [
-                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                ConcatenateSignalsAfterTimeSegmentation(),
-                Cast1DTransform(),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
-            ]
-        )
-    else:
-        shot_transforms = ComposeTransforms(
-            [
-                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
-            ]
-        )
+    shot_transforms = ComposeTransforms(
+        [
+            WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
+        ]
+    )
 
     # Prepare datasets
     datasets_train_val = initialize_datasets(

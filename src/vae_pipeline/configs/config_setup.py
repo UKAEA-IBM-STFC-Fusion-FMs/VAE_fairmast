@@ -236,6 +236,7 @@ class DataInput:
         if self.local is None:
             print("[Warning] Missing 'local' section in configuration. Setting to None.")
 
+        input_specs = config.get("input", {})
         self.data_names = self._get_key(input_specs, "data_names")
         self.target_names = self._get_key(input_specs, "target_names")
 

@@ -488,7 +488,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     fig, ax = plt.subplots()
     min_rmse = min(rmse)
     max_rmse = max(rmse)
-    bins = np.linspace(min_loss, max_rmse, 200)
+    bins = np.linspace(min_rmse, max_rmse, 200)
     p95_rmse = float(np.quantile(rmse, 0.95))
     
     fig, ax = plt.subplots()
