@@ -20,12 +20,15 @@ if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from src.vae_pipeline.utils.utils import ComposeTransforms
 from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
+from fairmast_data_processing.src.MAST_benchmark.tools.transforms.reshape_lcfs_transform import (
+    ReshapeLcfsTransform,
+)
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
 from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
+from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import VAETransform
 from src.vae_pipeline.collate_functions.collate_functions import  WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.vae_pipeline.vae_pipeline import initialize_datasets, initialize_dataloaders
@@ -129,10 +132,11 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     }
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, _, val_shots = get_train_test_val_shots(
+    train_shots, test_shots, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
-        max_index_for_test = None
+        max_index_for_test = None,
+        csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
 
     this_signal = signal_name
@@ -151,6 +155,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         var: ComposeTransforms(
             [   
                 StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                ReshapeLcfsTransform(),
                 ImputerTransform(),
             ]
         )
@@ -158,28 +163,18 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     }
 
     # Shot-level transform map
-    if len(SETTINGS.DATA.data_names)>1: # Merge signals
-        print("WARNING: current pipeline supports single signal analysis only.\
-            All signals in the list will be merged into one, if compatible")
-        shot_transforms = ComposeTransforms(
-            [
-                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                ConcatenateSignalsAfterTimeSegmentation(),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
-            ]
-        )
-    else:
-        shot_transforms = ComposeTransforms(
-            [
-                WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-                Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
-            ]
-        )
-    
+  
+    shot_transforms = ComposeTransforms(
+        [
+            WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
+            VAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
+        ]
+    )
+
     # Prepare datasets
     datasets_train_val_test = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots},
+        shots={"train": train_shots, "val": val_shots, "test":test_shots},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
@@ -527,8 +522,14 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
 
    
 def get_RMSE(data, reco):
-    return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
-
+    d = len(data.shape)
+    if d == 3:
+        return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
+    elif d == 2:
+       return torch.sqrt(torch.mean((reco - target) ** 2, dim=1))
+    else:
+        raise ValueError("Tensor shape must be either 1 or 2")
+        
 def correlations(data, reco, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
@@ -593,7 +594,7 @@ def time_averaged_absolute_errors(data, reco):
 
 if __name__ == "__main__":
     
-    conf_file_name = "config_thomson_n_e"
+    conf_file_name = "config_equilibrium_lcfs_z"
     directory_name = "conv1d_vae_"+conf_file_name
     output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
     

@@ -47,7 +47,7 @@ def _as_2d(t: torch.Tensor) -> torch.Tensor:
 
 
 def plot_loss_vs_epoch(
-    loss_history: Iterable[float],
+    data: Iterable[float],
     title: str = "Task nr",
     ylabel: str = "Loss",
     xlabel: str = "Epoch",
@@ -188,7 +188,7 @@ def main():
         print(f"[ERROR] {e}")
         return
 
-    output_directory = SETTINGS.LOCAL_PATHS.output_directory + "Task_" + config_model_file_name.removesuffix(".json") + "_v1/"
+    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_model_file_name.removesuffix(".json") + "/"
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
@@ -359,7 +359,7 @@ def main():
         vae_output_models,
         device   
     )
-    breakpoint()
+    
     with open(os.path.join(output_directory, "loss_curves.json"), 'r') as file:
         data = json.load(file)
     

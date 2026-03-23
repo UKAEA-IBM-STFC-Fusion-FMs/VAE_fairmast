@@ -42,9 +42,8 @@ from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform impor
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
-from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import Conv1dVAETransform
+from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import VAETransform
 from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
-from src.vae_pipeline.transforms.shot_level_transforms.cast_1D_transform import Cast1DTransform
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 
@@ -60,7 +59,7 @@ def initialize_datasets(
         return_incomplete_shots = False
     ):
     
-    datasets_ = {"train": None, "val": None, "test": None}
+    datasets_ = {"train": None, "val": None, "test": []}
     data_set_types = ["train", "val", "test"]
     
     for data_set_type in data_set_types:
@@ -173,6 +172,7 @@ def train_vae_model(
         t_0_dataloader = time.time()
         
         for batch_idx, batch in enumerate(train_dataloader):
+
             x = batch["x"]
 
             if x.numel() == 0:
@@ -502,22 +502,34 @@ def main():
 
 
     # Signal-level transform map
-    signal_transform_map = {
-        var: ComposeTransforms(
-            [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                ReshapeLcfsTransform(),
-                ImputerTransform()
-            ]
-        )
-        for var in [f"{source}-{signal}" for source, signal in source_signal_list]
-    }
+    if "lcfs" in config_file_name:
+        signal_transform_map = {
+            var: ComposeTransforms(
+                [   
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    ReshapeLcfsTransform(),
+                    ImputerTransform()
+                ]
+            )
+            for var in [f"{source}-{signal}" for source, signal in source_signal_list]
+        }
+    else:
+        signal_transform_map = {
+            var: ComposeTransforms(
+                [   
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    ImputerTransform()
+                ]
+            )
+            for var in [f"{source}-{signal}" for source, signal in source_signal_list]
+        }
+        
 
     # Shot-level transform map
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            Conv1dVAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
+            VAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
         ]
     )
 
@@ -589,7 +601,7 @@ def main():
             dst.write(src.read())
     except Exception as e:
         print(f"Error copying config file: {e}")
-        
+    
     if vae_model:
         start = time.time()
         train_vae_model(

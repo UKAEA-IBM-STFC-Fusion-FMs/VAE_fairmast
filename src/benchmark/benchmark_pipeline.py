@@ -316,6 +316,9 @@ def main():
     config_model_file_path: str = args.config_model_file_path
     config_model_file_name: str = os.path.basename(config_model_file_path)
     
+    print(f"config_task_file_path = {config_task_file_path}")
+    print(f"config_model_file_path = {args.config_model_file_path}")
+    
     # Load task config
     try:
         config_task = load_task_config(config_task_file_path)
@@ -330,7 +333,7 @@ def main():
         print(f"[ERROR] {e}")
         return
 
-    output_directory = SETTINGS.LOCAL_PATHS.output_directory + "Task_" + config_model_file_name.removesuffix(".json") + "/"
+    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_model_file_name.removesuffix(".json") + "/"
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
@@ -382,7 +385,7 @@ def main():
         signal_transform_map=signal_transform_map,
         shot_transforms={},
         local_flag=SETTINGS.local,
-        cache_data=SETTINGS.cache,
+        cache_data=False,
         return_incomplete_shots = False
     )
     base_train_dataset = base_datasets['train']
@@ -411,6 +414,14 @@ def main():
         verbose=False
     )
     
+    # Optionally wrap with cache
+    # if SETTINGS.cache:
+    #     train_dataset = CachedDataset(train_model_dataset)
+    #     val_dataset   = CachedDataset(val_model_dataset)
+    # else:
+    #     train_dataset = train_model_dataset
+    #     val_dataset   = val_model_dataset
+
     # DataLoaders
     train_dataloader = DataLoader(
         dataset = train_model_dataset,
@@ -490,9 +501,32 @@ def main():
              optimizer,
              T_0 = SETTINGS.TRAINING.num_epochs,
              T_mult = 1, 
-             eta_min = 1e-4
+             eta_min = int(SETTINGS.TRAINING.lr/10)
             )
     
+    ########### Use this block to continue training from a specific checkpoint ####
+    model_path = "src/benchmark/data/output/task1_1_config_v3_part1/best_model.pt"
+    print(f"RESUMING TRAINING from {model_path}")
+    checkpoint = torch.load(model_path, map_location='cuda')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.to('cuda')
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    
+    with open(os.path.join(output_directory, "model.json"),'w') as f:
+       json.dump(
+            str(model),
+            f,
+            indent=4
+            )
+    
+    # Save config file 
+    try:
+        with open(config_model_file_path, 'rb') as src, open(os.path.join(output_directory,config_model_file_name), 'wb') as dst:
+            dst.write(src.read())
+    except Exception as e:
+        print(f"Error copying config file: {e}")
+        
     # Start training/validating
     train_model(
         SETTINGS,
