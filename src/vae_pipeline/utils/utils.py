@@ -82,7 +82,7 @@ def get_train_test_val_shots(
     max_index_for_test = None,
     shuffle = False,
     seed = None,
-    csv_path = "fairmast_tools/metadata/2025-05-12/data_splits.csv"
+    csv_path =  "fairmast_data_processing/src/MAST_benchmark/metadata/data_splits.csv"
     ):
     
     """
