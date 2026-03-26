@@ -1,8 +1,10 @@
+import argparse
 import json
 import os
 import sys
 import pickle
 import matplotlib.pyplot as plt
+import math
 import numpy as np
 import torch
 import torch.multiprocessing as mp
@@ -28,7 +30,7 @@ from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform impor
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import VAETransform
+from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.collate_functions.collate_functions import  WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.vae_pipeline.vae_pipeline import initialize_datasets, initialize_dataloaders
@@ -140,30 +142,34 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     )
 
     this_signal = signal_name
-    
-    # Get mean and std for signal transformation
-    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
-    #     dict_mean = pickle.load(f)
-    # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
-    #     dict_std = pickle.load(f)
-       
+
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_stats_metadata.yaml"), "r") as f:
         dict_stats_metadata = yaml.safe_load(f)
  
     # Signal-level transform map
-    signal_transform_map = {
-        var: ComposeTransforms(
-            [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                ReshapeLcfsTransform(),
-                ImputerTransform(),
-            ]
-        )
-        for var in [f"{source}-{signal}" for source, signal in source_signal_list]
-    }
+    if "lcfs" in signal_name:
+        signal_transform_map = {
+            var: ComposeTransforms(
+                [   
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    ReshapeLcfsTransform(),
+                    ImputerTransform()
+                ]
+            )
+            for var in [f"{source}-{signal}" for source, signal in source_signal_list]
+        }
+    else:
+        signal_transform_map = {
+            var: ComposeTransforms(
+                [   
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    ImputerTransform()
+                ]
+            )
+            for var in [f"{source}-{signal}" for source, signal in source_signal_list]
+        }
 
     # Shot-level transform map
-  
     shot_transforms = ComposeTransforms(
         [
             WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
@@ -254,8 +260,6 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                 # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
                 if x_sub_batch.ndim == 4:
                     x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous()                                
-                                                        
-                x_recon, mu, logvar = model(x_sub_batch)
                                         
                 # Compute loss
                 try:
@@ -275,23 +279,36 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                     print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
                     continue
                 
-                
+                if (not torch.isfinite(total_loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
+                    print(
+                        f"[batch {batch_idx} {start}:{end}] non-finite loss components "
+                        f"(loss finite={torch.isfinite(total_loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
+                    )
+                    continue
+
                 if total_loss.item() < best_loss:
                     best_loss = total_loss.item()
-                    
-                num_channels = x_sub_batch.shape[1]
-                
+
+                if len(x_sub_batch.shape)<4:
+                    num_channels = x_sub_batch.shape[1]
+                elif len(x_sub_batch.shape) == 4:
+                    num_channels = x_sub_batch.shape[-2]
+                else:
+                    raise ValueError(f"Data tensor shape is larger than 4 Dimension ")
+
+                # Calculate correlations for time series or profiles
                 if not correlations_:
                     correlations_ = [[] for _ in range(num_channels)]
                 if not rel_errors:
                     rel_errors = [[] for _ in range(num_channels)]
-                # breakpoint()
+
                 # Compute correlations
-                correl = correlations(x_sub_batch, x_recon)
-                if isinstance(correl, torch.Tensor):
-                    correl = correl.cpu().tolist()
-                for i, corr_values in enumerate(zip(*correl)):
-                    correlations_[i].extend(corr_values)
+                if len(x_sub_batch.shape)<4:
+                    correl = correlations(x_sub_batch, x_recon)
+                    if isinstance(correl, torch.Tensor):
+                        correl = correl.cpu().tolist()
+                    for i, corr_values in enumerate(zip(*correl)):
+                        correlations_[i].extend(corr_values)
 
                 # Compute errors
                 errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(x_sub_batch, x_recon)
@@ -352,7 +369,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         axs[1].set_xlabel("Time")  # X-axis label
         axs[1].legend()
 
-        plt.savefig(output_dir + f"{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
+        plt.savefig(output_dir + f"/{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
         print(f"Error in making flattened_reconstruction.pdf {e}")
     
@@ -397,18 +414,25 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         # colourbar
         fig.colorbar(im3, ax=axes.ravel().tolist(), location='right', shrink=0.8, label='Amplitude')
         
-        plt.savefig(output_dir + f"{this_signal}_image_reconstruction.pdf")
+        plt.savefig(output_dir + f"/{this_signal}_image_reconstruction.pdf")
 
     except Exception as e:
         print(f"Error in making image_reconstruction.pdf {e}")
 
-    plot_histograms(
-        correlations_,
-        'blue',
-        x_label="Correlations",
-        y_label="frequency",
-        title_prefix=f'',
-        file_name=f'{output_dir}{this_signal}_correlations.pdf')
+    num_rows= math.floor(len(correlations_)/2)
+    if num_rows >0:
+        num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
+    else:
+        num_rows = num_cols = 1
+
+    if correlations_[0]: 
+        plot_histograms(
+            correlations_,
+            'blue',
+            x_label="Correlations",
+            y_label="frequency",
+            title_prefix=f'',
+            file_name=f'{output_dir}/{this_signal}_correlations.pdf')
     
     plot_histograms(
         rel_errors,
@@ -416,7 +440,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         x_label="Relative absolute errors",
         y_label="frequency",
         title_prefix=f'',
-        file_name= f'{output_dir}{this_signal}_rel_errors.pdf')
+        file_name= f'{output_dir}/{this_signal}_rel_errors.pdf')
     
     signal = this_signal
     file_path = output_dir
@@ -523,12 +547,12 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
    
 def get_RMSE(data, reco):
     d = len(data.shape)
-    if d == 3:
+    if d < 4:
         return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
-    elif d == 2:
-       return torch.sqrt(torch.mean((reco - target) ** 2, dim=1))
+    elif d==4:
+        return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1,2,3)))
     else:
-        raise ValueError("Tensor shape must be either 1 or 2")
+        raise ValueError(f"Tensor shape must be < 4, reco.shape = {reco.shape}")
         
 def correlations(data, reco, eps = 1e-8):
     """Compute time correlations for each feature 
@@ -552,7 +576,7 @@ def correlations(data, reco, eps = 1e-8):
 
     # Compute numerator and denominator along time axis
     numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
-   
+
     denominator = torch.sqrt(torch.sum(input_diff ** 2, dim=-1) * torch.sum(reco_diff ** 2, dim=-1))  + eps # [batch, features]
 
     corr = numerator / denominator  # [batch, features]
@@ -567,14 +591,18 @@ def time_averaged_absolute_errors(data, reco):
     ----------
     data : tensor
         [batch, features, time]
+        or
+        [batch, time, features_1, features_2]
     reco : tensor
         [batch, features, time]
+         or
+        [batch, time, features_1, features_2]
 
     Returns
     -------
     Tensor
     time averaged absolute errors for each features in data-reco pairs
-        [batch, features]
+        [batch, features] or  [batch, features_1, features_2]
     Tensor [batch]
         minimum in the time- and features- averaged absolute error
     int
@@ -584,21 +612,37 @@ def time_averaged_absolute_errors(data, reco):
     abs_error = torch.abs(data - reco)  # [batch, features, time]
 
     # Mean over time dimension
-    time_averaged_errors = abs_error.mean(dim=-1)  # [batch, features]
-    rel_error_per_sample = time_averaged_errors.mean(dim =-1) # [batch]
+    if data.dim() < 4:
+        time_averaged_errors = abs_error.mean(dim=-1)  # [batch, features]
+        rel_error_per_sample = time_averaged_errors.mean(dim =-1) # [batch]
     
+    elif data.dim() == 4:
+        time_averaged_errors = abs_error.mean(dim=(1,3))  # [batch, features_1]
+        rel_error_per_sample = abs_error.mean(dim=(1, 2, 3))  # [batch]
+
+    else:
+        raise ValueError(f"Tensor dimension must be <= 4. Current dimension = {data.dim()}")
+
     min_vals, min_index = torch.min(rel_error_per_sample, dim = 0) 
     max_vals, max_index = torch.max(rel_error_per_sample, dim = 0) 
     return time_averaged_errors, min_vals.item(), min_index.item(), max_vals, max_index
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config_file_path",
+        default = "src/vae_pipeline/configs/config_b_field_tor_probe_saddle_voltage.json",
+        type=str,
+        help="Path to configuration file for the pipeline.")
     
-    conf_file_name = "config_equilibrium_lcfs_z"
-    directory_name = "conv1d_vae_"+conf_file_name
-    output_dir = "src/vae_pipeline/data/output/" + f"{directory_name}/"
+    args = parser.parse_args()
     
-    SETTINGS = get_settings(output_dir + f"{conf_file_name}.json")
+    config_file_path = args.config_file_path
+    
+    output_dir =  os.path.dirname(config_file_path) 
+    
+    SETTINGS = get_settings(config_file_path)
     
     source, signal_name = SETTINGS.DATA.data_names[0]
 

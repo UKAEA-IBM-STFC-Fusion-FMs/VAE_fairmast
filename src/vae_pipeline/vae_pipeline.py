@@ -42,7 +42,7 @@ from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform impor
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
-from src.vae_pipeline.transforms.shot_level_transforms.conv1d_vae_transform import VAETransform
+from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots

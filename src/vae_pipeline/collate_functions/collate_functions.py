@@ -61,7 +61,7 @@ class WindowsCollate:
             # Return a consistent empty batch; 
             empty_x = torch.empty(0, 0, 0)  # or torch.empty(0, C, T)
             return {"x": empty_x, "lengths": torch.zeros(0, dtype=torch.int32)}
-
+        
         x = torch.cat(all_windows, dim=0)  # (N_total, C, T)
         return {"x": x, "lengths": torch.tensor(lengths, dtype=torch.int32)}
        
