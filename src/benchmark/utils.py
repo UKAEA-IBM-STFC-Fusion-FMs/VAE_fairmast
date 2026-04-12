@@ -50,7 +50,7 @@ def parse_args():
         help="Path to configuration YAML task file."
     )
     parser.add_argument(
-        "--config_model_file_path",
+        "--config_benchmark_file_path",
         default="src/benchmark/configs/task1_1_config.json",
         type=str,
         help="Path to configuration JSON file for the pipeline."

@@ -38,10 +38,11 @@ from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transfor
     WindowSegmenterTransform,
 )
 
-from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
+from src.vae_pipeline.transforms.signal_level_transforms.replace_nan import ReplaceNaN
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
+from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
@@ -184,7 +185,7 @@ def train_vae_model(
 
             x = x.to(device)
             total_tensors = x.size(0)
-            
+
             # Initialiaze gradient
             optimizer.zero_grad(set_to_none=True)
             
@@ -203,17 +204,26 @@ def train_vae_model(
                 if x_sub_batch.ndim == 4:
                     x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
 
+                # Mask non-finite entries (NaN)
+                mask = torch.isfinite(x_sub_batch) # booleans
+                mask = mask.float() # floats
+
+                # Impute NaN with zeros, i.e., the mean of signals after standardization
+                x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)
+    
                 try:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         x_recon, mu, logvar = model(x_sub_batch)
-                        loss, recon_loss, kl_loss = loss_function(
-                            beta,
+                        loss, recon_loss, kl_loss = masked_loss_function(
+                          beta,
                             x_recon,
                             x_sub_batch,
                             mu,
                             logvar,
-                            clamp_logvar=clamp_logvar
+                            mask,
+                            clamp_logvar
                         )
+                        
                 except ValueError as e:
                     # skip this sub-batch
                     print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
@@ -311,18 +321,25 @@ def train_vae_model(
                     if x_sub_batch.ndim == 4:
                         x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
                     
-                                                        
+                    # Mask non-finite entries (NaN)
+                    mask = torch.isfinite(x_sub_batch) # booleans
+                    mask = mask.float() # floats
+
+                    # Impute NaN with zeros, i.e., the mean of signals after standardization
+                    x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)
+                                      
                     # Compute loss
                     try:
                         with torch.amp.autocast('cuda', enabled=use_amp):
                             x_recon, mu, logvar = model(x_sub_batch)
-                            loss, recon_loss, kl_loss = loss_function(
+                            loss, recon_loss, kl_loss = masked_loss_function(
                                 beta,
                                 x_recon,
                                 x_sub_batch,
                                 mu,
                                 logvar,
-                                clamp_logvar=clamp_logvar
+                                mask,
+                                clamp_logvar
                             )
                     except ValueError as e:
                         # skip this sub-batch
@@ -441,7 +458,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
-        default = "src/vae_pipeline/configs/config_b_field_tor_probe_saddle_voltage.json",
+        default = "",
         type=str,
         help="Path to configuration file for the pipeline.")
     
@@ -507,8 +524,8 @@ def main():
             var: ComposeTransforms(
                 [   
                     StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                    ReshapeLcfsTransform(),
-                    ImputerTransform()
+                    ReshapeLcfsTransform()
+                    # ReplaceNaN(-999)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -517,8 +534,8 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                    ImputerTransform()
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
+                    # ReplaceNaN(-999)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -571,14 +588,13 @@ def main():
                 )
 
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-             optimizer,
-             T_0 = SETTINGS.TRAINING.num_epochs,
-             T_mult = 1, 
-             eta_min = 1e-4
+            optimizer,
+            T_0 = SETTINGS.TRAINING.num_epochs,
+            T_mult = 1, 
+            eta_min = 1e-4
             )
-  
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config_dalpha_voltage_part1/best_vae_filter_spectrometer_dalpha_voltage.pt"
+    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config_flux_loop_flux_new_v1/best_vae_flux_loop_flux.pt"
     # print(f"RESUMING TRAINING from {model_path}")
     # checkpoint = torch.load(model_path, map_location='cuda')
     # vae_model.load_state_dict(checkpoint['model_state_dict'])
@@ -586,14 +602,14 @@ def main():
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
-  
+
     # Save model architecture
     with open(os.path.join(output_directory, "model.json"),'w') as f:
-       json.dump(
+        json.dump(
             str(vae_model),
             f,
             indent=4
-            )
+        )
     
     # Save config file 
     try:

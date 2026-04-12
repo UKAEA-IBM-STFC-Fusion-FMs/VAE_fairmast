@@ -36,6 +36,44 @@ from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 
 
+def process_nan(models:list[beta_VAE], batched_data:list[torch.tensor]):
+    """_summary_
+
+    Parameters
+    ----------
+    models :  list[beta_VAE]
+        List of pre-trained beta_VAE models.
+    batched_data : list[torch.tensor]
+        List of batched of tensors.
+
+    Returns
+    -------
+    list 
+        List of batched tensors in the latent space representation.
+    """
+    
+    # Return batched data in their latent space representation
+    batched_data_representations = []
+    
+    # Loop through all the batched data. 
+    # Fill the batch representation when appropriate otherwise set it to NaN
+    for model, batch in zip(models, batched_data):
+        
+        #Initalize this batch with a latent space representation of NaN
+        batch_representation = torch.full((batch.shape[0],model.latent_dim),float('nan'),dtype=batch.dtype,device=batch.device)
+        
+        nan_mask = torch.isnan(batch).any(dim=tuple(range(1, batch.ndim)))  # shape [B]
+        clean_mask = ~nan_mask
+
+        if clean_mask.any():
+            try:
+                batch_representation[clean_mask] = model.encode(batch)[0]
+            except Exception as e:
+                raise RuntimeError("tensor-model mismatch during `encode` call") from e    
+        
+        batched_data_representations.append(batch_representation)
+        
+    return batched_data_representations
 
 def batch_preprocess(
         batch,
@@ -51,18 +89,17 @@ def batch_preprocess(
     and concatenating representations into different tensors for inputs and targets, respectively.
 
     This function expects:
-      - `batch['x']` to contain the input tensors plus actuators,
-      - `batch['y']` to contain the output tensors,
-      - lists of VAE models for inputs/actuators and outputs,
+    - `batch['x']` to contain the input tensors plus actuators,
+    - `batch['y']` to contain the output tensors,
+    - lists of VAE models for inputs/actuators and outputs,
 
     Parameters
     ----------
     batch : dict
         A batch dictionary with at least:
-          - `batch['x']`: list[torch.Tensor] 
-          - `batch['y']`: list[torch.Tensor] 
-        Tensors are expected to share the same batch size `B`. Extra trailing dimensions beyond
-        feature dims are allowed only if the corresponding VAEs accept them in `encode`.
+        - `batch['x']`: list[torch.Tensor] 
+        - `batch['y']`: list[torch.Tensor] 
+        Tensors are expected to share the same batch size `B` on shape[0]. 
     vae_input_models : list[beta_VAE]
         List of VAE models used to encode the input signals. Must be non-empty because this function
         uses `vae_input_models[0]` to determine the reference dtype/device.
@@ -92,6 +129,7 @@ def batch_preprocess(
         print(f"Error in determining the dtype of your model: {e}")
         return None
     
+    # Send data to device
     data = [x_.to(dtype=p.dtype, device=p.device) for x_ in x]
     target = [y_.to(dtype=p.dtype, device=p.device) for y_ in y]
 
@@ -100,36 +138,37 @@ def batch_preprocess(
     target_vae = [*(vae_output_models or [])]
         
     # Latent space representations
-    data_representation = data
+    breakpoint()
     if data_vae:
-        try:
-            data_representation = [m.encode(d)[0] for m, d in zip(data_vae, data)]
-        except Exception as e:
-            raise RuntimeError("tensor-model mismatch during `encode` call") from e
-                
-    target_representation = target
+        data_representation = process_nan(data_vae, data)
+    else:
+        raise ValueError("data_vae list must NOT be empty")      
+    
     if target_vae:
-        try:
-            target_representation = [m.encode(d)[0] for m, d in zip(target_vae, target)]
-        except Exception as e:
-            raise RuntimeError("tensor-model mismatch during `encode` call") from e
+        target_representation = process_nan(target_vae, target)
     else:
         target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
-
-    # Concatenate tensors for training, behaviour not tested for tensors with dim>2
-    input_data = target_data = None
-    if all(d.ndim == 2 for d in data_representation):
-        input_data = torch.cat(data_representation, dim=1)
-    else:
-        input_data = torch.cat([d.flatten(start_dim=1) for d in data_representation], dim=1)
         
-    if all(d.ndim == 2 for d in target_representation):
-        target_data = torch.cat(target_representation, dim=1)
-    else:
-        target_data = torch.cat([d.flatten(start_dim=1) for d in target_representation], dim=1)
+    # if data_vae:
+    #     try:
+    #         data_representation = [m.encode(d)[0] for m, d in zip(data_vae, data)]
+    #     except Exception as e:
+    #         raise RuntimeError("tensor-model mismatch during `encode` call") from e
+    # else:
+    #     raise ValueError("data_vae list must NOT be empty")      
+    
+    # if target_vae:
+    #     try:
+    #         target_representation = [m.encode(d)[0] for m, d in zip(target_vae, target)]
+    #     except Exception as e:
+    #         raise RuntimeError("tensor-model mismatch during `encode` call") from e
+    # else:
+    #     target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
+
+    input_data = torch.cat(data_representation, dim=1)
+    target_data = torch.cat(target_representation, dim=1)
         
     return input_data, target_data
-    
     
     
 def train_model(
@@ -313,11 +352,11 @@ def main():
     args = parse_args()
 
     config_task_file_path: str = args.config_task_file_path
-    config_model_file_path: str = args.config_model_file_path
-    config_model_file_name: str = os.path.basename(config_model_file_path)
+    config_benchmark_file_path: str = args.config_benchmark_file_path
+    config_benchmark_file_name: str = os.path.basename(config_benchmark_file_path)
     
     print(f"config_task_file_path = {config_task_file_path}")
-    print(f"config_model_file_path = {args.config_model_file_path}")
+    print(f"config_benchmark_file_path = {args.config_benchmark_file_path}")
     
     # Load task config
     try:
@@ -328,12 +367,12 @@ def main():
 
     # Load model settings
     try:
-        SETTINGS: SettingsBenchmark = load_benchmark_settings(config_model_file_path)
+        SETTINGS = load_benchmark_settings(config_benchmark_file_path)
     except Exception as e:
         print(f"[ERROR] {e}")
         return
 
-    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_model_file_name.removesuffix(".json") + "/"
+    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_benchmark_file_name.removesuffix(".json") + "/"
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
@@ -390,7 +429,6 @@ def main():
     )
     base_train_dataset = base_datasets['train']
     base_val_dataset = base_datasets['val']
-    
     
     model_specific_transform = ModelSpecificTransform()
     
@@ -505,12 +543,12 @@ def main():
             )
     
     ########### Use this block to continue training from a specific checkpoint ####
-    model_path = "src/benchmark/data/output/task1_1_config_v3_part1/best_model.pt"
-    print(f"RESUMING TRAINING from {model_path}")
-    checkpoint = torch.load(model_path, map_location='cuda')
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to('cuda')
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # model_path = "src/benchmark/data/output/task1_1_config_v3_part1/best_model.pt"
+    # print(f"RESUMING TRAINING from {model_path}")
+    # checkpoint = torch.load(model_path, map_location='cuda')
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # model.to('cuda')
+    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     
     with open(os.path.join(output_directory, "model.json"),'w') as f:
@@ -522,7 +560,7 @@ def main():
     
     # Save config file 
     try:
-        with open(config_model_file_path, 'rb') as src, open(os.path.join(output_directory,config_model_file_name), 'wb') as dst:
+        with open(config_benchmark_file_path, 'rb') as src, open(os.path.join(output_directory,config_benchmark_file_name), 'wb') as dst:
             dst.write(src.read())
     except Exception as e:
         print(f"Error copying config file: {e}")

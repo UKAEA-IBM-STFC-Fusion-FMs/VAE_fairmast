@@ -42,9 +42,9 @@ class WindowsCollate:
             for j, window in enumerate(windows):
                 if not isinstance(window, torch.Tensor): 
                     continue
-                if not torch.isfinite(window).all(): 
-                    print("Tensor window contains contain non-finite entries.")
-                    continue
+                # if not torch.isfinite(window).all(): 
+                #     print("Tensor window contains contain non-finite entries.")
+                #     continue
 
                 # Transpose signals with shape (N,1) before stacking them, this happens for windows length = 1.
                 if window.shape[-1]==1:

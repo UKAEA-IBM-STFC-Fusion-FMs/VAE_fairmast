@@ -171,8 +171,8 @@ def main():
     args = parse_args()
 
     config_task_file_path: str = args.config_task_file_path
-    config_model_file_path: str = args.config_model_file_path
-    config_model_file_name: str = os.path.basename(config_model_file_path)
+    config_benchmark_file_path: str = args.config_benchmark_file_path
+    config_benchmark_file_name: str = os.path.basename(config_benchmark_file_path)
     
     # Load task config
     try:
@@ -183,12 +183,12 @@ def main():
 
     # Load model settings
     try:
-        SETTINGS: SettingsBenchmark = load_benchmark_settings(config_model_file_path)
+        SETTINGS: SettingsBenchmark = load_benchmark_settings(config_benchmark_file_path)
     except Exception as e:
         print(f"[ERROR] {e}")
         return
 
-    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_model_file_name.removesuffix(".json") + "/"
+    output_directory = SETTINGS.LOCAL_PATHS.output_directory + config_benchmark_file_name.removesuffix(".json") + "/"
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
@@ -242,7 +242,7 @@ def main():
         signal_transform_map=signal_transform_map,
         shot_transforms={},
         local_flag=SETTINGS.local,
-        cache_data=SETTINGS.cache,
+        cache_data=False,
         return_incomplete_shots = False
     )
     base_val_dataset = base_datasets['val']
@@ -363,18 +363,18 @@ def main():
     with open(os.path.join(output_directory, "loss_curves.json"), 'r') as file:
         data = json.load(file)
     
-    save_fig_losses_path = os.path.join(output_directory,f"losses_{config_model_file_name.removesuffix('.json')}.pdf")
+    save_fig_losses_path = os.path.join(output_directory,f"losses_{config_benchmark_file_name.removesuffix('.json')}.pdf")
     plot_loss_vs_epoch(
     data,
-    title = f"Task_{config_model_file_name.removesuffix('.json')}",
+    title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
     ylabel = "Loss",
     xlabel = "Epoch",
     save_path = save_fig_losses_path) 
     
-    save_fig_rmse_path = os.path.join(output_directory,f"RMSE_{config_model_file_name.removesuffix('.json')}.pdf")
+    save_fig_rmse_path = os.path.join(output_directory,f"RMSE_{config_benchmark_file_name.removesuffix('.json')}.pdf")
     hist_rmse(
         rmse,
-        title = f"Task_{config_model_file_name.removesuffix('.json')}",
+        title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
         xlabel = "RMSE",
         save_path = save_fig_rmse_path)
     

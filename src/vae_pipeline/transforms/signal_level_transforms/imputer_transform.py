@@ -42,6 +42,9 @@ class ImputerTransform(object):
         if vals is None or time is None:
             return None
         
+        if vals.size == 0:
+            return None
+        
         if vals.ndim == 1:
             if np.any(np.isnan(vals)):
                 mean_val = np.nanmean(vals)

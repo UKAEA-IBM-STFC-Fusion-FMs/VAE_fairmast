@@ -28,6 +28,7 @@ from fairmast_data_processing.src.MAST_benchmark.tools.transforms.reshape_lcfs_t
 from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
 from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.configs.config_setup import get_settings
+from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
@@ -260,17 +261,25 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                 # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
                 if x_sub_batch.ndim == 4:
                     x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous()                                
-                                        
+
+                # Mask non-finite entries (NaN)
+                mask = torch.isfinite(x_sub_batch) # booleans
+                mask = mask.float() # floats
+
+                # Impute NaN with zeros, i.e., the mean of signals after standardization
+                x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)                
+                
                 # Compute loss
                 try:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         x_recon, mu, logvar = model(x=x_sub_batch, sampling = False)
-                        total_loss, recon_loss, kl_loss = loss_function(
+                        total_loss, recon_loss, kl_loss = masked_loss_function(
                             beta,
                             x_recon,
                             x_sub_batch,
                             mu,
                             logvar,
+                            mask,
                             clamp_logvar=clamp_logvar,
                         )
                         loss_vs_batch.append(total_loss.item())
@@ -432,7 +441,9 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             x_label="Correlations",
             y_label="frequency",
             title_prefix=f'',
-            file_name=f'{output_dir}/{this_signal}_correlations.pdf')
+            file_name=f'{output_dir}/{this_signal}_correlations.pdf',
+            num_rows = num_rows,
+            num_cols = num_cols)
     
     plot_histograms(
         rel_errors,
@@ -440,7 +451,9 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         x_label="Relative absolute errors",
         y_label="frequency",
         title_prefix=f'',
-        file_name= f'{output_dir}/{this_signal}_rel_errors.pdf')
+        file_name= f'{output_dir}/{this_signal}_rel_errors.pdf',
+        num_rows = num_rows,
+        num_cols = num_cols)
     
     signal = this_signal
     file_path = output_dir

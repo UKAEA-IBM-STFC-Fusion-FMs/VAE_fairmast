@@ -62,23 +62,81 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar
 
 
+def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20)):
+    
+    """
+    Compute a masked β-VAE loss for batched signals.
+
+    This loss combines:
+    (1) A masked reconstruction loss (mean squared error) computed **only** over
+        valid (observed) entries indicated by `mask`, and averaged per-sample
+        before averaging across the batch; and
+    (2) A KL-divergence term weighted by `beta`.
+
+    Parameters
+    ----------
+    beta : float
+        Weight applied to the KL-divergence term (β-VAE).
+    reco : torch.Tensor
+        Reconstruction produced by the decoder. Shape must match `target`
+    target : torch.Tensor
+        Ground-truth signal to reconstruct. Same shape as `reco`.
+    mu : torch.Tensor
+        Mean of the approximate posterior distribution q(z|x). Shape (B, D), where
+        D is the latent dimensionality.
+    logvar : torch.Tensor
+        Log-variance. Shape (B, D).
+    clamp_logvar : tuple of (float, float), optional
+        Range (min, max) used to clamp `logvar` for numerical stability. Default
+        is (-20, 20)
+    mask : torch.Tensor
+        Validity mask with the same shape as `target`/`reco`. 
+        Entries with `mask == 1` are treated as valid and included
+        in reconstruction loss;
+
+    Returns
+    -------
+    total_loss : torch.Tensor
+        Scalar tensor with the total loss:
+            total_loss = batch_recon_loss + beta * kl_loss
+    batch_loss : torch.Tensor
+        Scalar tensor containing the masked reconstruction loss averaged across
+        the batch. 
+    kl_loss : torch.Tensor
+        Scalar tensor containing the KL-divergence term averaged across the batch
+    """
+
+    dims = tuple(range(1, target.ndim))   # all dims except batch
+    valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
+
+    squared_diff = mask * (target - reco)**2
+
+    loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
+    mean_loss_per_sample = loss_per_sample/valid_per_sample # average loss
+
+    batch_loss = mean_loss_per_sample.mean()
+    
+    kl_per_dim = 0.5 * (torch.exp(logvar) + mu.pow(2) - 1.0 - logvar)
+    kl_loss = kl_per_dim.sum(dim=1).mean() 
+    total_loss = batch_loss + beta * kl_loss
+    
+    return total_loss, batch_loss, kl_loss
+
 
 def loss_function_batch_mean(beta, reconstruction, target, mu, logvar, clamp_logvar=(-20, 20)):
     """β-VAE loss function"""
-      
     reconstruction_loss = F.mse_loss(reconstruction, target, reduction='mean')  
     
     # Guardrails
     logvar = torch.nan_to_num(logvar,nan=0.0,posinf=clamp_logvar[1],neginf=clamp_logvar[0]) 
     
     if clamp_logvar is not None:
-       logvar = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
+        logvar = logvar.clamp(min=clamp_logvar[0], max=clamp_logvar[1])
     else:
         logvar = logvar
 
     kl_per_dim = 0.5 * (torch.exp(logvar) + mu.pow(2) - 1.0 - logvar)
-    kl_loss = kl_per_dim.sum(dim=1).mean() 
-     
+    kl_loss = kl_per_dim.sum(dim=1).mean()
     total_loss = reconstruction_loss + beta * kl_loss
     
     return total_loss, reconstruction_loss, kl_loss
