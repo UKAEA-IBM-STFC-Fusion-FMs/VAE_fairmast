@@ -131,7 +131,7 @@ def evaluate_model(
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx % 100 == 0:
                     print(f"\nBatch {batch_idx}")
-                    
+
             data, target = batch_preprocess(
                 batch,
                 vae_input_models, 

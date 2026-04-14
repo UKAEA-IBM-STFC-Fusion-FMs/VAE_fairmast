@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import warnings
 import yaml
+from typing import List
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -36,20 +37,22 @@ from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 
 
-def process_nan(models:list[beta_VAE], batched_data:list[torch.tensor]):
+def process_nan(models: List[beta_VAE], batched_data: List[torch.Tensor]):
     """_summary_
 
     Parameters
     ----------
     models :  list[beta_VAE]
         List of pre-trained beta_VAE models.
-    batched_data : list[torch.tensor]
+    batched_data : list[torch.Tensor]
         List of batched of tensors.
 
     Returns
     -------
-    list 
+    list : list[torch.Tensor]
         List of batched tensors in the latent space representation.
+        Each entry has same batch dimension but different second dimension given by the size of their
+        latent space representation
     """
     
     # Return batched data in their latent space representation
@@ -69,12 +72,71 @@ def process_nan(models:list[beta_VAE], batched_data:list[torch.tensor]):
             try:
                 batch_representation[clean_mask] = model.encode(batch)[0]
             except Exception as e:
-                raise RuntimeError("tensor-model mismatch during `encode` call") from e    
+                print(f"tensor-model mismatch during `encode` call {e}")    
         
         batched_data_representations.append(batch_representation)
         
     return batched_data_representations
 
+
+def make_mask(batched_data: List[torch.Tensor]):
+    """
+    When moving from the real space of the data to the latent space representation,
+    missing data in the batch are set to have representation unknown, i.e., NaN.
+
+    Use this method to build a mask for the batched_data_representations 
+    that keeps track of NaN in the representations. 
+
+    Use: in the benchmark_pipeline.py, following process_nan()
+
+
+    Parameters
+    ----------
+    batched_data : List[torh.Tensor]
+        Each tensor (entry) of the list has shape [B,latent_dim] and corresponds to a specific signal.
+        `B` is the batch size, `latent_dim` is the size of the latent space in which the signal is represented.
+        
+        For example:
+        batched_data = [
+        torch.tensor([
+            [math.nan, math.nan, math.nan, math.nan],
+            [0.8985, 0.4067, 0.5273, 0.7831],
+            [0.4690, 0.0781, 0.0128, 0.5209]
+        ]),
+        torch.tensor([
+            [0.4007, 0.4960],
+            [0.4031, 0.0899],
+            [0.5519, 0.9782]
+        ])
+        ]
+            
+        In this example, batched_data contains two etries for two signals.
+        Their corresponding latent space representations have size 4 and 2, respectivelly.
+        The batch size `B` is 3.
+        
+    Return 
+    ----------
+    masks: torch.Tensor
+        mask of shape [`B`,len(batched_data)] filled with 1, if the corresponding 
+        data in the batched_data_representations is finite, otherwise 0.
+        For example:
+        masks = tensor([[0., 1.],
+                        [1., 1.],
+                        [1., 1.]])
+        The first column says that in the three samples associated with the first entry in
+        batched_data the first one has NaN representation. The second column says that all
+        samples associated to the second entry in batched_data have valid latent space representation.
+    """
+    
+    masks = []
+    for i, data in enumerate(batched_data):
+        # Mask: 1 where valid, 0 where NaN/inf
+        mask = torch.isfinite(data).any(dim=1).to(data.dtype) # shape [B]
+        masks.append(mask)
+        
+    return torch.stack(masks, dim=1)
+        
+    
 def batch_preprocess(
         batch,
         vae_input_models: list[beta_VAE],
@@ -136,11 +198,11 @@ def batch_preprocess(
     # Collect VAEs
     data_vae = [*(vae_input_models or []), *(vae_actuator_models or [])]
     target_vae = [*(vae_output_models or [])]
-        
+
     # Latent space representations
-    breakpoint()
     if data_vae:
         data_representation = process_nan(data_vae, data)
+        mask = make_mask(data_representation)
     else:
         raise ValueError("data_vae list must NOT be empty")      
     
@@ -148,28 +210,35 @@ def batch_preprocess(
         target_representation = process_nan(target_vae, target)
     else:
         target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
-        
-    # if data_vae:
-    #     try:
-    #         data_representation = [m.encode(d)[0] for m, d in zip(data_vae, data)]
-    #     except Exception as e:
-    #         raise RuntimeError("tensor-model mismatch during `encode` call") from e
-    # else:
-    #     raise ValueError("data_vae list must NOT be empty")      
     
-    # if target_vae:
-    #     try:
-    #         target_representation = [m.encode(d)[0] for m, d in zip(target_vae, target)]
-    #     except Exception as e:
-    #         raise RuntimeError("tensor-model mismatch during `encode` call") from e
-    # else:
-    #     target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
-
+    breakpoint()
     input_data = torch.cat(data_representation, dim=1)
+    input_data = torch.cat([input_data,mask],dim=1)
+    
     target_data = torch.cat(target_representation, dim=1)
         
     return input_data, target_data
     
+    
+def masked_loss(reco, target, eps = 1e-8):
+    
+    mask = torch.isfinite(target) # booleans
+    mask = mask.to(target.dtype) # float
+    
+    dims = tuple(range(1, target.ndim))   # all dims except batch
+    valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
+
+    squared_diff = mask * (target - reco)**2
+
+    loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
+    mean_loss_per_sample = loss_per_sample/(valid_per_sample + eps) # average loss
+    
+    has_valid = valid_per_sample > 0
+    if has_valid.any():
+        return mean_loss_per_sample[has_valid].mean()
+    else:
+        return torch.zeros((), device=target.device, dtype=target.dtype)
+
     
 def train_model(
     SETTINGS:SettingsBenchmark,
@@ -186,14 +255,13 @@ def train_model(
     use_amp,
     grad_clip
     ):
-     
     
     train_vs_epoch = []
     val_vs_epoch = []
     
     best_val_loss = float("inf")
     epochs_no_improvement = 0
-     
+    
     # Loop through epochs
     scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
     stop_early = False
@@ -225,11 +293,11 @@ def train_model(
                 vae_actuator_models,
                 vae_output_models,
                 device)
-            
+
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
-                    loss = F.mse_loss(reconstruction, target, reduction='mean')
+                    loss = masked_loss(reconstruction, target)#F.mse_loss(reconstruction, target, reduction='mean')
                     if (not torch.isfinite(loss).all()):
                         print(
                             f"[Training batch {batch_idx} non-finite loss components "
@@ -239,7 +307,7 @@ def train_model(
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
-                loss = F.mse_loss(reconstruction, target, reduction='mean') 
+                loss = masked_loss(reconstruction, target,mask) 
                 loss.backward()
             
             if use_amp:
@@ -289,10 +357,10 @@ def train_model(
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)
-                        loss = F.mse_loss(reconstruction, target, reduction='mean') 
+                        loss = masked_loss(reconstruction, target) 
                 else:
                     reconstruction = model(data)
-                    loss = F.mse_loss(reconstruction, target, reduction='mean') 
+                    loss = masked_loss(reconstruction, target) 
                 
                 if (not torch.isfinite(loss).all()):
                         print(
@@ -425,7 +493,7 @@ def main():
         shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = False
+        return_incomplete_shots = True
     )
     base_train_dataset = base_datasets['train']
     base_val_dataset = base_datasets['val']
