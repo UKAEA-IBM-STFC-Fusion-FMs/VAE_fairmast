@@ -1,0 +1,57 @@
+{
+  "input": {
+    "data_names": [
+      ["magnetics","flux_loop_flux"]
+    ],
+    "target_names": [["magnetics","flux_loop_flux"]]
+  },
+  "time_settings":{
+    "x_window_sec": 0.005,
+    "y_window_sec": 0.0002,
+    "dt_sec": 0.0, 
+    "stride_sec": 0.0035,
+    "stride_unitary": true,
+    "targeted_time_stamps_per_window": 25
+  },
+  "windowed_data_specs":{
+    "window_channels":15,
+    "window_length": 25
+  },
+  "training": {
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
+    "patience":5,
+    "min_increment": 0.0005,
+    "lr": 0.5e-3,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 2,
+    "train_batch_size":2,
+    "min_batch_size": 4,
+    "num_workers": 0
+  },
+  "beta-vae":{
+    "latent_dim":12,
+    "beta":0.001,
+    "ref_freq": 0.001
+  },
+  "encoder":{
+    "type": "conv1d",
+    "activation_fn": "leaky_relu",
+    "layers": [
+      {"type": "conv1d", "params": {"in_channels": 15, "out_channels": 64, "kernel_size": 5, "stride": 2, "padding": 0}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 2, "padding": 0}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 4, "stride": 1, "padding": 0}}, 
+      {"type": "leaky_relu"}
+    ]
+  },
+  "paths": {
+    "data_split_csv_path":  "fairmast_data_processing/src/MAST_benchmark/metadata/data_splits.csv",
+    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
+  },
+  "local": true,
+  "cache_data": true
+}
