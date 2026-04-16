@@ -1,3 +1,26 @@
+    """Code to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
+    For more details on the benchmark study see arXiv:2602.10132 
+
+    python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path fairmast_data_processing/src/MAST_benchmark/tasks_configs/.yaml
+
+    Returns
+    -------
+    Saved model and loss curves
+
+    Raises
+    ------
+    ValueError
+        If one VAE model is missing
+    ValueError
+        if VAEs list for input data in the training is empty
+    ValueError
+        If order for input VAEs is different from the one specified order in the task setting
+    ValueError
+        If order for output VAEs is different from the one specified order in the task setting
+    ValueError
+        If the model for the benchmark is not correctly specified according to the expected layer structure
+        
+    """
 import argparse
 import json
 import os
@@ -23,12 +46,10 @@ sys.path.insert(0, "fairmast_data_processing/src")
 from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
 from fairmast_data_processing.src.MAST_benchmark.tasks import get_task_metadata
-from fairmast_data_processing.src.MAST_benchmark.data import initialize_MAST_dataset
-from fairmast_data_processing.src.MAST_benchmark.data import (initialize_TokaMark_dataset)
+from fairmast_data_processing.src.MAST_benchmark.data import initialize_TokaMark_dataset
 from fairmast_data_processing.scripts.test_pipeline import ModelSpecificTransform
                                           
 from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
-from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
@@ -37,8 +58,16 @@ from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 
 
-def process_nan(models: List[beta_VAE], batched_data: List[torch.Tensor]):
-    """_summary_
+def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.Tensor]):
+    """Move data from real space to the latent space.
+
+    Assumes: 
+    0-That batched_data has shape [B, R_i], where R_i is the dim. of signal `i` in the real space.
+    1-That model.encode(data)[0] returns mu, i.e., latent space repres.
+    2-That batch.dtype is float (or isnan(batch) would not work).
+    3-That model and batch are on same device.
+    4-All models are available for all the signals in batched_data.
+    so far a mixed representation (real and latent space) is not supported.
 
     Parameters
     ----------
@@ -58,8 +87,13 @@ def process_nan(models: List[beta_VAE], batched_data: List[torch.Tensor]):
     # Return batched data in their latent space representation
     batched_data_representations = []
     
-    # Loop through all the batched data. 
+    # Loop through all the batched data in real space. 
     # Fill the batch representation when appropriate otherwise set it to NaN
+    
+    if len(models) != len(batched_data):
+        raise ValueError("models and batched_data length mismatch")
+
+
     for model, batch in zip(models, batched_data):
         
         #Initalize this batch with a latent space representation of NaN
@@ -70,7 +104,7 @@ def process_nan(models: List[beta_VAE], batched_data: List[torch.Tensor]):
 
         if clean_mask.any():
             try:
-                batch_representation[clean_mask] = model.encode(batch)[0]
+                batch_representation[clean_mask] = model.encode(batch[clean_mask])[0]
             except Exception as e:
                 print(f"tensor-model mismatch during `encode` call {e}")    
         
@@ -81,20 +115,17 @@ def process_nan(models: List[beta_VAE], batched_data: List[torch.Tensor]):
 
 def make_mask(batched_data: List[torch.Tensor]):
     """
-    When moving from the real space of the data to the latent space representation,
+    When moving data from the real space to the latent space,
     missing data in the batch are set to have representation unknown, i.e., NaN.
 
     Use this method to build a mask for the batched_data_representations 
     that keeps track of NaN in the representations. 
 
-    Use: in the benchmark_pipeline.py, following process_nan()
-
-
     Parameters
     ----------
     batched_data : List[torh.Tensor]
         Each tensor (entry) of the list has shape [B,latent_dim] and corresponds to a specific signal.
-        `B` is the batch size, `latent_dim` is the size of the latent space in which the signal is represented.
+        `B` is the batch size, `latent_dim` is the size of the latent space representation of the signal.
         
         For example:
         batched_data = [
@@ -147,7 +178,7 @@ def batch_preprocess(
     
 
     """
-    Preprocess a mini-batch by aligning dtypes/devices, extracting VAE latent representations,
+    Preprocess a batch by aligning dtypes/devices, extracting VAE latent representations,
     and concatenating representations into different tensors for inputs and targets, respectively.
 
     This function expects:
@@ -201,18 +232,21 @@ def batch_preprocess(
 
     # Latent space representations
     if data_vae:
-        data_representation = process_nan(data_vae, data)
+        data_representation = get_latent_representation(data_vae, data)
         mask = make_mask(data_representation)
+
+        if torch.sum(mask)<1:
+            return None, None
     else:
         raise ValueError("data_vae list must NOT be empty")      
     
     if target_vae:
-        target_representation = process_nan(target_vae, target)
+        target_representation = get_latent_representation(target_vae, target)
     else:
         target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
     
-    breakpoint()
     input_data = torch.cat(data_representation, dim=1)
+    input_data = torch.nan_to_num(input_data, nan=0.0)
     input_data = torch.cat([input_data,mask],dim=1)
     
     target_data = torch.cat(target_representation, dim=1)
@@ -221,7 +255,21 @@ def batch_preprocess(
     
     
 def masked_loss(reco, target, eps = 1e-8):
-    
+    """
+        Compute a mean squared error loss ignoring non-finite target values.
+
+        The loss is computed per sample over valid (finite) target entries only
+        and then averaged over the batch.
+
+        Args:
+            reco (torch.Tensor): Reconstructed output tensor.
+            target (torch.Tensor): Target tensor, may contain NaN or Inf values.
+            eps (float, optional): Small constant to avoid division by zero.
+
+        Returns:
+            torch.Tensor: Scalar loss value.
+        """
+
     mask = torch.isfinite(target) # booleans
     mask = mask.to(target.dtype) # float
     
@@ -294,6 +342,9 @@ def train_model(
                 vae_output_models,
                 device)
 
+            if data is None:
+                continue
+
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
@@ -354,6 +405,9 @@ def train_model(
                     vae_output_models,
                     device)
                 
+                if data is None:
+                    continue
+
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)
@@ -478,8 +532,7 @@ def main():
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                ImputerTransform()
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
