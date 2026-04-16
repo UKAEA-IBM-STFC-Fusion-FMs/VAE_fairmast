@@ -198,3 +198,6 @@ src/vae_pipeline/transforms/shot_level_transforms/drop_sample_with_nans.py
 src/vae_pipeline/transforms/shot_level_transforms/truncation_transform.py
 src/benchmark/data/output/*
 src/vae_pipeline/data/output/*
+src/vae_pipeline/data/VAEs
+src/benchmark/configs/*
+src/vae_pipeline/configs/*
