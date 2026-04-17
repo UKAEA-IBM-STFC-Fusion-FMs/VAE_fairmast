@@ -67,12 +67,11 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
     """Move data from real space to the latent space.
 
     Assumes: 
-    0-That batched_data has shape [B, R_i], where R_i is the dim. of signal `i` in the real space.
     1-That model.encode(data)[0] returns mu, i.e., latent space repres.
     2-That batch.dtype is float (or isnan(batch) would not work).
     3-That model and batch are on same device.
-    4-All models are available for all the signals in batched_data.
-    so far a mixed representation (real and latent space) is not supported.
+    4-That if the first len(models) tensors in batched_data have corresponding VAEs,
+    any remaining tensors at the end are the ones that should be kept uncompressed.
 
     Parameters
     ----------
@@ -83,22 +82,25 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
 
     Returns
     -------
-    list : list[torch.Tensor]
+    batched_data_representations : list[torch.Tensor]
         List of batched tensors in the latent space representation.
         Each entry has same batch dimension but different second dimension given by the size of their
-        latent space representation
+        latent space representation. 
+
+        If the batched_data contains more tensors than models, the remaining tensors do not need 
+        compression with VAE. They are then reshaped to agree with the dimensions of the 
+        other tensors after compression and appended to the batched_data_representations list.
     """
     
     # Return batched data in their latent space representation
     batched_data_representations = []
-    
+
+    # Sanity check
+    if len(models) > len(batched_data):
+        raise ValueError(f"More models ({len(models)}) than data tensors ({len(batched_data)})")
+
     # Loop through all the batched data in real space. 
     # Fill the batch representation when appropriate otherwise set it to NaN
-    
-    if len(models) != len(batched_data):
-        raise ValueError("models and batched_data length mismatch")
-
-
     for model, batch in zip(models, batched_data):
         
         #Initalize this batch with a latent space representation of NaN
@@ -114,7 +116,11 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
                 print(f"tensor-model mismatch during `encode` call {e}")    
         
         batched_data_representations.append(batch_representation)
-        
+
+    # Process remaining batched_data if len(batched_data) > len(models)
+    for batch in batched_data[len(models):]:
+        batched_data_representations.append(batch.reshape(batch.shape[0], -1))
+
     return batched_data_representations
 
 
@@ -177,8 +183,7 @@ def batch_preprocess(
         batch,
         vae_input_models: list[beta_VAE],
         vae_actuator_models: list[beta_VAE],
-        vae_output_models: list[beta_VAE],
-        device
+        vae_output_models: list[beta_VAE]
     ):
     
 
@@ -190,6 +195,8 @@ def batch_preprocess(
     - `batch['x']` to contain the input tensors plus actuators,
     - `batch['y']` to contain the output tensors,
     - lists of VAE models for inputs/actuators and outputs,
+
+    Assumes all VAEs are on same device and dtype.
 
     Parameters
     ----------
@@ -221,35 +228,31 @@ def batch_preprocess(
     y = batch['y'] # Output
     
     # Match data-model types
-    try:
-        p = next(vae_input_models[0].parameters())
-    except Exception as e:
-        print(f"Error in determining the dtype of your model: {e}")
-        return None
-    
-    # Send data to device
-    data = [x_.to(dtype=p.dtype, device=p.device) for x_ in x]
-    target = [y_.to(dtype=p.dtype, device=p.device) for y_ in y]
+    if not vae_input_models:
+        raise ValueError("Input VAEs must not be empty")
 
+    try:
+        # Find device and send data
+        p = next(vae_input_models[0].parameters())
+        data = [x_.to(dtype=p.dtype, device=p.device) for x_ in x]
+        target = [y_.to(dtype=p.dtype, device=p.device) for y_ in y]
+    except Exception as e:
+        raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
+ 
     # Collect VAEs
     data_vae = [*(vae_input_models or []), *(vae_actuator_models or [])]
     target_vae = [*(vae_output_models or [])]
 
     # Latent space representations
-    if data_vae:
-        data_representation = get_latent_representation(data_vae, data)
-        mask = make_mask(data_representation)
+    data_representation = get_latent_representation(data_vae, data)
+    mask = make_mask(data_representation)
 
-        if torch.sum(mask)<1:
-            return None, None
-    else:
-        raise ValueError("data_vae list must NOT be empty")      
+    if torch.sum(mask)<1:
+        return (None, None)
     
-    if target_vae:
-        target_representation = get_latent_representation(target_vae, target)
-    else:
-        target_representation = [t.reshape(t.shape[0], -1) for t in target] # Reshape to (B,N)
+    target_representation = get_latent_representation(target_vae, target)
     
+    # Concatenate
     input_data = torch.cat(data_representation, dim=1)
     input_data = torch.nan_to_num(input_data, nan=0.0)
     input_data = torch.cat([input_data,mask],dim=1)
@@ -344,8 +347,7 @@ def train_model(
                 batch,
                 vae_input_models, 
                 vae_actuator_models,
-                vae_output_models,
-                device)
+                vae_output_models)
 
             if data is None:
                 continue
@@ -407,8 +409,7 @@ def train_model(
                     batch,
                     vae_input_models, 
                     vae_actuator_models,
-                    vae_output_models,
-                    device)
+                    vae_output_models)
                 
                 if data is None:
                     continue
@@ -578,13 +579,6 @@ def main():
         verbose=False
     )
     
-    # Optionally wrap with cache
-    # if SETTINGS.cache:
-    #     train_dataset = CachedDataset(train_model_dataset)
-    #     val_dataset   = CachedDataset(val_model_dataset)
-    # else:
-    #     train_dataset = train_model_dataset
-    #     val_dataset   = val_model_dataset
 
     # DataLoaders
     train_dataloader = DataLoader(
