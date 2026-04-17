@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vae_fairmast"
 version = "0.1.0"
-description = "xxx"
+description = "Variational Autoencoder PyTorch Pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }  # or whatever you choose later
+license = { LICENSE }  # or whatever you choose later
 authors = [
-  { name = "XXX" }
+  { name = UKAEA }
 ]
 
 #[project.urls]
