@@ -1,3 +1,9 @@
+'''
+For breaf summary check vae_pipeline.py introduction.
+
+New: in this version of the pipeline a masked loss was introduced.
+'''
+
 import argparse
 from collections import defaultdict
 import copy

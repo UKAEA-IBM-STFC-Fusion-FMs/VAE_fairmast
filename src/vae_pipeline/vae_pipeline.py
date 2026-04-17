@@ -1,3 +1,29 @@
+'''
+PyTorch pipeline for training Variational Auto Encoder (VAE) architectures 
+for learning the latent space representation of signals from the Mega Ampere Spherical Tokamak (MAST) experiments.
+
+Dataset at: https://huggingface.co/datasets/UKAEA-IBM-STFC/tokamark-dataset
+
+Encoder
+
+The encoder compresses input data x into the latent space z, where dim(z)< dim(x).
+The encoder architectures used in the training are:
+
+A stack of conv1d layers.
+A stack of conv2d layers.
+A series of dense layers.
+
+Decoder
+
+The decoder decompresses z to return x.
+The decoder applies the inverse encoder transform in reverse order.
+How to use it
+
+Use:
+python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config*.json
+'''
+
+
 import argparse
 from collections import defaultdict
 import copy

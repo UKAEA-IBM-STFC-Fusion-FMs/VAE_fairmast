@@ -1,7 +1,12 @@
-    """Code to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
+""" Code to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
     For more details on the benchmark study see arXiv:2602.10132 
 
+    Use:
     python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path fairmast_data_processing/src/MAST_benchmark/tasks_configs/.yaml
+
+    Returns
+    -------
+    Saved model and loss curves
 
     Returns
     -------
@@ -20,7 +25,7 @@
     ValueError
         If the model for the benchmark is not correctly specified according to the expected layer structure
         
-    """
+"""
 import argparse
 import json
 import os
