@@ -93,33 +93,50 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
         compression with VAE. They are then reshaped to 2D tensors.
     """
     
-    # Return batched data in their latent space representation
-    batched_data_representations = []
+    batched_data_representations: List[torch.Tensor] = []
 
-    # Sanity check
     if len(models) > len(batched_data):
-        raise ValueError(f"More models ({len(models)}) than data tensors ({len(batched_data)})")
+        raise ValueError(
+            f"More models ({len(models)}) than data tensors ({len(batched_data)})"
+        )
 
-    # Loop through all the batched data in real space. 
-    # Fill the batch representation when appropriate otherwise set it to NaN
+    # Encode tensors that have a corresponding model
     for model, batch in zip(models, batched_data):
-        
-        #Initalize this batch with a latent space representation of NaN
-        batch_representation = torch.full((batch.shape[0],model.latent_dim),float('nan'),dtype=batch.dtype,device=batch.device)
-        
-        nan_mask = torch.isnan(batch).any(dim=tuple(range(1, batch.ndim)))  # shape [B]
-        clean_mask = ~nan_mask
+        if batch.ndim < 2:
+            raise ValueError("Each batch must have at least 2 dimensions [B, ...]")
 
-        if clean_mask.any():
-            try:
-                batch_representation[clean_mask] = model.encode(batch[clean_mask])[0]
-            except Exception as e:
-                print(f"tensor-model mismatch during `encode` call {e}")    
-        
-        batched_data_representations.append(batch_representation)
+        dims = tuple(range(1, batch.ndim))
+        nan_mask = torch.isnan(batch).any(dim=dims)  # shape: [B]
 
-    # Process remaining batched_data if len(batched_data) > len(models)
+        # Replace NaNs before encoding (avoids model crash)
+        if nan_mask.any():
+            batch_in = batch.clone()
+            batch_in[nan_mask] = 0.0
+        else:
+            batch_in = batch
+
+        try:
+            z = model.encode(batch_in)[0]  # expected shape: [B, latent_dim]
+        except Exception as e:
+            raise RuntimeError(f"tensor-model mismatch during `encode`: {e}")
+
+        # Ensure output is 2D [B, latent_dim]
+        if z.ndim != 2 or z.shape[0] != batch.shape[0]:
+            raise ValueError(
+                f"Encoder output shape mismatch: expected [B, D], got {z.shape}"
+            )
+
+        # Set invalid rows back to NaN
+        if nan_mask.any():
+            z = z.clone()
+            z[nan_mask] = float("nan")
+
+        batched_data_representations.append(z)
+
+    # Process remaining tensors without models
     for batch in batched_data[len(models):]:
+        if batch.ndim < 1:
+            raise ValueError("Batch must have at least 1 dimension")
         batched_data_representations.append(batch.reshape(batch.shape[0], -1))
 
     return batched_data_representations
@@ -248,7 +265,7 @@ def batch_preprocess(
     data_representation = get_latent_representation(data_vae, data)
     mask = make_mask(data_representation)
 
-    if torch.sum(mask)<1:
+    if not mask.any():
         return (None, None)
     
     target_representation = get_latent_representation(target_vae, target)
