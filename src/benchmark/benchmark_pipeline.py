@@ -1,4 +1,4 @@
-""" Code to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
+""" PyTorch pipeline to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
     For more details on the benchmark study see arXiv:2602.10132 
 
     Use:
@@ -15,7 +15,9 @@
     Raises
     ------
     ValueError
-        If one VAE model is missing
+        if there are more models than signals
+    ValueError
+        if model and data device do not match
     ValueError
         if VAEs list for input data in the training is empty
     ValueError
@@ -70,8 +72,8 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
     1-That model.encode(data)[0] returns mu, i.e., latent space repres.
     2-That batch.dtype is float (or isnan(batch) would not work).
     3-That model and batch are on same device.
-    4-That if the first len(models) tensors in batched_data have corresponding VAEs,
-    any remaining tensors at the end are the ones that should be kept uncompressed.
+    4-That len(models) tensors in batched_data have corresponding VAEs,
+    any remaining tensors at the end are kept uncompressed.
 
     Parameters
     ----------
@@ -83,13 +85,12 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
     Returns
     -------
     batched_data_representations : list[torch.Tensor]
-        List of batched tensors in the latent space representation.
+        List of batched tensors in the latent space representation, 2D shape [B, d_latent].
         Each entry has same batch dimension but different second dimension given by the size of their
         latent space representation. 
 
         If the batched_data contains more tensors than models, the remaining tensors do not need 
-        compression with VAE. They are then reshaped to agree with the dimensions of the 
-        other tensors after compression and appended to the batched_data_representations list.
+        compression with VAE. They are then reshaped to 2D tensors.
     """
     
     # Return batched data in their latent space representation
@@ -278,17 +279,17 @@ def masked_loss(reco, target, eps = 1e-8):
             torch.Tensor: Scalar loss value.
         """
 
-    mask = torch.isfinite(target) # booleans
-    mask = mask.to(target.dtype) # float
+    mask = torch.isfinite(target).to(target.dtype) 
     
     dims = tuple(range(1, target.ndim))   # all dims except batch
-    valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
+    valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample 
 
     squared_diff = mask * (target - reco)**2
-
     loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
+
     mean_loss_per_sample = loss_per_sample/(valid_per_sample + eps) # average loss
     
+    # Compute mean loss per batch only on valid samples
     has_valid = valid_per_sample > 0
     if has_valid.any():
         return mean_loss_per_sample[has_valid].mean()
@@ -365,7 +366,13 @@ def train_model(
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target,mask) 
+                loss = masked_loss(reconstruction, target)
+                if (not torch.isfinite(loss).all()):
+                    print(
+                        f"[Training batch {batch_idx} non-finite loss components "
+                        f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                    )
+                    continue  
                 loss.backward()
             
             if use_amp:
