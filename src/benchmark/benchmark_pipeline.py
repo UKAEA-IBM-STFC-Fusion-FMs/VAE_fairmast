@@ -1,7 +1,8 @@
-""" PyTorch pipeline to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
+""" 
+    PyTorch pipeline to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
     For more details on the benchmark study see arXiv:2602.10132 
 
-    Use:
+    RUN:
     python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path fairmast_data_processing/src/MAST_benchmark/tasks_configs/.yaml
 
 
@@ -30,21 +31,6 @@
     Returns
     -------
     Saved model and loss curves
-
-    Raises
-    ------
-    ValueError
-        if there are more models than signals
-    ValueError
-        if model and data device do not match
-    ValueError
-        if VAEs list for input data in the training is empty
-    ValueError
-        If order for input VAEs is different from the one specified order in the task setting
-    ValueError
-        If order for output VAEs is different from the one specified order in the task setting
-    ValueError
-        If the model for the benchmark is not correctly specified according to the expected layer structure
         
 """
 import argparse
@@ -134,8 +120,11 @@ def get_latent_representation(models: List[beta_VAE], batched_real_data: List[to
         nan_mask = torch.isnan(batch).any(dim=dims)  # each tensor shape: [B]
         masks.append(nan_mask)
 
-       
-        batch_in = batch if not nan_mask.any() else batch.clone()
+        if nan_mask.any():
+            batch_in = batch.clone()
+            batch_in[nan_mask] = 0.0
+        else:
+            batch_in = batch
 
         try:
             z = model.encode(batch_in)[0]  # expected shape: [B, latent_dim]
