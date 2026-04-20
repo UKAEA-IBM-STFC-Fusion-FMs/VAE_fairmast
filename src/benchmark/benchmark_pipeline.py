@@ -4,9 +4,28 @@
     Use:
     python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path fairmast_data_processing/src/MAST_benchmark/tasks_configs/.yaml
 
-    Returns
-    -------
-    Saved model and loss curves
+
+    DATA INGESTION:
+
+    This pipeline enforces a strict one‑to‑one correspondence between 
+    configured signals and their associated Variational Autoencoder (VAE) models at ingestion time. 
+    The configuration defines three categories of signals: inputs, actuators, and outputs, each of which may require compression via a dedicated VAE.
+
+    Input signals:
+        All input signals must have corresponding input VAEs.
+        Input signals without VAEs are not allowed.
+
+    Actuator signals:
+        No actuators configured
+            --> No actuator VAEs are required.
+        Actuators configured
+            --> All actuator signals must have corresponding actuator VAEs.
+
+    Output signals:
+        Outputs configured without VAEs
+            --> Output signals are kept in real space (no compression).
+        Outputs configured with VAEs
+            --> All output signals must have corresponding output VAEs.
 
     Returns
     -------
@@ -65,55 +84,58 @@ from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 
 
-def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.Tensor]):
-    """Move data from real space to the latent space.
+def get_latent_representation(models: List[beta_VAE], batched_real_data: List[torch.Tensor]):
+    """Move data from real space to the latent space for those signals which have corresponding VAE.
 
     Assumes: 
     1-That model.encode(data)[0] returns mu, i.e., latent space repres.
     2-That batch.dtype is float (or isnan(batch) would not work).
     3-That model and batch are on same device.
-    4-That len(models) tensors in batched_data have corresponding VAEs,
+    4-That the first len(models) tensors in batched_real_data have corresponding VAEs,
     any remaining tensors at the end are kept uncompressed.
 
     Parameters
     ----------
     models :  list[beta_VAE]
         List of pre-trained beta_VAE models.
-    batched_data : list[torch.Tensor]
-        List of batched of tensors.
+    batched_real_data : list[torch.Tensor]
+        List of batched of tensors in the real space, each tensor has at least 2D.
 
     Returns
     -------
-    batched_data_representations : list[torch.Tensor]
+    batched_latent_data : list[torch.Tensor]
         List of batched tensors in the latent space representation, 2D shape [B, d_latent].
         Each entry has same batch dimension but different second dimension given by the size of their
-        latent space representation. 
+        latent space representation.
 
-        If the batched_data contains more tensors than models, the remaining tensors do not need 
-        compression with VAE. They are then reshaped to 2D tensors.
+    masks : list[torch.Tensor]
+
+        A list containing masks where True indicates samples containing at least one NaN 
+        in batched_real_data that are going through the encoder.
+        Each entry has shape [B].
+  
     """
-    
-    batched_data_representations: List[torch.Tensor] = []
-
-    if len(models) > len(batched_data):
+    # Sanity check
+    if len(models) > len(batched_real_data):
         raise ValueError(
-            f"More models ({len(models)}) than data tensors ({len(batched_data)})"
+            f"More models ({len(models)}) than data tensors ({len(batched_real_data)})"
         )
 
+    # Return values
+    batched_latent_data: List[torch.Tensor] = []
+    masks = []
+
     # Encode tensors that have a corresponding model
-    for model, batch in zip(models, batched_data):
+    for model, batch in zip(models, batched_real_data):
         if batch.ndim < 2:
             raise ValueError("Each batch must have at least 2 dimensions [B, ...]")
 
         dims = tuple(range(1, batch.ndim))
-        nan_mask = torch.isnan(batch).any(dim=dims)  # shape: [B]
+        nan_mask = torch.isnan(batch).any(dim=dims)  # each tensor shape: [B]
+        masks.append(nan_mask)
 
-        # Replace NaNs before encoding (avoids model crash)
-        if nan_mask.any():
-            batch_in = batch.clone()
-            batch_in[nan_mask] = 0.0
-        else:
-            batch_in = batch
+       
+        batch_in = batch if not nan_mask.any() else batch.clone()
 
         try:
             z = model.encode(batch_in)[0]  # expected shape: [B, latent_dim]
@@ -126,76 +148,63 @@ def get_latent_representation(models: List[beta_VAE], batched_data: List[torch.T
                 f"Encoder output shape mismatch: expected [B, D], got {z.shape}"
             )
 
-        # Set invalid rows back to NaN
-        if nan_mask.any():
-            z = z.clone()
-            z[nan_mask] = float("nan")
+        batched_latent_data.append(z)
 
-        batched_data_representations.append(z)
+    return batched_latent_data, masks
 
-    # Process remaining tensors without models
-    for batch in batched_data[len(models):]:
-        if batch.ndim < 1:
-            raise ValueError("Batch must have at least 1 dimension")
-        batched_data_representations.append(batch.reshape(batch.shape[0], -1))
-
-    return batched_data_representations
-
-
-def make_mask(batched_data: List[torch.Tensor]):
-    """
-    When moving data from the real space to the latent space,
-    missing data in the batch are set to have representation unknown, i.e., NaN.
-
-    Use this method to build a mask for the batched_data_representations 
-    that keeps track of NaN in the representations. 
-
-    Parameters
-    ----------
-    batched_data : List[torh.Tensor]
-        Each tensor (entry) of the list has shape [B,latent_dim] and corresponds to a specific signal.
-        `B` is the batch size, `latent_dim` is the size of the latent space representation of the signal.
-        
-        For example:
-        batched_data = [
-        torch.tensor([
-            [math.nan, math.nan, math.nan, math.nan],
-            [0.8985, 0.4067, 0.5273, 0.7831],
-            [0.4690, 0.0781, 0.0128, 0.5209]
-        ]),
-        torch.tensor([
-            [0.4007, 0.4960],
-            [0.4031, 0.0899],
-            [0.5519, 0.9782]
-        ])
-        ]
-            
-        In this example, batched_data contains two etries for two signals.
-        Their corresponding latent space representations have size 4 and 2, respectivelly.
-        The batch size `B` is 3.
-        
-    Return 
-    ----------
-    masks: torch.Tensor
-        mask of shape [`B`,len(batched_data)] filled with 1, if the corresponding 
-        data in the batched_data_representations is finite, otherwise 0.
-        For example:
-        masks = tensor([[0., 1.],
-                        [1., 1.],
-                        [1., 1.]])
-        The first column says that in the three samples associated with the first entry in
-        batched_data the first one has NaN representation. The second column says that all
-        samples associated to the second entry in batched_data have valid latent space representation.
+def process_extra_tensors(
+    models, 
+    batched_real_data, 
+    batched_latent_data,
+    masks, 
+    impute_with_zeros):
     """
     
-    masks = []
-    for i, data in enumerate(batched_data):
-        # Mask: 1 where valid, 0 where NaN/inf
-        mask = torch.isfinite(data).any(dim=1).to(data.dtype) # shape [B]
-        masks.append(mask)
-        
-    return torch.stack(masks, dim=1)
-        
+    Update list of tensors in the latent space representation 
+    with re-shaped tensors (to match the latent space representaion shape), of data that had not been comprtessed
+    with VAE.
+
+    Update masks of NaN entries in the list.
+    
+    Parameters
+    ----------
+    models :  list[beta_VAE]
+        List of pre-trained beta_VAE models.
+    batched_real_data : list[torch.Tensor]
+        List of batched tensors in the real space, each tensor has at least 2D.
+    batched_latent_data : list[torch.Tensor]
+        List of batched tensors in the latent space representation. Itslength is len(models).
+        Each entry has same batch dimension but different second dimension.
+        This list will be updated and returend.
+    masks : list[torch.Tensor]
+        A list of length = len(models) containing masks (True) for original NaN 
+        in batched_real_data that have been compressed.
+        Each entry has shape [B]. 
+        This list will be updated and returned
+    impute_with_zeros : bool
+        Choose whether or not replace NaN with zeros.
+        If impute_with_zeros=False, NaNs are propagated to the output
+
+    Raises
+    ------
+    ValueError
+
+    """
+    # Process remaining tensors without models
+    for batch in batched_real_data[len(models):]:
+
+        nan_mask = torch.isnan(batch) 
+        masks.append(nan_mask.reshape(batch.shape[0], -1))
+
+        if nan_mask.any() and impute_with_zeros:
+            batch_in = batch.clone()
+            batch_in[nan_mask] = 0.0
+        else:
+            batch_in = batch
+
+        batched_latent_data.append(batch_in.reshape(batch_in.shape[0], -1))
+    
+    return batched_latent_data, masks
     
 def batch_preprocess(
         batch,
@@ -207,7 +216,10 @@ def batch_preprocess(
 
     """
     Preprocess a batch by aligning dtypes/devices, extracting VAE latent representations,
-    and concatenating representations into different tensors for inputs and targets, respectively.
+    processing signals which do not need to be encoded into the latent space,
+    concatenating representations into different tensors for inputs and targets, respectively.
+
+    Input tensors are returned together with masks that are True for NaN in the original data.
 
     This function expects:
     - `batch['x']` to contain the input tensors plus actuators,
@@ -252,8 +264,9 @@ def batch_preprocess(
     try:
         # Find device and send data
         p = next(vae_input_models[0].parameters())
-        data = [x_.to(dtype=p.dtype, device=p.device) for x_ in x]
-        target = [y_.to(dtype=p.dtype, device=p.device) for y_ in y]
+        device_type = p.dtype
+        data = [x_.to(dtype=device_type, device=p.device) for x_ in x] # real space data
+        target = [y_.to(dtype=device_type, device=p.device) for y_ in y] # real space target
     except Exception as e:
         raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
  
@@ -261,44 +274,72 @@ def batch_preprocess(
     data_vae = [*(vae_input_models or []), *(vae_actuator_models or [])]
     target_vae = [*(vae_output_models or [])]
 
-    # Latent space representations
-    data_representation = get_latent_representation(data_vae, data)
-    mask = make_mask(data_representation)
+    # Prepare input data
+    data_representation, mask_data = get_latent_representation(data_vae, data)
+    input_data, mask_input = process_extra_tensors(
+                                            data_vae, 
+                                            data, 
+                                            data_representation,
+                                            mask_data, 
+                                            impute_with_zeros = True)
 
-    if not mask.any():
-        return (None, None)
     
-    target_representation = get_latent_representation(target_vae, target)
+    mask_input_tensor = torch.stack(mask_input, dim=1)
+    if not mask_input_tensor.any():
+        return None, None
     
+    target_representation, mask_target = get_latent_representation(target_vae, target)
+    target_data, mask_target  =  process_extra_tensors(
+                                            target_vae, 
+                                            target, 
+                                            target_representation,
+                                            mask_target, 
+                                            impute_with_zeros = True)
+
     # Concatenate
     input_data = torch.cat(data_representation, dim=1)
-    input_data = torch.nan_to_num(input_data, nan=0.0)
-    input_data = torch.cat([input_data,mask],dim=1)
+    mask_input = torch.stack(mask_input, dim=1)
+    valid_input = ~mask_input # Change logic
+    input = torch.cat([input_data,valid_input.to(dtype=input_data.dtype, device=input_data.device)],dim=1)
     
     target_data = torch.cat(target_representation, dim=1)
-        
-    return input_data, target_data
+    mask_target = torch.cat(mask_target, dim=1)
+    valid_target = ~mask_target
+    
+    return input, target_data, valid_input, valid_target
     
     
-def masked_loss(reco, target, eps = 1e-8):
+def masked_loss(reco, target, valid_target, eps = 1e-8):
     """
-        Compute a mean squared error loss ignoring non-finite target values.
+    Compute a mean squared error loss using an explicit validity mask.
 
-        The loss is computed per sample over valid (finite) target entries only
-        and then averaged over the batch.
+    The loss is computed per sample over valid target entries only
+    and then averaged over the batch.
 
-        Args:
-            reco (torch.Tensor): Reconstructed output tensor.
-            target (torch.Tensor): Target tensor, may contain NaN or Inf values.
-            eps (float, optional): Small constant to avoid division by zero.
+    Args:
+        reco (torch.Tensor): Reconstructed output tensor, shape [B, ...].
+        target (torch.Tensor): Target tensor, shape [B, ...].
+        valid_target (torch.Tensor): Boolean tensor, same shape as target.
+                                     True indicates valid entries.
+        eps (float, optional): Small constant to avoid division by zero.
 
-        Returns:
-            torch.Tensor: Scalar loss value.
-        """
+    Returns:
+        torch.Tensor: Scalar loss value.
+    """
 
-    mask = torch.isfinite(target).to(target.dtype) 
-    
-    dims = tuple(range(1, target.ndim))   # all dims except batch
+
+
+    if target.shape != valid_target.shape:  
+        raise ValueError(
+            f"target and valid_target must have the same shape, "
+            f"got {target.shape} and {valid_target.shape}"
+        )
+
+    # Convert validity mask to float for arithmetic
+    mask = valid_target.to(dtype=target.dtype)
+
+    # Reduce over all non-batch dimensions
+    dims = tuple(range(1, target.ndim))
     valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample 
 
     squared_diff = mask * (target - reco)**2
@@ -361,7 +402,7 @@ def train_model(
             if batch_idx % 100 == 0:
                 print(f"\nBatch {batch_idx}")
 
-            data, target = batch_preprocess(
+            data, target, _, valid_target = batch_preprocess(
                 batch,
                 vae_input_models, 
                 vae_actuator_models,
@@ -373,7 +414,7 @@ def train_model(
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target)#F.mse_loss(reconstruction, target, reduction='mean')
+                    loss = masked_loss(reconstruction, target, valid_target)#F.mse_loss(reconstruction, target, reduction='mean')
                     if (not torch.isfinite(loss).all()):
                         print(
                             f"[Training batch {batch_idx} non-finite loss components "
@@ -383,7 +424,7 @@ def train_model(
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target)
+                loss = masked_loss(reconstruction, target, valid_target)
                 if (not torch.isfinite(loss).all()):
                     print(
                         f"[Training batch {batch_idx} non-finite loss components "
@@ -429,7 +470,7 @@ def train_model(
                 if batch_idx % 100 == 0:
                     print(f"\nBatch {batch_idx}")
 
-                data, target = batch_preprocess(
+                data, target, _, valid_target = batch_preprocess(
                     batch,
                     vae_input_models, 
                     vae_actuator_models,
@@ -441,10 +482,10 @@ def train_model(
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)
-                        loss = masked_loss(reconstruction, target) 
+                        loss = masked_loss(reconstruction, target, valid_target)
                 else:
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target) 
+                    loss = masked_loss(reconstruction, target, valid_target)
                 
                 if (not torch.isfinite(loss).all()):
                         print(
@@ -620,6 +661,7 @@ def main():
     
     # Load input VAEs 
     # ----------------------------------------
+    vae_input_models = None
     if SETTINGS.LOCAL_PATHS.input_vae_models:
         for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("input_name")):
             if signal_name not in SETTINGS.LOCAL_PATHS.input_vae_models[i]:
@@ -634,7 +676,7 @@ def main():
             print(f"No vae found at indices: {none_indices}")
             
     else:
-        print(f"vae paths for inut signals not specified in {config_task_file_path}")
+        print(f"vae paths for ipnut signals not specified in {config_task_file_path}")
     
 
     # Load actuator VAEs 
@@ -667,6 +709,24 @@ def main():
     if vae_output_models:
         vae_output_models = [model.to(device) for model in vae_output_models]
     
+    # Check VAE-data consistency
+    if vae_input_models is None:
+        raise ValueError("Input signals must all have corresponding VAE. Input VAE list found empty")
+    else:
+        if len(config_task["sources_and_signals"].get("input_name")) != len(vae_input_models):
+            raise ValueEroor(" The number of VAE for input signals is different from the number of input signals")
+    
+    if config_task["sources_and_signals"].get("actuator_name") is not None:
+        if vae_actuator_models is None:
+            raise ValueError("Use of actuators without corresponding VAEs NOT ALLOWED. Define VAE models for actuators using the config.json file")
+        else:
+            if len(config_task["sources_and_signals"].get("actuator_name")) != len(vae_actuator_models):
+                raise ValueEroor(" The number of VAE for actuator signals is different from the number of actuator signals")
+    
+    if vae_output_models is not None:
+        if len(config_task["sources_and_signals"].get("output_name")) != len(vae_output_models):
+            raise ValueEroor("The number of VAE for output signals is different from the number of output signals")
+
     
     # Retrieve model architecture
     if SETTINGS.MODEL.layers is None:
