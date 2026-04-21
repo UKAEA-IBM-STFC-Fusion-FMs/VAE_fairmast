@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 # ----------------------------------------------------------------------------------------------------------------------
 # Repo-specific imports
 
-# Add the repo root (e.g.,/fairmast-data-preprocessing) to sys.path
+# Add the repo root to sys.path
 REPO_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__) if '__file__' in globals() else os.getcwd(),
     "..", "..", ".."
@@ -21,7 +21,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 # print(f"REPO_ROOT: {REPO_ROOT}")
 
-from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset
+from tokamark/src/MAST_tools/MAST_dataset import MastDataset
 from src.vae_pipeline.utils.utils import read_data_split_csv
 
 from src.vae_pipeline.utils.utils import ComposeTransforms

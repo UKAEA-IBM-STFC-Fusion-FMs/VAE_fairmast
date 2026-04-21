@@ -9,7 +9,7 @@ import numpy as np
 import itertools
 from torch.utils.data import DataLoader
 
-from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset
+from tokamark/src/MAST_tools/MAST_dataset import MastDataset
 from src.vae_pipeline.preprocessing.sampled_shot_list import yamane_sampled_shot_list
 from src.vae_pipeline.preprocessing.standardscaling_preprocessing import get_mean_shot, get_std_shot
 
@@ -82,7 +82,7 @@ def get_train_test_val_shots(
     max_index_for_test = None,
     shuffle = False,
     seed = None,
-    csv_path =  "fairmast_data_processing/src/MAST_benchmark/metadata/data_splits.csv"
+    csv_path =  "tokamark/src/tokamark/metadata/TokaMark_data_splits.csv"
     ):
     
     """

@@ -13,7 +13,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
-from fairmast_data_processing.src.MAST_benchmark.tools.utils import get_config_from_yaml
+from tokamark.src.tokamark.tools.utils import get_config_from_yaml
 from src.benchmark.configs.benchmark_setup import get_benchmark_settings
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
@@ -45,7 +45,7 @@ def parse_args():
     )
     parser.add_argument(
         "--config_task_file_path",
-        default="fairmast_data_processing/src/MAST_benchmark/tasks_configs/group_1_reconstruction/task_1-1.yaml",
+        default="",
         type=str,
         help="Path to configuration YAML task file."
     )
