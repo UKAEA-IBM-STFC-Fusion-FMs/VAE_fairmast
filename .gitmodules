@@ -1,6 +1,4 @@
-[submodule "fairmast_tools"]
-	path = fairmast_tools
-	url = git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/fairmast_tools.git
-[submodule "fairmast_data_processing"]
-	path = fairmast_data_processing
-	url = git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/fairmast-data-preprocessing.git
+
+[submodule "tokamark"]
+	path = tokamark
+	url = git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/tokamark.git

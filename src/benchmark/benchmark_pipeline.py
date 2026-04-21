@@ -1,9 +1,9 @@
 """ 
-    PyTorch pipeline to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
+    PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
     For more details on the benchmark study see arXiv:2602.10132 
 
     RUN:
-    python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path fairmast_data_processing/src/MAST_benchmark/tasks_configs/.yaml
+    python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 
 
     DATA INGESTION:
@@ -54,12 +54,12 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-sys.path.insert(0, "fairmast_data_processing/src")
-from fairmast_data_processing.src.MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from fairmast_data_processing.src.MAST_benchmark.tools.transforms.stdscale_transform import StdScalingTransform
-from fairmast_data_processing.src.MAST_benchmark.tasks import get_task_metadata
-from fairmast_data_processing.src.MAST_benchmark.data import initialize_TokaMark_dataset
-from fairmast_data_processing.scripts.test_pipeline import ModelSpecificTransform
+sys.path.insert(0, "tokamark/src")
+from tokamark/src/MAST_tools/MAST_dataset import MastDataset
+from tokamark/src/tokamark/tools/transforms/stdscale_transform.pyimport StdScalingTransform
+from tokamark.src.tokamark.tasks import get_task_metadata
+from tokamark.src.tokamark.data import initialize_TokaMark_dataset
+from tokamark.src.scripts.test_pipeline import ModelSpecificTransform
                                           
 from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
