@@ -13,7 +13,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
-from tokamark.src.tokamark.tools.utils import get_config_from_yaml
+from tokamark.tools.utils import get_config_from_yaml
 from src.benchmark.configs.benchmark_setup import get_benchmark_settings
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE

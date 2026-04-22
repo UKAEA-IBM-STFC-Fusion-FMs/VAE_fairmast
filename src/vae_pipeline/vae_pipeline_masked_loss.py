@@ -29,9 +29,9 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from tokamark/src/MAST_tools/MAST_dataset import MastDataset, CachedDataset
-from tokamark/src.tokamark.tools.transforms.stdscale_transform.pyimport StdScalingTransform
-from tokamark.src.tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
+from MAST_tools.MAST_dataset import MastDataset, CachedDataset
+from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
+from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
 
 from src.vae_pipeline.utils.utils import (
     read_data_split_csv, ComposeTransforms

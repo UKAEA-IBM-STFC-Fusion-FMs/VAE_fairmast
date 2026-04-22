@@ -54,13 +54,11 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-sys.path.insert(0, "tokamark/src")
-from tokamark/src/MAST_tools/MAST_dataset import MastDataset
-from tokamark/src/tokamark/tools/transforms/stdscale_transform.pyimport StdScalingTransform
-from tokamark.src.tokamark.tasks import get_task_metadata
-from tokamark.src.tokamark.data import initialize_TokaMark_dataset
-from tokamark.src.scripts.test_pipeline import ModelSpecificTransform
-                                          
+from MAST_tools.MAST_dataset import MastDataset
+from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
+from tokamark.tasks import get_task_metadata
+from tokamark.data import initialize_TokaMark_dataset
+
 from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model
@@ -68,6 +66,7 @@ from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
+from src.benchmark.transforms import ModelSpecificTransform
 
 
 def get_latent_representation(models: List[beta_VAE], batched_real_data: List[torch.Tensor]):
