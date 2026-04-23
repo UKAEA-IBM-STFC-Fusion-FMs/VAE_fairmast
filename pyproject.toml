@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { LICENSE }  # or whatever you choose later
 authors = [
-  { name = UKAEA }
+  { name = "UKAEA", email = "andrea.loreti@ukaea.uk" }
 ]
 
 #[project.urls]
@@ -36,4 +36,4 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["vae_pipeline*"]
+include = ["vae_pipeline*","benchmark*"]

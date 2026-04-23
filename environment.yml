@@ -1,4 +1,4 @@
-name: fairmast-data-preprocessing
+name: VAE_fairmast
 channels:
   - conda-forge
 dependencies:
