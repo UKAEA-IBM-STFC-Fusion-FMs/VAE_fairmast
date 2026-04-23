@@ -59,7 +59,6 @@ def initialize_datasets(
         shot_transforms, 
         local_flag=False,
         cache_data=True,
-        other_mast_settings={},
         return_incomplete_shots = False
     ):
     
@@ -74,7 +73,6 @@ def initialize_datasets(
                 source_signal_list=sources_and_signals,
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
-                other_mast_settings=other_mast_settings,
                 return_incomplete_shots = return_incomplete_shots,
                 remove_outliers = True
             )
@@ -517,7 +515,7 @@ def main():
     #     dict_mean = pickle.load(f)
     # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_std_shot.pkl"), "rb") as f:
     #     dict_std = pickle.load(f)
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_stats_metadata.yaml"), "r") as f:
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_signals_stats.yaml"), "r") as f:
         dict_stats_metadata = yaml.safe_load(f)
 
 

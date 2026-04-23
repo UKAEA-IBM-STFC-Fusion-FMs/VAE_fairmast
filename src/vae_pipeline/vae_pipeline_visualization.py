@@ -144,7 +144,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
 
     this_signal = signal_name
 
-    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_stats_metadata.yaml"), "r") as f:
+    with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_signals_stats.yaml"), "r") as f:
         dict_stats_metadata = yaml.safe_load(f)
  
     # Signal-level transform map
