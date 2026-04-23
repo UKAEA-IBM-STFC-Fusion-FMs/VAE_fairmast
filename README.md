@@ -1,26 +1,34 @@
 # VAE Fairmast
 
-Directory structure:
-src/vae_pipeline
-src/benchmark
-
-Data repository:
-https://huggingface.co/datasets/UKAEA-IBM-STFC/tokamark-dataset
-
 ## Getting started
 git clone --recurse-submodules git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/VAE_fairmast.git
 
-
+pip install -e tokamark
 
 # src directory content
+src/vae_pipeline
+
+src/benchmark
 
 ## vae_pipeline
-PyTorch pipeline for training Variational Auto Encoder (VAE) architectures for learning the latent space representation of signals from the Mega Ampere Spherical Tokamak (MAST) experiments.
+This repository provides a **PyTorch-based pipeline for training Variational Autoencoders (VAEs)** to learn compact latent-space representations of diagnostic signals from the **Mega Ampere Spherical Tokamak (MAST)** experiments.
+
+The pipeline is designed for large-scale experimental data, supports multiple diagnostic modalities.
+
+**Dataset**  
+The pipeline operates on the *tokamark* dataset, available at:  
+https://huggingface.co/datasets/UKAEA-IBM-STFC/tokamark-dataset
+
+
+## Model Overview
+
+### Variational Autoencoder (VAE)
+
+The pipeline trains a **β‑VAE** model consisting of:
 
 ### Encoder
 The encoder compresses input data **x** into the latent space **z**, where dim(**z**)< dim(**x**).
-
-The encoder architectures used in the training are:
+Depending on the configuration, the encoder and decoder can be built from:
 - A stack of conv1d layers.
 - A stack of conv2d layers.
 - A series of dense layers.
@@ -32,7 +40,9 @@ The decoder decompresses **z** to return **x**.
 The decoder applies the inverse encoder transform in reverse order.
 
 
-## How to use it
+## How to Run
+Training is controlled via a configuration file:
+
 ```python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config*.json```
 
 Use a `config*.json` file in `src/vae_pipeline/config` to configure your training session.
@@ -41,7 +51,7 @@ In the configuration file, adjust the timing structure to define the time window
 
 In a VAE, the input and target coincide. However, due to the way the code is structured, **`y_window_sec`** must be set to the sampling period of the signal.
 
-The **`x_window_sec`** window is slid over the signal trace using the step size defined by **`stride_sec`**.
+The **`x_window_sec`** is slid over the signal trace using the step size defined by **`stride_sec`**.
 
 It is important to explicitly set the number of time stamps per window using the key **`targeted_time_stamps_per_window`**. This value is given by the ratio between the size of **`x_window_sec`** and the sampling period, rounded down to the nearest integer.
 
@@ -67,6 +77,7 @@ If you want to explicitly specify a decoder architecture, you can do so by addin
   ]
 }
 ```
+
 ## benchmark
 Code to evaluate trained VAEs over tasks defined in fairmast_data_process.src.benchmark.
 
