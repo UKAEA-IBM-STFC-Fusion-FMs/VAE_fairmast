@@ -3,9 +3,26 @@
 ## Getting started
 git clone --recurse-submodules git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/VAE_fairmast.git
 
-pip install -e tokamark
+### Create conda environment
+1- Install Miniforge distribution compatible with your operative system.
+2- Create conda environment:
 
-# src directory content
+``` 
+conda create -n VAEfairmast python=3.11
+```
+
+3- Activate environment:
+
+```
+conda activate VAEfairmast
+```
+
+### Install dependencies (tokamark)
+```
+pip install -e tokamark
+```
+
+# Content of src 
 src/vae_pipeline
 
 src/benchmark
