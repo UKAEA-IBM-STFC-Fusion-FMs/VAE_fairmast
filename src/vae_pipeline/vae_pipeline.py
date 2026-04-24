@@ -4,23 +4,12 @@ for learning the latent space representation of signals from the Mega Ampere Sph
 
 Dataset at: https://huggingface.co/datasets/UKAEA-IBM-STFC/tokamark-dataset
 
-Encoder
-
-The encoder compresses input data x into the latent space z, where dim(z)< dim(x).
-The encoder architectures used in the training are:
-
-A stack of conv1d layers.
-A stack of conv2d layers.
-A series of dense layers.
-
-Decoder
-
-The decoder decompresses z to return x.
-The decoder applies the inverse encoder transform in reverse order.
-How to use it
-
 Use:
 python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config*.json
+
+See README for more details.
+
+author: andrea.loreti@ukaea.uk
 '''
 
 
@@ -78,7 +67,8 @@ def initialize_datasets(
         shot_transforms, 
         local_flag=False,
         cache_data=True,
-        return_incomplete_shots = False
+        return_incomplete_shots = False,
+        store_mast_settings={}
     ):
     
     datasets_ = {"train": None, "val": None, "test": []}
@@ -93,7 +83,8 @@ def initialize_datasets(
                 signal_level_transform_map=signal_transform_map,
                 shot_level_transform=shot_transforms,
                 return_incomplete_shots = return_incomplete_shots,
-                remove_outliers = True
+                remove_outliers = True,
+                store_manager_settings = store_mast_settings
             )
             
     if cache_data:
@@ -555,6 +546,8 @@ def main():
     )
 
     # Prepare datasets
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
     datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
@@ -562,7 +555,8 @@ def main():
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
         cache_data=SETTINGS.DATA.cache_data,
-        return_incomplete_shots = False
+        return_incomplete_shots = False,
+        store_mast_settings = store_mast_settings 
     )
     
     vae_collate_fn = WindowsCollate()

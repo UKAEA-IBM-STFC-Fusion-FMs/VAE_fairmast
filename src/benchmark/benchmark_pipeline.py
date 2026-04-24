@@ -1,37 +1,38 @@
 """ 
-    PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
-    For more details on the benchmark study see arXiv:2602.10132 
+PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
+For more details on the benchmark study see arXiv:2602.10132 
 
-    RUN:
-    python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+RUN:
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 
 
-    DATA INGESTION:
+DATA INGESTION:
 
-    This pipeline enforces a strict one‑to‑one correspondence between 
-    configured signals and their associated Variational Autoencoder (VAE) models at ingestion time. 
-    The configuration defines three categories of signals: inputs, actuators, and outputs, each of which may require compression via a dedicated VAE.
+This pipeline enforces a strict one‑to‑one correspondence between 
+configured signals and their associated Variational Autoencoder (VAE) models at ingestion time. 
+The configuration defines three categories of signals: inputs, actuators, and outputs, each of which may require compression via a dedicated VAE.
 
-    Input signals:
-        All input signals must have corresponding input VAEs.
-        Input signals without VAEs are not allowed.
+Input signals:
+    All input signals must have corresponding input VAEs.
+    Input signals without VAEs are not allowed.
 
-    Actuator signals:
-        No actuators configured
-            --> No actuator VAEs are required.
-        Actuators configured
-            --> All actuator signals must have corresponding actuator VAEs.
+Actuator signals:
+    No actuators configured
+        --> No actuator VAEs are required.
+    Actuators configured
+        --> All actuator signals must have corresponding actuator VAEs.
 
-    Output signals:
-        Outputs configured without VAEs
-            --> Output signals are kept in real space (no compression).
-        Outputs configured with VAEs
-            --> All output signals must have corresponding output VAEs.
+Output signals:
+    Outputs configured without VAEs
+        --> Output signals are kept in real space (no compression).
+    Outputs configured with VAEs
+        --> All output signals must have corresponding output VAEs.
 
-    Returns
-    -------
-    Saved model and loss curves
-        
+Returns
+-------
+Saved model and loss curves
+
+author: andrea.loreti@ukaea.uk
 """
 import argparse
 import json
@@ -54,7 +55,6 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from MAST_tools.MAST_dataset import MastDataset
 from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
@@ -94,7 +94,6 @@ def get_latent_representation(models: List[beta_VAE], batched_real_data: List[to
         latent space representation.
 
     masks : list[torch.Tensor]
-
         A list containing masks where True indicates samples containing at least one NaN 
         in batched_real_data that are going through the encoder.
         Each entry has shape [B].
@@ -598,6 +597,8 @@ def main():
     }
     
     # MAST base datasets
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
@@ -605,8 +606,10 @@ def main():
         shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = True
+        return_incomplete_shots = True,
+        store_mast_settings=store_mast_settings
     )
+
     base_train_dataset = base_datasets['train']
     base_val_dataset = base_datasets['val']
     
