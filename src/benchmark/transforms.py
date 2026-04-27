@@ -1,6 +1,11 @@
 from collections.abc import Mapping
 from typing import Any, Sequence, Optional
+import numpy as np
+from collections.abc import Mapping
+from typing import Any
 
+
+'''From tokamark/scripts/test_pipeline.py'''
 class ModelSpecificTransform:  # TEMPLATE
     """
     Model specific transform.
@@ -61,3 +66,64 @@ class ModelSpecificTransform:  # TEMPLATE
             "y": [data["values"] for var, data in shot["output"].items()],
         }
 
+
+
+# ======================================================================================================================
+'''Adaptation from tokamark/src/tokamark/tools/transforms/stdscale_transform.py'''
+class StdScalingTransform:
+    """
+    STD scaling transform.
+
+    Methods
+    -------
+    __call__(dict_)
+        It normalizes each sample by subtracting mean and dividing by STD. Outlayers (>3std) are set to NaN.
+
+    """
+
+    # ------------------------------------------------------------------------------------------------------------------
+    def __init__(self, mean: float, std: float) -> None:
+        """
+        Initialize class attributes.
+
+        Parameters
+        ----------
+        mean : float
+            Input mean.
+        std : float
+            Input STD.
+
+        Returns
+        -------
+        # None  
+
+        """
+
+        self.mean = mean
+        self.std = std
+
+    # ------------------------------------------------------------------------------------------------------------------
+    def __call__(self, dict_: Mapping[str, Any]) -> dict[str, Any]:
+        """
+        Parameters
+        ----------
+        dict_ : Mapping[str, Any]
+            Dictionary with "time" and "values" keys with corresponding values.
+
+        Returns
+        -------
+        dict[str, Any]
+            Augmented input dictionary with values normalized per feature.
+
+        """
+
+        values = dict_["values"]
+
+        if values is not None:
+            z = (values - self.mean)/self.std
+            values[np.abs(z) > 2.705] = np.nan
+            values = (values - self.mean) / self.std
+
+        return {"time": dict_["time"], "values": values}
+
+    # ------------------------------------------------------------------------------------------------------------------

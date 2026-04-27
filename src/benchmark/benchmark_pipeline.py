@@ -55,7 +55,6 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
@@ -66,7 +65,7 @@ from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
-from src.benchmark.transforms import ModelSpecificTransform
+from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform
 
 
 def get_latent_representation(models: List[beta_VAE], batched_real_data: List[torch.Tensor]):
@@ -232,9 +231,14 @@ def batch_preprocess(
 
     Returns
     -------
-    input_data : torch.Tensor
+    input : torch.Tensor
         Concatenated latent representation for inputs/actuators.
+    target_data : torch.Tensor
         Concatenated latent representation for outputs/targets.
+    valid_input : torch.Tensor
+        Tensor of bool, `True` for entries in `input` that need to be covered.
+    valid_target : torch.Tensor
+        Tensormof bool, True for entries in `target_data` which are NaN.
 
     """
 
@@ -269,7 +273,8 @@ def batch_preprocess(
                                             impute_with_zeros = True)
 
     mask_input_tensor = torch.stack(mask_input, dim=1)
-    if torch.all(mask_input_tensor):
+
+    if mask_input_tensor.float().mean().item() >= 0.5:
         return None, None, None, None
     
     target_representation, mask_target = get_latent_representation(target_vae, target)
@@ -310,9 +315,7 @@ def masked_loss(reco, target, valid_target, eps = 1e-8):
     Returns:
         torch.Tensor: Scalar loss value.
     """
-
-
-
+    
     if target.shape != valid_target.shape:  
         raise ValueError(
             f"target and valid_target must have the same shape, "
@@ -439,7 +442,7 @@ def train_model(
                 optimizer.step()
             
             # Accumulate
-            train_loss += loss.item() 
+            train_loss += loss.item()
             train_counts += 1
         
         train_vs_epoch.append(train_loss/max(1,train_counts))
