@@ -147,11 +147,11 @@ def process_extra_tensors(
     impute_with_zeros):
     """
     
-    Update list of tensors in the latent space representation 
-    with re-shaped tensors (to match the latent space representaion shape), of data that had not been comprtessed
-    with VAE.
+    1- Update list of tensors in the latent space representation, `batched_latent_data`,
+    with re-shaped tensors (to match the latent space representaion shape), 
+    of data that had not been previously compressed with a VAE.
 
-    Update masks of NaN entries in the list.
+    2- Update `masks` with new tensors shaped to match the latent space representaion shape.
     
     Parameters
     ----------
@@ -160,16 +160,14 @@ def process_extra_tensors(
     batched_real_data : list[torch.Tensor]
         List of batched tensors in the real space, each tensor has at least 2D.
     batched_latent_data : list[torch.Tensor]
-        List of batched tensors in the latent space representation. Itslength is len(models).
+        List of batched tensors in the latent space representation.
         Each entry has same batch dimension but different second dimension.
-        This list will be updated and returend.
     masks : list[torch.Tensor]
-        A list of length = len(models) containing masks (True) for original NaN 
-        in batched_real_data that have been compressed.
+        A list containing masks, i.e., bool True for NaN entries
+        in tensors within `batched_real_data` that have been already compressed.
         Each entry has shape [B]. 
-        This list will be updated and returned
     impute_with_zeros : bool
-        Choose whether or not replace NaN with zeros.
+        Choose whether or not to replace NaN with zeros.
         If impute_with_zeros=False, NaNs are propagated to the output
 
     Raises
@@ -270,10 +268,9 @@ def batch_preprocess(
                                             mask_data, 
                                             impute_with_zeros = True)
 
-    
     mask_input_tensor = torch.stack(mask_input, dim=1)
-    if not mask_input_tensor.any():
-        return None, None
+    if torch.all(mask_input_tensor):
+        return None, None, None, None
     
     target_representation, mask_target = get_latent_representation(target_vae, target)
     target_data, mask_target  =  process_extra_tensors(

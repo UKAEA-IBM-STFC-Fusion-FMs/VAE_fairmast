@@ -33,7 +33,7 @@ from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
-from src.benchmark.benchmark_pipeline import batch_preprocess
+from src.benchmark.benchmark_pipeline import batch_preprocess, masked_loss
 from src.benchmark.transforms import ModelSpecificTransform
 
 def _as_2d(t: torch.Tensor) -> torch.Tensor:
@@ -130,20 +130,22 @@ def evaluate_model(
             if batch_idx % 100 == 0:
                     print(f"\nBatch {batch_idx}")
 
-            data, target = batch_preprocess(
+            data, target, _, valid_target = batch_preprocess(
                 batch,
                 vae_input_models, 
                 vae_actuator_models,
-                vae_output_models,
-                device)
-            
+                vae_output_models)
+
+            if data is None:
+                continue
+
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
-                    loss = F.mse_loss(reconstruction, target, reduction='mean') 
+                    loss = masked_loss(reconstruction, target, valid_target)
             else:
                 reconstruction = model(data)
-                loss = F.mse_loss(reconstruction, target, reduction='mean') 
+                loss = masked_loss(reconstruction, target, valid_target)
             
             if (not torch.isfinite(loss).all()):
                 print(
@@ -234,6 +236,8 @@ def main():
     }
     
     # MAST base datasets
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": [], "val": val_shots, "test": test_shots},
@@ -241,8 +245,10 @@ def main():
         shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = False
+        return_incomplete_shots = False,
+        store_mast_settings=store_mast_settings
     )
+
     base_val_dataset = base_datasets['val']
     base_test_dataset = base_datasets['test']
     
