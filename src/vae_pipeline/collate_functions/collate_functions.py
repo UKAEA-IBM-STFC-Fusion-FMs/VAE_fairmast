@@ -13,6 +13,7 @@ from typing import List, Dict, Any
 class WindowsCollate:
 
     def __call__(self, batch: List[Dict[str, Any]]):
+        breakpoint()
         all_windows = []
         lengths = []
         
@@ -24,9 +25,6 @@ class WindowsCollate:
 
             if isinstance(sample, list):
                 sample = sample[0]
-                if not sample:
-                    lengths.append(0)
-                    continue
 
             if not isinstance(sample, dict) or len(sample) == 0:
                 lengths.append(0)
@@ -42,9 +40,6 @@ class WindowsCollate:
             for j, window in enumerate(windows):
                 if not isinstance(window, torch.Tensor): 
                     continue
-                # if not torch.isfinite(window).all(): 
-                #     print("Tensor window contains contain non-finite entries.")
-                #     continue
 
                 # Transpose signals with shape (N,1) before stacking them, this happens for windows length = 1.
                 if window.shape[-1]==1:

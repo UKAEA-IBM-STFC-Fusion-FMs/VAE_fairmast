@@ -41,7 +41,6 @@ from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transfor
     WindowSegmenterTransform,
 )
 
-from src.vae_pipeline.transforms.signal_level_transforms.replace_nan import ReplaceNaN
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
@@ -59,7 +58,8 @@ def initialize_datasets(
         shot_transforms, 
         local_flag=False,
         cache_data=True,
-        return_incomplete_shots = False
+        return_incomplete_shots = False,
+        store_mast_settings={}
     ):
     
     datasets_ = {"train": None, "val": None, "test": []}
@@ -526,7 +526,6 @@ def main():
                 [   
                     StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
                     ReshapeLcfsTransform()
-                    # ReplaceNaN(-999)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -536,7 +535,6 @@ def main():
             var: ComposeTransforms(
                 [   
                     StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
-                    # ReplaceNaN(-999)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -552,6 +550,8 @@ def main():
     )
 
     # Prepare datasets
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
     datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
@@ -559,7 +559,8 @@ def main():
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
         cache_data=SETTINGS.DATA.cache_data,
-        return_incomplete_shots = False
+        return_incomplete_shots = False,
+        store_mast_settings=store_mast_settings
     )
     
     vae_collate_fn = WindowsCollate()
