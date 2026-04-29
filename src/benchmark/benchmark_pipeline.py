@@ -67,7 +67,6 @@ from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform
 
-
 def get_latent_representation(models: List[beta_VAE], batched_real_data: List[torch.Tensor]):
     """Move data from real space to the latent space for those signals which have corresponding VAE.
 
@@ -384,8 +383,6 @@ def train_model(
         
         # Loop thrpough batches
         for batch_idx, batch in enumerate(train_dataloader):
-            optimizer.zero_grad(set_to_none=True)
-            
             if batch_idx % 100 == 0:
                 print(f"\nBatch {batch_idx}")
 
@@ -397,6 +394,8 @@ def train_model(
 
             if data is None:
                 continue
+            
+            optimizer.zero_grad(set_to_none=True)
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
@@ -606,7 +605,7 @@ def main():
         shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = True,
+        return_incomplete_shots = False,
         store_mast_settings=store_mast_settings
     )
 
@@ -634,7 +633,6 @@ def main():
         shuffle_windows = False,
         verbose=False
     )
-    
 
     # DataLoaders
     train_dataloader = DataLoader(

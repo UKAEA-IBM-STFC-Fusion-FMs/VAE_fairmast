@@ -21,12 +21,10 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from MAST_tools.MAST_dataset import MastDataset
-from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
                                           
 from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
-from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
@@ -34,7 +32,7 @@ from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 from src.benchmark.benchmark_pipeline import batch_preprocess, masked_loss
-from src.benchmark.transforms import ModelSpecificTransform
+from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform
 
 def _as_2d(t: torch.Tensor) -> torch.Tensor:
     """Ensure tensor is 2D as (N, D) by flattening all non-batch dims."""
@@ -228,9 +226,7 @@ def main():
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                ImputerTransform()
-            ]
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])            ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
     }
@@ -251,7 +247,7 @@ def main():
 
     base_val_dataset = base_datasets['val']
     base_test_dataset = base_datasets['test']
-    
+
     model_specific_transform = ModelSpecificTransform()
     
     # Specific datasets
