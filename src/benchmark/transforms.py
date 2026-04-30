@@ -127,3 +127,18 @@ class StdScalingTransform:
         return {"time": dict_["time"], "values": values}
 
     # ------------------------------------------------------------------------------------------------------------------
+
+class ReplaceNaN():
+
+    def __init__(self,replacement: float):
+        self.replacement = replacement
+    
+    def __call__(self, dict_: Mapping[str, Any]) -> dict[str, Any]:
+        
+        values = dict_["values"]
+
+        if values is not None:
+            nan_mask = np.isnan(values)
+            dict_["values"][nan_mask] = self.replacement
+        
+        return dict_

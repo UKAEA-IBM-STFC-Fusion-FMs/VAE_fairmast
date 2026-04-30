@@ -65,7 +65,9 @@ from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
-from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform
+from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
+
+sentinel_value = 99.0
 
 def get_latent_representation(models: List[beta_VAE], batched_real_data: List[torch.Tensor]):
     """Move data from real space to the latent space for those signals which have corresponding VAE.
@@ -75,7 +77,8 @@ def get_latent_representation(models: List[beta_VAE], batched_real_data: List[to
     2-That batch.dtype is float (or isnan(batch) would not work).
     3-That model and batch are on same device.
     4-That the first len(models) tensors in batched_real_data have corresponding VAEs,
-    any remaining tensors at the end are kept uncompressed.
+    any remaining tensors at the end are kept uncompressed. 
+    5- Uncompressed signals can be true only for output signals and NOT for input and actuator signals.
 
     Parameters
     ----------
@@ -113,7 +116,8 @@ def get_latent_representation(models: List[beta_VAE], batched_real_data: List[to
             raise ValueError("Each batch must have at least 2 dimensions [B, ...]")
 
         dims = tuple(range(1, batch.ndim))
-        nan_mask = torch.isnan(batch).any(dim=dims)  # each tensor shape: [B]
+        nan_mask = torch.isclose(batch, torch.tensor(sentinel_value)).any(dim=dims)
+        #nan_mask = torch.isnan(batch).any(dim=dims)  # each tensor shape: [B]
         masks.append(nan_mask)
 
         if nan_mask.any():
@@ -161,8 +165,8 @@ def process_extra_tensors(
         List of batched tensors in the latent space representation.
         Each entry has same batch dimension but different second dimension.
     masks : list[torch.Tensor]
-        A list containing masks, i.e., bool True for NaN entries
-        in tensors within `batched_real_data` that have been already compressed.
+        A list containing masks, each mask contains bool True for NaN entries
+        in the tensors within `batched_real_data` that have been already compressed.
         Each entry has shape [B]. 
     impute_with_zeros : bool
         Choose whether or not to replace NaN with zeros.
@@ -176,7 +180,8 @@ def process_extra_tensors(
     # Process remaining tensors without models
     for batch in batched_real_data[len(models):]:
 
-        nan_mask = torch.isnan(batch) 
+        #nan_mask = torch.isnan(batch) 
+        nan_mask = torch.isclose(batch, torch.tensor(sentinel_value))
         masks.append(nan_mask.reshape(batch.shape[0], -1))
 
         if nan_mask.any() and impute_with_zeros:
@@ -193,7 +198,8 @@ def batch_preprocess(
         batch,
         vae_input_models: list[beta_VAE],
         vae_actuator_models: list[beta_VAE],
-        vae_output_models: list[beta_VAE]
+        vae_output_models: list[beta_VAE],
+        verbose = True
     ):
     
 
@@ -237,7 +243,7 @@ def batch_preprocess(
     valid_input : torch.Tensor
         Tensor of bool, `True` for entries in `input` that need to be covered.
     valid_target : torch.Tensor
-        Tensormof bool, True for entries in `target_data` which are NaN.
+        Tensor of bool, True for entries in `target_data` which are NaN.
 
     """
 
@@ -270,12 +276,14 @@ def batch_preprocess(
                                             data_representation,
                                             mask_data, 
                                             impute_with_zeros = True)
-
-    mask_input_tensor = torch.stack(mask_input, dim=1)
-
-    if mask_input_tensor.float().mean().item() >= 0.5:
-        return None, None, None, None
     
+    mask_input = torch.stack(mask_input, dim=1) # shape[B, len(data_vae)]
+
+    if mask_input.float().mean().item() > 0.75:
+        if verbose:
+            print("No valid latent space representation. More than75% of input (and actuator) signal representations are missing in this batch.")
+        return None, None, None, None
+
     target_representation, mask_target = get_latent_representation(target_vae, target)
     target_data, mask_target  =  process_extra_tensors(
                                             target_vae, 
@@ -283,17 +291,22 @@ def batch_preprocess(
                                             target_representation,
                                             mask_target, 
                                             impute_with_zeros = True)
+    
+    mask_target = torch.cat(mask_target, dim=1)
+
+    if mask_target.float().mean().item() > 0.75:
+        if verbose:
+            print("No valid target. More than75% of output signals are missing in this batch.")
+        return None, None, None, None
 
     # Concatenate
     input_data = torch.cat(data_representation, dim=1)
-    mask_input = torch.stack(mask_input, dim=1)
     valid_input = ~mask_input # Change logic
     input = torch.cat([input_data,valid_input.to(dtype=input_data.dtype, device=input_data.device)],dim=1)
     
     target_data = torch.cat(target_representation, dim=1)
-    mask_target = torch.cat(mask_target, dim=1)
     valid_target = ~mask_target
-    
+
     return input, target_data, valid_input, valid_target
     
     
@@ -354,7 +367,8 @@ def train_model(
     device,
     output_directory,
     use_amp,
-    grad_clip
+    grad_clip,
+    verbose = True
     ):
     
     train_vs_epoch = []
@@ -368,8 +382,10 @@ def train_model(
     stop_early = False
     
     for epoch in range(SETTINGS.TRAINING.num_epochs):
+        
+        if verbose:
+            print(f"Epoch {epoch}")
 
-        print(f"Epoch {epoch}")
         if stop_early:
             break
         
@@ -384,7 +400,8 @@ def train_model(
         # Loop thrpough batches
         for batch_idx, batch in enumerate(train_dataloader):
             if batch_idx % 100 == 0:
-                print(f"\nBatch {batch_idx}")
+                if verbose:
+                    print(f"\nBatch {batch_idx}")
 
             data, target, _, valid_target = batch_preprocess(
                 batch,
@@ -402,20 +419,22 @@ def train_model(
                     reconstruction = model(data)
                     loss = masked_loss(reconstruction, target, valid_target)#F.mse_loss(reconstruction, target, reduction='mean')
                     if (not torch.isfinite(loss).all()):
-                        print(
-                            f"[Training batch {batch_idx} non-finite loss components "
-                            f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
-                        )
+                        if verbose:
+                            print(
+                                f"[Training batch {batch_idx} non-finite loss components "
+                                f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                            )
                         continue 
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, valid_target)
                 if (not torch.isfinite(loss).all()):
-                    print(
-                        f"[Training batch {batch_idx} non-finite loss components "
-                        f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
-                    )
+                    if verbose:
+                        print(
+                            f"[Training batch {batch_idx} non-finite loss components "
+                            f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                        )
                     continue  
                 loss.backward()
             
@@ -428,7 +447,8 @@ def train_model(
 
                 # Guard against NaN/Inf grad norm
                 if torch.isnan(total_norm) or torch.isinf(total_norm):
-                    print(f"[batch {batch_idx}] bad grad norm {total_norm}; skipping step")
+                    if verbose:
+                        print(f"[batch {batch_idx}] bad grad norm {total_norm}; skipping step")
                     if use_amp:
                         scaler.update()
                     continue
@@ -454,7 +474,8 @@ def train_model(
             for batch_idx, batch in enumerate(val_dataloader):
                 
                 if batch_idx % 100 == 0:
-                    print(f"\nBatch {batch_idx}")
+                    if verbose:
+                        print(f"\nBatch {batch_idx}")
 
                 data, target, _, valid_target = batch_preprocess(
                     batch,
@@ -474,11 +495,12 @@ def train_model(
                     loss = masked_loss(reconstruction, target, valid_target)
                 
                 if (not torch.isfinite(loss).all()):
+                    if verbose:
                         print(
-                            f"[batch {batch_idx} non-finite loss components "
-                            f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                        f"[batch {batch_idx} non-finite loss components "
+                        f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
                         )
-                        continue 
+                    continue 
                 
                 val_loss += loss.item()
                 val_counts += 1
@@ -507,9 +529,11 @@ def train_model(
         # Stop early
         if epochs_no_improvement >= SETTINGS.TRAINING.patience and epoch > SETTINGS.TRAINING.min_nr_epochs:
             stop_early = True
-    
-        print(f"'train_losses': {train_vs_epoch}")
-        print(f"'val_losses': {val_vs_epoch}")
+
+        if verbose:         
+            print(f"'train_losses': {train_vs_epoch}")
+            print(f"'val_losses': {val_vs_epoch}")
+            
         with open(os.path.join(output_directory, 'loss_curves.json'), 'w') as f:
             data = {
                 'train_losses': train_vs_epoch,
@@ -589,7 +613,8 @@ def main():
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                ReplaceNaN(sentinel_value)
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -772,7 +797,8 @@ def main():
         device,
         output_directory,
         use_amp = True,
-        grad_clip=1
+        grad_clip=1,
+        verbose = True
         )
     
 if __name__ == "__main__":
