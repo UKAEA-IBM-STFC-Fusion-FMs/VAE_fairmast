@@ -13,7 +13,7 @@ from typing import List, Dict, Any
 class WindowsCollate:
 
     def __call__(self, batch: List[Dict[str, Any]]):
-        breakpoint()
+
         all_windows = []
         lengths = []
         

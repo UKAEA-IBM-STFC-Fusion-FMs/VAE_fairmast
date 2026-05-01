@@ -175,7 +175,7 @@ def process_data(
     return data, masks
 
     
-def batch_preprocess(
+def process_batch(
         batch,
         vae_dictionary,
         sentinel_value,
@@ -240,7 +240,6 @@ def batch_preprocess(
     input_vae = list(vae_dictionary["input"].values()) + \
                 list(vae_dictionary["actuator"].values())
     target_vae = list(vae_dictionary['output'].values())
-    breakpoint()
 
     # Prepare input and target data data
     input_data, valid_input = process_data(input_vae, input_, sentinel)
@@ -266,7 +265,7 @@ def batch_preprocess(
     return input_data, target_data, valid_input, valid_target
     
     
-def masked_loss(reco, target, valid_target, eps = 1e-8):
+def masked_loss(reco, target, mask, eps = 1e-8):
     """
     Compute a mean squared error loss using an explicit validity mask.
 
@@ -276,22 +275,17 @@ def masked_loss(reco, target, valid_target, eps = 1e-8):
     Args:
         reco (torch.Tensor): Reconstructed output tensor, shape [B, ...].
         target (torch.Tensor): Target tensor, shape [B, ...].
-        valid_target (torch.Tensor): Boolean tensor, same shape as target.
-                                     True indicates valid entries.
+        mask (torch.Tensor): tensor, same shape as target, 1 (0) valid (invalid) entries.
         eps (float, optional): Small constant to avoid division by zero.
 
     Returns:
         torch.Tensor: Scalar loss value.
     """
-    
-    if target.shape != valid_target.shape:  
+    if target.shape != mask.shape:  
         raise ValueError(
             f"target and valid_target must have the same shape, "
-            f"got {target.shape} and {valid_target.shape}"
+            f"got {target.shape} and {mask.shape}"
         )
-
-    # Convert validity mask to float for arithmetic
-    mask = valid_target.to(dtype=target.dtype)
 
     # Reduce over all non-batch dimensions
     dims = tuple(range(1, target.ndim))
@@ -358,38 +352,39 @@ def train_model(
                 if verbose:
                     print(f"\nBatch {batch_idx}")
 
-            data, target, _, valid_target = batch_preprocess(
+            data, target, valid_input, valid_target = process_batch(
                 batch,
                 vae_dictionary,
                 sentinel_value,
                 verbose = False)
 
-
-
-
-
-
             if data is None:
                 continue
+            
+            data = torch.cat([data, valid_input], dim=1)
 
             optimizer.zero_grad(set_to_none=True)
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
+                    
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, valid_target)#F.mse_loss(reconstruction, target, reduction='mean')
-                    if (not torch.isfinite(loss).all()):
+
+                    loss = masked_loss(reconstruction, target, valid_target)
+                    
+                    if (not torch.isfinite(loss)):
                         if verbose:
                             print(
                                 f"[Training batch {batch_idx} non-finite loss components "
                                 f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
                             )
                         continue 
+
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, valid_target)
-                if (not torch.isfinite(loss).all()):
+                if (not torch.isfinite(loss)):
                     if verbose:
                         print(
                             f"[Training batch {batch_idx} non-finite loss components "
@@ -437,7 +432,7 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, _, valid_target = batch_preprocess(
+                data, target, _, valid_target = process_batch(
                     batch,
                     vae_dictionary,
                     sentinel,
@@ -445,6 +440,8 @@ def train_model(
                 
                 if data is None:
                     continue
+                
+                data =  torch.cat([data, valid_input], dim=1)
 
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
@@ -454,11 +451,11 @@ def train_model(
                     reconstruction = model(data)
                     loss = masked_loss(reconstruction, target, valid_target)
                 
-                if (not torch.isfinite(loss).all()):
+                if (not torch.isfinite(loss)):
                     if verbose:
                         print(
                         f"[batch {batch_idx} non-finite loss components "
-                        f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                        f"loss finite={torch.isfinite(loss)}; skipping sub-batch."
                         )
                     continue 
                 

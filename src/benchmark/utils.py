@@ -82,4 +82,56 @@ def load_vae_model(config_path:str):
     return model
     
 
+def create_vae_dictionary(vae_dictionary, type_of_signal, list_of_signals, SETTINGS, model_sub_paths):
+    """ Loads VAE models into a dictionary for signals in the list.
+
+       Reinforce the one-to-one correspondence between input or actuator signals and VAE models.
+
+    Parameters
+    ----------
+    vae_dictionary : _type_
+       vae_dictionary = {"input": {}, "actuator": {}, "output": {}}
+    type_of_signal : str
+        either "input" or "actuator" or "output"
+    list_of_signals : list[str]
+        List of signals from task config file
+    SETTINGS : SettingsBenchmark
+        Settings from json file
+    model_sub_paths : list[str]
+        paths to models
+
+    Return
+    --------
+        Filled vae_dictionary
+    """
+    if not list_of_signals:
+        return vae_dictionary
+
+    if type_of_signal not in [ "input","actuator", "output"]:
+        raise ValueError(f"Type of signal specified {type_of_signal} not in the list of correct keys:  [input, actuator,output] ")
+
+    for i, (source, signal_name) in enumerate(list_of_signals):
+        key = f"{source}-{signal_name}"
+        vae_dictionary[type_of_signal][key] = None
+
+        for model_path in model_sub_paths:
+            if signal_name in model_path:
+                
+                full_path = os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, model_path)
+
+                # store model keyed by source-signal
+                vae_dictionary[type_of_signal][key] = load_vae_model(full_path)
+            break
+
+    num_inputs = len(list_of_signals)
+    num_loaded = len(vae_dictionary[type_of_signal])
+
+    if num_inputs != num_loaded:
+        if type_of_signal in ["input", "actuator"]:
+            raise ValueError(
+                f"The number of input signals ({num_inputs}) does not match the number of VAE "
+                f"models loaded ({num_loaded})."
+            )
+
+    return vae_dictionary
     
