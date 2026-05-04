@@ -236,6 +236,13 @@ def process_batch(
                 dtype = input_[0].dtype
             )
 
+    # When the signals are absent from the shot the MAST_tools sets them to NaN
+    # We change them to sentinel_value as for the rest of the analysis.
+    for i, inp in enumerate(input_):
+        input_[i] = torch.nan_to_num(input_[i], nan=sentinel_value)
+    for j, tar in enumerate(target_):
+        target_[j] = torch.nan_to_num(target_[j], nan=sentinel_value)
+
     # Collect VAEs
     input_vae = list(vae_dictionary["input"].values()) + \
                 list(vae_dictionary["actuator"].values())
@@ -250,16 +257,16 @@ def process_batch(
 
     # Make input mask
     valid_input = torch.cat(valid_input, dim=1) 
-    if valid_input.float().mean().item() < 0.25:
+    if valid_input.mean().item() < 0.75:
         if verbose:
-            print("No valid latent space representation. More than75% of input (and actuator) signal representations are missing in this batch.")
+            print("No valid latent space representation. Too many input (and actuator) signal representations are missing in this batch.")
         return None, None, None, None
-
+    
     # Make target mask
     valid_target = torch.cat(valid_target, dim=1)
-    if valid_target.float().mean().item() < 0.25:
+    if valid_target.mean().item() < 0.75:
         if verbose:
-            print("No valid target. More than75% of output signals are missing in this batch.")
+            print("No valid target. Too many output signals are missing in this batch.")
         return None, None, None, None
 
     return input_data, target_data, valid_input, valid_target
@@ -296,13 +303,10 @@ def masked_loss(reco, target, mask, eps = 1e-8):
 
     mean_loss_per_sample = loss_per_sample/(valid_per_sample + eps) # average loss
     
-    # Compute mean loss per batch only on valid samples
     has_valid = valid_per_sample > 0
-    if has_valid.any():
-        return mean_loss_per_sample[has_valid].mean()
-    else:
-        return torch.zeros((), device=target.device, dtype=target.dtype)
-
+    
+    # Compute mean loss per batch only on valid samples
+    return mean_loss_per_sample[has_valid].mean()
     
 def train_model(
     SETTINGS:SettingsBenchmark,
@@ -344,6 +348,7 @@ def train_model(
         val_loss = 0.0
         val_counts = 0
 
+        # TRAINING
         model.train()
         
         # Loop thrpough batches
@@ -351,7 +356,7 @@ def train_model(
             if batch_idx % 100 == 0:
                 if verbose:
                     print(f"\nBatch {batch_idx}")
-
+            
             data, target, valid_input, valid_target = process_batch(
                 batch,
                 vae_dictionary,
@@ -432,17 +437,17 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, _, valid_target = process_batch(
+                data, target, valid_input, valid_target = process_batch(
                     batch,
                     vae_dictionary,
-                    sentinel,
+                    sentinel_value,
                     verbose = False)
                 
                 if data is None:
                     continue
                 
                 data =  torch.cat([data, valid_input], dim=1)
-
+     
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)

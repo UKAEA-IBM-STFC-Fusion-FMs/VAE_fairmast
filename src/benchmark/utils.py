@@ -121,7 +121,7 @@ def create_vae_dictionary(vae_dictionary, type_of_signal, list_of_signals, SETTI
 
                 # store model keyed by source-signal
                 vae_dictionary[type_of_signal][key] = load_vae_model(full_path)
-            break
+                break
 
     num_inputs = len(list_of_signals)
     num_loaded = len(vae_dictionary[type_of_signal])

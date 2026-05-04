@@ -26,13 +26,13 @@ from tokamark.data import initialize_TokaMark_dataset
                                           
 from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
-from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model
+from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.vae_pipeline import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
-from src.benchmark.benchmark_pipeline import batch_preprocess, masked_loss
-from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform
+from src.benchmark.benchmark_pipeline import process_batch, masked_loss
+from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
 def _as_2d(t: torch.Tensor) -> torch.Tensor:
     """Ensure tensor is 2D as (N, D) by flattening all non-batch dims."""
@@ -103,39 +103,49 @@ def hist_rmse(
     else:
         plt.show()
 
- 
-    
-def get_RMSE(reco: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Single overall RMSE across all samples and features."""
-    return torch.sqrt(torch.mean((reco - target) ** 2, dim=1))
    
+
+def get_RMSE(reco: torch.Tensor, target: torch.Tensor, mask: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    RMSE per sample across valid features.
+    mask: bool or {0,1} with same shape as reco/target; True/1 means valid.
+    """
+    se = (reco - target) ** 2
+    se_valid_sum = (se * mask).sum(dim=1)
+    n_valid = mask.sum(dim=1).clamp_min(eps)
+    mse = se_valid_sum / n_valid
+    return torch.sqrt(mse)
+
 
 def evaluate_model(
     model,
     dataloader: DataLoader,
-    vae_input_models: list[beta_VAE], 
-    vae_actuator_models: list[beta_VAE],
-    vae_output_models: list[beta_VAE],
+    vae_dictionary,
+    sentinel_value,
     device: Optional[torch.device] = None,
-    use_amp = True
+    use_amp = True,
+    verbose = True
 ):
     """Evaluate model on a dataloader and compute losses/RMSE.
     """
     batch_losses = []
     batch_rmse = []
+
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
-            if batch_idx % 100 == 0:
-                    print(f"\nBatch {batch_idx}")
+            if batch_idx % 100 == 0 and verbose:
+                print(f"\nBatch {batch_idx}")
 
-            data, target, _, valid_target = batch_preprocess(
+            data, target, valid_input, valid_target = process_batch(
                 batch,
-                vae_input_models, 
-                vae_actuator_models,
-                vae_output_models)
+                vae_dictionary,
+                sentinel_value,
+                verbose = False)
 
             if data is None:
                 continue
+            
+            data =  torch.cat([data, valid_input], dim=1)
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
@@ -145,7 +155,7 @@ def evaluate_model(
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, valid_target)
             
-            if (not torch.isfinite(loss).all()):
+            if (not torch.isfinite(loss).all()) and verbose:
                 print(
                     f"[batch {batch_idx} non-finite loss components "
                     f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
@@ -153,7 +163,7 @@ def evaluate_model(
                 continue 
             
             batch_losses.append(loss.item())
-            batch_rmse.extend(get_RMSE(reconstruction,target).tolist())
+            batch_rmse.extend(get_RMSE(reconstruction,target,valid_target).tolist())
 
     return batch_losses, batch_rmse
 
@@ -223,13 +233,17 @@ def main():
         dict_stats_metadata = yaml.safe_load(f)
 
     # Signal-level transform map. It is common to all signals whether inputs, actuators or targets.
+    sentinel_value = 99.0
     signal_transform_map = {
         var: ComposeTransforms(
             [   
-                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])            ]
+                StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                ReplaceNaN(sentinel_value)
+            ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]
     }
+    
     
     # MAST base datasets
     zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
@@ -284,57 +298,21 @@ def main():
         persistent_workers = False
     )
     
-    # Load input VAEs 
+    # Load VAEs 
     # ----------------------------------------
-    if SETTINGS.LOCAL_PATHS.input_vae_models:
-        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("input_name")):
-            if signal_name not in SETTINGS.LOCAL_PATHS.input_vae_models[i]:
-                raise ValueError("Rectify order of input_vae_models in confij.json to agree with the order in your task settings")
-        
-        vae_input_models = [load_vae_model(os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, this_vae)) 
-                            for this_vae in SETTINGS.LOCAL_PATHS.input_vae_models]
-        
-        none_indices = [i for i, v in enumerate(vae_input_models) if v is None]
+    vae_dictionary = {"input": {}, "actuator": {}, "output": {}}
+    create_vae_dictionary(vae_dictionary, "input", config_task["sources_and_signals"].get("input_name"), SETTINGS, SETTINGS.LOCAL_PATHS.input_vae_models)
+    create_vae_dictionary(vae_dictionary, "actuator", config_task["sources_and_signals"].get("actuator_name"), SETTINGS, SETTINGS.LOCAL_PATHS.actuator_vae_models)
+    create_vae_dictionary(vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
 
-        if none_indices:
-            print(f"No vae found at indices: {none_indices}")
-            sys.exit(1)
-            
-    else:
-        print(f"vae paths for inut signals not specified in {config_task_file_path}")
-    
+    # Move VAEs to device:
+    for group in ("input", "actuator", "output"):
+        for m in vae_dictionary[group].values():
+            if m is None:
+                continue
+            m.to(device)
+            m.eval() 
 
-    # Load actuator VAEs 
-    # ----------------------------------------
-    vae_actuator_models = None
-    if SETTINGS.LOCAL_PATHS.actuator_vae_models:
-        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("actuator_name")):
-            if signal_name not in SETTINGS.LOCAL_PATHS.actuator_vae_models[i]:
-                raise ValueError("Rectify order of actuator_vae_models in confij.json to agree with the order in your task settings")
-            
-        vae_actuator_models = [load_vae_model(os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, this_vae)) 
-                               for this_vae in SETTINGS.LOCAL_PATHS.actuator_vae_models]
-    
-    
-    # Load output VAEs 
-    # ----------------------------------------
-    vae_output_models = None
-    if SETTINGS.LOCAL_PATHS.output_vae_models:
-        for i, (source, signal_name) in enumerate(config_task["sources_and_signals"].get("output_name")):
-            if signal_name not in SETTINGS.LOCAL_PATHS.output_vae_models[i]:
-                raise ValueError("Rectify order of output_vae_models in confij.json to agree with the order in your task settings")
-        
-        vae_output_models = [load_vae_model(SETTINGS.LOCAL_PATHS.vae_directory, this_vae) 
-                            for this_vae in SETTINGS.LOCAL_PATHS.output_vae_models] 
-    
-    # Move VAEs to device
-    vae_input_models = [model.to(device) for model in vae_input_models]
-    if vae_actuator_models:
-        vae_actuator_models = [model.to(device) for model in vae_actuator_models]
-    if vae_output_models:
-        vae_output_models = [model.to(device) for model in vae_output_models]
-    
-    
     # Retrieve model architecture
     if SETTINGS.MODEL.layers is None:
         raise ValueError("Model layers not specified correctly in task config .json")
@@ -354,10 +332,11 @@ def main():
     losses, rmse = evaluate_model(
         model,
         val_dataloader,
-        vae_input_models, 
-        vae_actuator_models,
-        vae_output_models,
-        device   
+        vae_dictionary,
+        sentinel_value,
+        device,
+        use_amp = True,
+        verbose = True
     )
     
     with open(os.path.join(output_directory, "loss_curves.json"), 'r') as file:
