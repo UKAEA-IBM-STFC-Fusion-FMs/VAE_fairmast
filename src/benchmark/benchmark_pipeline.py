@@ -125,13 +125,22 @@ def process_data(
 
     # Encode or reshape tensors
     for model, batch in zip(models, batched_data):
-
+        
+        # Check nr. of dimensions
         if batch.ndim < 2:
             raise ValueError("Each batch must have at least 2 dimensions [B, ...]")
 
+        # Batch size
         B = batch.shape[0]
 
-        # We need to compress the data
+        # Filter invalid samples in the batch based on cut-off of 0.05 of invalid entries per sample
+        dims = tuple(range(1, batch.ndim))
+        invalid_entries = torch.isclose(batch, sentinel_value)
+        invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
+        tau = 0.05 
+        valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
+
+        # Check data for encoding
         if model is not None:
         
             p = next(model.parameters())
@@ -143,21 +152,15 @@ def process_data(
                                    device: {sentinel_value.device}, {batch.device},\
                                    types:  {sentinel_value.dtype} {batch.dtype}")
 
-            # Check valid samples in the batch
-            dims = tuple(range(1, batch.ndim))
-            invalid_mask = torch.isclose(batch, sentinel_value).any(dim=dims) # shape [B]
-            valid_mask = ~invalid_mask
-            #nan_mask = torch.isnan(batch).any(dim=dims)  # each tensor shape: [B]
-
             # Initialize to zero
             z = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
             mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
 
-            if valid_mask.any():
-                    mask[valid_mask, :]  = 1
-                    with torch.no_grad():
-                        z[valid_mask] = model.encode(batch[valid_mask])[0]
-
+            if valid_samples.any():
+                mask[valid_mask, :]  = 1
+                with torch.no_grad():
+                    z[valid_samples] = model.encode(batch[valid_samples])[0]
+                
         else:
             z = batch.reshape(B, -1).clone()
             mask = (~torch.isclose(z, sentinel_value)).to(dtype=batch.dtype)
@@ -257,6 +260,7 @@ def process_batch(
 
     # Make input mask
     valid_input = torch.cat(valid_input, dim=1) 
+    print(f"valid_input.mean().item() {valid_input.mean().item()}")
     if valid_input.mean().item() < 0.75:
         if verbose:
             print("No valid latent space representation. Too many input (and actuator) signal representations are missing in this batch.")
@@ -264,6 +268,7 @@ def process_batch(
     
     # Make target mask
     valid_target = torch.cat(valid_target, dim=1)
+    print(f"valid_target.mean().item() {valid_target.mean().item()}")
     if valid_target.mean().item() < 0.75:
         if verbose:
             print("No valid target. Too many output signals are missing in this batch.")
