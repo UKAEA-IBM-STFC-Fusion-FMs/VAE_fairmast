@@ -29,17 +29,10 @@ from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.vae_pipeline import initialize_datasets
+from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 from src.benchmark.benchmark_pipeline import process_batch, masked_loss
 from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
-
-def _as_2d(t: torch.Tensor) -> torch.Tensor:
-    """Ensure tensor is 2D as (N, D) by flattening all non-batch dims."""
-    if t.dim() == 1:
-        return t.unsqueeze(1)
-    return t.flatten(start_dim=1)
-
 
 
 def plot_loss_vs_epoch(
@@ -47,8 +40,7 @@ def plot_loss_vs_epoch(
     title: str = "Task nr",
     ylabel: str = "Loss",
     xlabel: str = "Epoch",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None) -> None:
         
     val_loss = data["val_losses"]
     train_loss = data["train_losses"]
@@ -79,8 +71,7 @@ def hist_rmse(
     rmse:Iterable[float],
     title: str = "RMSE: task nr:",
     xlabel: str = "RMSE",
-    save_path: Optional[str] = None
-) -> None:
+    save_path: Optional[str] = None) -> None:
     
     min_rmse = min(rmse)
     max_rmse = max(rmse)
@@ -124,14 +115,15 @@ def get_RMSE(reco: torch.Tensor, target: torch.Tensor, mask: torch.Tensor, eps: 
     
     
     dims = tuple(range(1, target.ndim))
+    n_valid = mask.sum(dim=dims).clamp_min(eps)
 
-    se = (reco - target) ** 2
-    se_valid_sum = (se * mask).sum(dim=dims)
-
-    n_valid = mask.sum(dim=1).clamp_min(eps)
+    se = mask * (reco - target) ** 2
+    se_valid_sum = se.sum(dim=dims)
     mse = se_valid_sum / n_valid
 
-    return torch.sqrt(mse.mean())
+    has_valid = n_valid > 0
+
+    return torch.sqrt(mse[has_valid])
 
 
 def evaluate_model(
@@ -178,7 +170,7 @@ def evaluate_model(
                 continue 
             
             batch_losses.append(loss.item())
-            batch_rmse.append(get_RMSE(reconstruction,target,valid_target).cpu())
+            batch_rmse.extend(get_RMSE(reconstruction,target,valid_target).tolist())
 
     return batch_losses, batch_rmse
 
@@ -367,13 +359,10 @@ def main():
     
     save_fig_rmse_path = os.path.join(output_directory,f"RMSE_{config_benchmark_file_name.removesuffix('.json')}.pdf")
     hist_rmse(
-        rmse,
+        losses,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
         xlabel = "RMSE",
         save_path = save_fig_rmse_path)
-    
-    
-    
     
 if __name__ == "__main__":
     main()

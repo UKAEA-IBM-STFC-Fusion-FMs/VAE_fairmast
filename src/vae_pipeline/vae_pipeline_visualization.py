@@ -34,7 +34,7 @@ from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.collate_functions.collate_functions import  WindowsCollate
 from src.vae_pipeline.utils.utils import get_train_test_val_shots
-from src.vae_pipeline.vae_pipeline import initialize_datasets, initialize_dataloaders
+from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets, initialize_dataloaders
 from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
 
 # Determine device to train on

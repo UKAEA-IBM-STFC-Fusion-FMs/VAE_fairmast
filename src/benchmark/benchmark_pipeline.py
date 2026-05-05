@@ -63,7 +63,7 @@ from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.vae_pipeline import initialize_datasets
+from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets
 from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
