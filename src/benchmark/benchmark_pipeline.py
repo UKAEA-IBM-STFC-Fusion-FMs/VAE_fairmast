@@ -72,25 +72,27 @@ def process_data(
     batched_data: List[torch.Tensor],
     sentinel_value):
     """
+    - If model is not None
+        For each pair of batched_data and model we get the latent space representation of the 
+        data by calling the model encoder. 
 
-    Assumes batch_data and models are correctly alligned. 
-    For instance, the first entry in models is associated with the first entry in batched_data. 
+    - If model is None
+        For batched_data without a paired model, data are reshaped to ndim = 2.
 
-    The number of models entries and the entries in batched_data must be the same. 
+    Assumes:
+    1-  Batch_data and models are correctly alligned. 
+        For instance, the first entry in models is associated with the first entry in batched_data. 
 
-    For each pair of batched_data - model we get the latent space representation of the 
-    data by a call to the model.encoder if model is not None. 
-
-    For batched_data without paired model, i.e., model is None, data are reshaped to ndim = 2.
+    2-  The number of models and entries in batched_data must be the same. 
 
     Parameters
     ----------
     models :  list[beta_VAE]
-        List of pre-trained beta_VAE models.
+        List of pre-trained beta_VAE models or None entries.
     batched_data : list[torch.Tensor]
-        List of batched of tensors in the real space, each tensor has at least 2D.
+        List of batched tensors in the real space, each tensor has at least 2 dimensions.
     sentinel_value : same type as data in batch
-        This sentinel placeholder for NaN entries.
+        This is a placeholder for NaN entries. Its value is 99, outside data distribution.
 
     Returns
     -------
@@ -105,10 +107,18 @@ def process_data(
             but reshaped to agree with the dimesnion of compressed tensors, i.,e., 2D
 
     masks : list[torch.Tensor]
-        Model present: mask[b, :] = 1 iff sample b had no sentinel anywhere in its input; else zeros.
+        - If model is not None:
+        mask[b, :] = 1 iff sample b had nr of sentinels smaller than a certain cut-off else zeros.
         mask is 1 for all latent features of good samples, 0 otherwise.
-        No model: mask[b, j] = 1 iff that specific flattened entry is not sentinel.
+        
+        - If model is not None:
+        mask[b, j] = 1 iff that specific flattened entry is not sentinel.
         mask is 1 per-entry in real space representation.
+
+    encode_masks : list[torch.Tensor]
+        1 if signal was encoded and passed cut-off.
+        0 if signal did not pass cut-off and was set to zero.
+        0 if model does not exist.
     """
 
     # Sanity check
@@ -120,8 +130,9 @@ def process_data(
         )
 
     # Return values
-    data: List[torch.Tensor] = []
-    masks: List[torch.Tensor] = []
+    data: List[torch.Tensor] = []   # One process data (entry) for each signal in batch_data 
+    masks: List[torch.Tensor] = [] # One mask (entry) for each signal in batch_data 
+    encode_masks :  List[torch.Tensor] = []  # One mask (entry) for each signal in batch_data 
 
     # Encode or reshape tensors
     for model, batch in zip(models, batched_data):
@@ -133,12 +144,12 @@ def process_data(
         # Batch size
         B = batch.shape[0]
 
-        # Filter invalid samples in the batch based on cut-off of 0.05 of invalid entries per sample
+        # Filter invalid samples in the batch based on a cut-off of 0.05 of invalid entries per sample
         dims = tuple(range(1, batch.ndim))
         invalid_entries = torch.isclose(batch, sentinel_value)
-        invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-        tau = 0.05 
-        valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
+
+        # Initialize mask for samples to encode
+        encode_mask = torch.zeros(B, device=batch.device, dtype = batch.dtype)
 
         # Check data for encoding
         if model is not None:
@@ -155,11 +166,22 @@ def process_data(
             # Initialize to zero
             z = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
             mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
+            
+            invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
+            tau = 0.05 
+            valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
 
             if valid_samples.any():
-                mask[valid_mask, :]  = 1
+                mask[valid_samples, :]  = 1
                 with torch.no_grad():
-                    z[valid_samples] = model.encode(batch[valid_samples])[0]
+                    # Clone to avoid corruption of original data
+                    x = batch.clone()
+                    # Ground invalid entries with zero
+                    x[invalid_entries] = 0
+                    # Encode valid samples
+                    z[valid_samples] = model.encode(x[valid_samples])[0]
+                    # Update encode mask
+                    encode_mask[valid_samples] = 1
                 
         else:
             z = batch.reshape(B, -1).clone()
@@ -174,8 +196,9 @@ def process_data(
 
         data.append(z)
         masks.append(mask)
+        encode_masks.append(encode_mask)
         
-    return data, masks
+    return data, masks, encode_masks
 
     
 def process_batch(
@@ -209,15 +232,14 @@ def process_batch(
 
     Returns
     -------
-    input : torch.Tensor
+    input_data : torch.Tensor
         Concatenated latent representation for inputs/actuators.
     target_data : torch.Tensor
         Concatenated latent representation for outputs/targets.
-    valid_input : torch.Tensor
+    input_encode_mask : torch.Tensor
         Tensor of 1 (0) for valid (invalid) entries in `input`.
     valid_target : torch.Tensor
         Tensor of 1 (0) for valid (invalid) entries in `target_data`.
-
     """
 
     # Original data
@@ -242,39 +264,45 @@ def process_batch(
     # When the signals are absent from the shot the MAST_tools sets them to NaN
     # We change them to sentinel_value as for the rest of the analysis.
     for i, inp in enumerate(input_):
-        input_[i] = torch.nan_to_num(input_[i], nan=sentinel_value)
+        input_[i] = torch.nan_to_num(input_[i], nan=sentinel, posinf=sentinel, neginf=sentinel)
     for j, tar in enumerate(target_):
-        target_[j] = torch.nan_to_num(target_[j], nan=sentinel_value)
+        target_[j] = torch.nan_to_num(target_[j], nan=sentinel, posinf=sentinel, neginf=sentinel)
 
     # Collect VAEs
     input_vae = list(vae_dictionary["input"].values()) + \
                 list(vae_dictionary["actuator"].values())
     target_vae = list(vae_dictionary['output'].values())
 
-    # Prepare input and target data data
-    input_data, valid_input = process_data(input_vae, input_, sentinel)
-    target_data, valid_target = process_data(target_vae, target_, sentinel)
+    # Prepare input and target data
 
-    input_data = torch.cat(input_data, dim=1)
-    target_data = torch.cat(target_data, dim=1)
+    # Inputs are always encoded, hence encode_masks is used, see process_data method.
+    input_data_list, _, input_encode_mask_list = process_data(input_vae, input_, sentinel) 
+
+    # Targets can be either encoded or left in the real space in either cases we use the masks return 
+    # value of process_data since this offers a mask per entry of each tensor.
+    target_data_list, valid_target_list, _ = process_data(target_vae, target_, sentinel)
+
+    input_data_cat = torch.cat(input_data_list, dim=1)
+    target_data = torch.cat(target_data_list, dim=1)
 
     # Make input mask
-    valid_input = torch.cat(valid_input, dim=1) 
-    print(f"valid_input.mean().item() {valid_input.mean().item()}")
-    if valid_input.mean().item() < 0.75:
+    input_encode_mask = torch.stack(input_encode_mask_list, dim=1)  # [B, n_signals]
+    per_sample_frac = input_encode_mask.mean(dim=1)  # [B]
+    if (per_sample_frac < 0.5).float().mean().item() > 0.6:
         if verbose:
-            print("No valid latent space representation. Too many input (and actuator) signal representations are missing in this batch.")
+            print("No valid latent space representation.  more than half the samples are below 0.75")
         return None, None, None, None
     
+    input_data = torch.cat([input_data_cat, input_encode_mask], dim=1)
+
     # Make target mask
-    valid_target = torch.cat(valid_target, dim=1)
-    print(f"valid_target.mean().item() {valid_target.mean().item()}")
-    if valid_target.mean().item() < 0.75:
+    valid_target = torch.cat(valid_target_list, dim=1)
+    if (valid_target.mean(dim=1) <0.5 ).float().mean().item() > 0.6:
         if verbose:
             print("No valid target. Too many output signals are missing in this batch.")
         return None, None, None, None
 
-    return input_data, target_data, valid_input, valid_target
+    return input_data, target_data, input_encode_mask, valid_target
     
     
 def masked_loss(reco, target, mask, eps = 1e-8):
@@ -362,7 +390,7 @@ def train_model(
                 if verbose:
                     print(f"\nBatch {batch_idx}")
             
-            data, target, valid_input, valid_target = process_batch(
+            data, target, input_encode_mask, valid_target = process_batch(
                 batch,
                 vae_dictionary,
                 sentinel_value,
@@ -371,8 +399,6 @@ def train_model(
             if data is None:
                 continue
             
-            data = torch.cat([data, valid_input], dim=1)
-
             optimizer.zero_grad(set_to_none=True)
 
             if use_amp:
@@ -442,7 +468,7 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, valid_input, valid_target = process_batch(
+                data, target, input_encode_mask, valid_target = process_batch(
                     batch,
                     vae_dictionary,
                     sentinel_value,
@@ -450,8 +476,6 @@ def train_model(
                 
                 if data is None:
                     continue
-                
-                data =  torch.cat([data, valid_input], dim=1)
      
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):

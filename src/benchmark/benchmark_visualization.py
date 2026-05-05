@@ -110,11 +110,28 @@ def get_RMSE(reco: torch.Tensor, target: torch.Tensor, mask: torch.Tensor, eps: 
     RMSE per sample across valid features.
     mask: bool or {0,1} with same shape as reco/target; True/1 means valid.
     """
+
+    if target.ndim != 2:
+        raise ValueError(
+            f"Target ndim must be 2. Here we have ndim = {target.ndim}"
+        )
+
+    if target.shape != mask.shape:  
+        raise ValueError(
+            f"target and valid_target must have the same shape, "
+            f"got {target.shape} and {mask.shape}"
+        )
+    
+    
+    dims = tuple(range(1, target.ndim))
+
     se = (reco - target) ** 2
-    se_valid_sum = (se * mask).sum(dim=1)
+    se_valid_sum = (se * mask).sum(dim=dims)
+
     n_valid = mask.sum(dim=1).clamp_min(eps)
     mse = se_valid_sum / n_valid
-    return torch.sqrt(mse)
+
+    return torch.sqrt(mse.mean())
 
 
 def evaluate_model(
@@ -136,7 +153,7 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, valid_input, valid_target = process_batch(
+            data, target, _, valid_target = process_batch(
                 batch,
                 vae_dictionary,
                 sentinel_value,
@@ -145,8 +162,6 @@ def evaluate_model(
             if data is None:
                 continue
             
-            data =  torch.cat([data, valid_input], dim=1)
-
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
@@ -163,7 +178,7 @@ def evaluate_model(
                 continue 
             
             batch_losses.append(loss.item())
-            batch_rmse.extend(get_RMSE(reconstruction,target,valid_target).tolist())
+            batch_rmse.append(get_RMSE(reconstruction,target,valid_target).cpu())
 
     return batch_losses, batch_rmse
 
