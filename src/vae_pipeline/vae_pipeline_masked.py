@@ -30,13 +30,14 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from src.common_transforms.general_transforms import StdScalingTransform
 from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
 
+from src.common_transforms.general_transforms import StdScalingTransform
 from src.utils.utils import (
-    read_data_split_csv, ComposeTransforms, initialize_datasets, initialize_dataloaders
+    read_data_split_csv, ComposeTransforms, 
+    initialize_datasets, initialize_dataloaders, 
+    get_train_test_val_shots
 )
-
 from src.common_transforms.window_segmenter_transform import (
     WindowSegmenterTransform,
 )
@@ -47,7 +48,7 @@ from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_f
 from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
-from src.utils.utils import get_train_test_val_shots
+from src.vae_pipeline.utils.utils import training_block
 
 
 def train_vae_model(
@@ -67,39 +68,34 @@ def train_vae_model(
     # Make directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # Signal name
+    # From SETTINGS
     _, signal_name = SETTINGS.DATA.data_names[0]
-    
-    # Beta for VAE
     beta = SETTINGS.BETA_VAE.beta
-    
-    # Training tracking
+    sub_batch_size = SETTINGS.TRAINING.train_batch_size
+
+    # For tracking
     best_val_loss = float("inf")
-    
-    # State tracking
     loss_curves = {'train_total': [],'train_recon': [],'train_kl': [],'val_total': [], 'val_recon': [], 'val_kl': []}
-    
-    # Clamp tuple
-    clamp_logvar = (-50,50)
     epochs_no_improvement = 0
     lr_history = []
     beta_history = []
     
-    sub_batch_size = SETTINGS.TRAINING.train_batch_size
-    
-    model.to(device)
-    
+    # Before starting main loop
+    clamp_logvar = (-50,50)
     stop_early = False
+    model.to(device)
+
+    # Main loop over epochs
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         
         if stop_early:
             break
         
         if verbose:
-            print(f"\n Epoch {epoch+1} \n")
             print("Training phase")
-       
-        # Send model to device for training
+            print(f"\n Epoch {epoch+1} \n")
+
+        # Set training
         model.train()
         scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
         
@@ -111,7 +107,8 @@ def train_vae_model(
         t_0_dataloader = time.time()
         
         for batch_idx, batch in enumerate(train_dataloader):
-
+            
+            # Prepare tensors
             x = batch["x"]
 
             if x.numel() == 0:
@@ -123,50 +120,31 @@ def train_vae_model(
 
             x = x.to(device)
             total_tensors = x.size(0)
-
-            # Initialiaze gradient
-            optimizer.zero_grad(set_to_none=True)
+            
             
             # Timing 
             t_0_model_train = time.time()
             device_process_time = 0
             
+
+            # Initialiaze gradient
+            optimizer.zero_grad(set_to_none=True)
             any_backward = False
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
-                x_sub_batch = x[start:end]
-
-                # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
-                # we must permute the indeces of our tensor to agree with the PyTorch conv2d convention.
-                if x_sub_batch.ndim == 4:
-                    x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
-
-                # Mask non-finite entries (NaN)
-                mask = torch.isfinite(x_sub_batch) # booleans
-                mask = mask.float() # floats
-
-                # Impute NaN with zeros, i.e., the mean of signals after standardization
-                x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)
-    
-                try:
-                    with torch.amp.autocast('cuda', enabled=use_amp):
-                        x_recon, mu, logvar = model(x_sub_batch)
-                        loss, recon_loss, kl_loss = masked_loss_function(
-                          beta,
-                            x_recon,
-                            x_sub_batch,
-                            mu,
-                            logvar,
-                            mask,
-                            clamp_logvar
-                        )
-                        
-                except ValueError as e:
-                    # skip this sub-batch
-                    print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+                loss, recon_loss, kl_loss, sub_tensors = training_block(
+                        start, 
+                        end, 
+                        x, 
+                        use_amp, 
+                        beta,
+                        mu,
+                        logvar,
+                        clamp_logvar)
+                    
+                if loss is None:
                     continue
-
 
                 if (not torch.isfinite(loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
                     print(
@@ -176,7 +154,6 @@ def train_vae_model(
                     continue
             
                 # Update gradients (gradients are summed at each iteration)
-                sub_tensors = x_sub_batch.size(0)
                 effective_loss = loss * (sub_tensors / float(total_tensors))
 
                 if use_amp:
@@ -251,37 +228,17 @@ def train_vae_model(
                 for start in range(0, total_tensors, sub_batch_size):
                     end = min(start + sub_batch_size, total_tensors)
                 
-                    x_sub_batch = x[start:end]
-                    sub_tensors = x_sub_batch.size(0)
+                    loss, recon_loss, kl_loss, sub_tensors = training_block(
+                        start, 
+                        end, 
+                        x, 
+                        use_amp, 
+                        beta,
+                        mu,
+                        logvar,
+                        clamp_logvar)
                     
-                    # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
-                    # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
-                    if x_sub_batch.ndim == 4:
-                        x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous() 
-                    
-                    # Mask non-finite entries (NaN)
-                    mask = torch.isfinite(x_sub_batch) # booleans
-                    mask = mask.float() # floats
-
-                    # Impute NaN with zeros, i.e., the mean of signals after standardization
-                    x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)
-                                      
-                    # Compute loss
-                    try:
-                        with torch.amp.autocast('cuda', enabled=use_amp):
-                            x_recon, mu, logvar = model(x_sub_batch)
-                            loss, recon_loss, kl_loss = masked_loss_function(
-                                beta,
-                                x_recon,
-                                x_sub_batch,
-                                mu,
-                                logvar,
-                                mask,
-                                clamp_logvar
-                            )
-                    except ValueError as e:
-                        # skip this sub-batch
-                        print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+                    if loss is None:
                         continue
                     
                     val_losses += loss.item() * sub_tensors 

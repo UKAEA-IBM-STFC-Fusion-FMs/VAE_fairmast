@@ -272,8 +272,6 @@ def process_batch(
                 list(vae_dictionary["actuator"].values())
     target_vae = list(vae_dictionary['output'].values())
 
-    # Prepare input and target data
-
     # Inputs are always encoded, hence encode_masks is used, see process_data method.
     input_data_list, _, input_encode_mask_list = process_data(input_vae, input_, sentinel) 
 
@@ -284,6 +282,10 @@ def process_batch(
     input_data_cat = torch.cat(input_data_list, dim=1)
     target_data = torch.cat(target_data_list, dim=1)
 
+    if input_data_cat.ndim != 3 or input_encode_mask.ndim != 3 or target_data.ndim !=3:
+        raise ValueError(f"Input data (mask) dimension expected to be 3, \
+                        instead is {input_data_cat.ndim} ({input_encode_mask.ndim}) ")
+                        
     # Get rid of poor batches
     input_encode_mask = torch.stack(input_encode_mask_list, dim=1)  # [B, n_signals]
     input_sample_completness = input_encode_mask.mean(dim=1)  # [B]
@@ -294,6 +296,8 @@ def process_batch(
     
     # Concatenate encode mask to signal
     input_data = torch.cat([input_data_cat, input_encode_mask], dim=1)
+        
+
 
     # Get rid of poor batches
     valid_target = torch.cat(valid_target_list, dim=1)
@@ -354,7 +358,7 @@ def masked_loss(reco, target, mask, weights, eps = 1e-8):
     loss_per_sample = sqr_sum_per_sample/(valid_per_sample + eps) # loss per sample # [B]
     
     has_valid = valid_per_sample > 0
-    breakpoint()
+
     # Compute weighted mean loss per batch only on valid samples
     if weights is not None:
         loss = (weights[has_valid] * loss_per_sample[has_valid]).sum() / weights[has_valid].sum()

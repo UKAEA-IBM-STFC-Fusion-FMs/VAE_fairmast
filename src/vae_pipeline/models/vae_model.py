@@ -62,7 +62,7 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar
 
 
-def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20)):
+def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20), eps = 1e-8):
     
     """
     Compute a masked β-VAE loss for batched signals.
@@ -105,14 +105,13 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
     kl_loss : torch.Tensor
         Scalar tensor containing the KL-divergence term averaged across the batch
     """
-
     dims = tuple(range(1, target.ndim))   # all dims except batch
     valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
 
     squared_diff = mask * (target - reco)**2
 
     loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
-    mean_loss_per_sample = loss_per_sample/valid_per_sample # average loss
+    mean_loss_per_sample = loss_per_sample/(valid_per_sample + eps)# average loss
 
     batch_loss = mean_loss_per_sample.mean()
     
