@@ -24,15 +24,17 @@ from MAST_tools.MAST_dataset import MastDataset
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
                                           
-from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
-from src.vae_pipeline.utils.utils import get_train_test_val_shots
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets
-from src.vae_pipeline.utils.layer_factory import SequentialBuilder
 from src.benchmark.benchmark_pipeline import process_batch, masked_loss
-from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
+
+from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
+from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
+from src.benchmark.configs.benchmark_setup import SettingsBenchmark
+from src.vae_pipeline.models.vae_model import beta_VAE
+from src.utils.layer_factory import SequentialBuilder
+from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
 
 def plot_loss_vs_epoch(
@@ -145,7 +147,7 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, _, valid_target = process_batch(
+            data, target, _, valid_target, weights = process_batch(
                 batch,
                 vae_dictionary,
                 sentinel_value,
@@ -157,10 +159,10 @@ def evaluate_model(
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, valid_target)
+                    loss = masked_loss(reconstruction, target, valid_target, weights)
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target, valid_target)
+                loss = masked_loss(reconstruction, target, valid_target, weights)
             
             if (not torch.isfinite(loss).all()) and verbose:
                 print(
@@ -170,8 +172,10 @@ def evaluate_model(
                 continue 
             
             batch_losses.append(loss.item())
-            batch_rmse.extend(get_RMSE(reconstruction,target,valid_target).tolist())
-
+            
+            rmse = get_RMSE(reconstruction,target,valid_target)
+            batch_rmse.extend(rmse.tolist())
+         
     return batch_losses, batch_rmse
 
 def main():
@@ -359,7 +363,7 @@ def main():
     
     save_fig_rmse_path = os.path.join(output_directory,f"RMSE_{config_benchmark_file_name.removesuffix('.json')}.pdf")
     hist_rmse(
-        losses,
+        rmse,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
         xlabel = "RMSE",
         save_path = save_fig_rmse_path)

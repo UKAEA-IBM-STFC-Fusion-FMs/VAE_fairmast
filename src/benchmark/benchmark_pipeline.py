@@ -58,14 +58,12 @@ if REPO_ROOT not in sys.path:
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
-from src.vae_pipeline.utils.utils import (read_data_split_csv, ComposeTransforms)
-from src.vae_pipeline.utils.utils import get_train_test_val_shots
+from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets
-from src.vae_pipeline.utils.layer_factory import SequentialBuilder
-from src.benchmark.transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
+from src.utils.layer_factory import SequentialBuilder
+from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
 def process_data(
     models: List[beta_VAE], 
@@ -205,6 +203,7 @@ def process_batch(
         batch,
         vae_dictionary,
         sentinel_value,
+        filtering = 'weights',
         verbose = True
     ):
     
@@ -285,27 +284,41 @@ def process_batch(
     input_data_cat = torch.cat(input_data_list, dim=1)
     target_data = torch.cat(target_data_list, dim=1)
 
-    # Make input mask
+    # Get rid of poor batches
     input_encode_mask = torch.stack(input_encode_mask_list, dim=1)  # [B, n_signals]
-    per_sample_frac = input_encode_mask.mean(dim=1)  # [B]
-    if (per_sample_frac < 0.5).float().mean().item() > 0.6:
+    input_sample_completness = input_encode_mask.mean(dim=1)  # [B]
+    if (input_sample_completness < 0.75).float().mean().item() > 0.95:
         if verbose:
-            print("No valid latent space representation.  more than half the samples are below 0.75")
-        return None, None, None, None
+            print("No valid latent space representation. Too many input signals are missing in this batch. ")
+        return None, None, None, None, None
     
+    # Concatenate encode mask to signal
     input_data = torch.cat([input_data_cat, input_encode_mask], dim=1)
 
-    # Make target mask
+    # Get rid of poor batches
     valid_target = torch.cat(valid_target_list, dim=1)
-    if (valid_target.mean(dim=1) <0.5 ).float().mean().item() > 0.6:
+    target_sample_completness = (valid_target.mean(dim=1) < 0.75)
+    if (target_sample_completness < 0.5).float().mean().item() > 0.50:
         if verbose:
             print("No valid target. Too many output signals are missing in this batch.")
-        return None, None, None, None
+        return None, None, None, None, None
+    
+    if filtering == 'hard_filtering':
+        weights = None
+        hard_filter = (input_sample_completness >= 0.75) & (target_sample_completness >= 0.5)
 
-    return input_data, target_data, input_encode_mask, valid_target
+        # Filter data and mask
+        input_data = input_data[hard_filter]
+        valid_target = valid_target[hard_filter]
+        target_data = target_data[hard_filter]
+    else:
+        weights = torch.minimum(input_sample_completness, target_sample_completness)
+        hard_filter = None
+
+    return input_data, target_data, input_encode_mask, valid_target, weights
     
     
-def masked_loss(reco, target, mask, eps = 1e-8):
+def masked_loss(reco, target, mask, weights, eps = 1e-8):
     """
     Compute a mean squared error loss using an explicit validity mask.
 
@@ -316,6 +329,8 @@ def masked_loss(reco, target, mask, eps = 1e-8):
         reco (torch.Tensor): Reconstructed output tensor, shape [B, ...].
         target (torch.Tensor): Target tensor, shape [B, ...].
         mask (torch.Tensor): tensor, same shape as target, 1 (0) valid (invalid) entries.
+        weights : (torch.Tensor) 
+            for each sampe b in B, a weight is given that provides % of completness.
         eps (float, optional): Small constant to avoid division by zero.
 
     Returns:
@@ -327,19 +342,26 @@ def masked_loss(reco, target, mask, eps = 1e-8):
             f"got {target.shape} and {mask.shape}"
         )
 
+    if target.ndim !=2:
+        print(f"WARNING target ndim: expected 2 but got {target.ndim}")
+
     # Reduce over all non-batch dimensions
     dims = tuple(range(1, target.ndim))
-    valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample 
+    valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample [B]
 
-    squared_diff = mask * (target - reco)**2
-    loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
-
-    mean_loss_per_sample = loss_per_sample/(valid_per_sample + eps) # average loss
+    squared_diff = mask * (target - reco)**2 # [B]
+    sqr_sum_per_sample = squared_diff.sum(dim=dims) # [B]
+    loss_per_sample = sqr_sum_per_sample/(valid_per_sample + eps) # loss per sample # [B]
     
     has_valid = valid_per_sample > 0
-    
-    # Compute mean loss per batch only on valid samples
-    return mean_loss_per_sample[has_valid].mean()
+    breakpoint()
+    # Compute weighted mean loss per batch only on valid samples
+    if weights is not None:
+        loss = (weights[has_valid] * loss_per_sample[has_valid]).sum() / weights[has_valid].sum()
+    else:
+        loss = loss_per_sample[has_valid].mean()
+
+    return loss
     
 def train_model(
     SETTINGS:SettingsBenchmark,
@@ -390,7 +412,7 @@ def train_model(
                 if verbose:
                     print(f"\nBatch {batch_idx}")
             
-            data, target, input_encode_mask, valid_target = process_batch(
+            data, target, input_encode_mask, valid_target, weights = process_batch(
                 batch,
                 vae_dictionary,
                 sentinel_value,
@@ -406,7 +428,7 @@ def train_model(
                     
                     reconstruction = model(data)
 
-                    loss = masked_loss(reconstruction, target, valid_target)
+                    loss = masked_loss(reconstruction, target, valid_target, weights)
                     
                     if (not torch.isfinite(loss)):
                         if verbose:
@@ -419,7 +441,7 @@ def train_model(
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target, valid_target)
+                loss = masked_loss(reconstruction, target, valid_target, weights)
                 if (not torch.isfinite(loss)):
                     if verbose:
                         print(
@@ -468,7 +490,7 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, input_encode_mask, valid_target = process_batch(
+                data, target, input_encode_mask, valid_target, weights = process_batch(
                     batch,
                     vae_dictionary,
                     sentinel_value,
@@ -480,10 +502,10 @@ def train_model(
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)
-                        loss = masked_loss(reconstruction, target, valid_target)
+                        loss = masked_loss(reconstruction, target, valid_target, weights)
                 else:
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, valid_target)
+                    loss = masked_loss(reconstruction, target, valid_target, weights)
                 
                 if (not torch.isfinite(loss)):
                     if verbose:

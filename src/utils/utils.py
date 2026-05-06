@@ -4,13 +4,76 @@ import pandas as pd
 import random
 import numpy as np
 
-from MAST_tools.MAST_dataset import MastDataset
-
 # Compute project root relative to this file
 REPO_ROOT = os.path.abspath(os.path.join(
     os.path.dirname(__file__) if '__file__' in globals() else os.getcwd(),
     "..", "..", ".."
 ))  
+
+from MAST_tools.MAST_dataset import MastDataset, CachedDataset
+from torch.utils.data import DataLoader
+
+def initialize_datasets(
+        sources_and_signals, 
+        shots, 
+        signal_transform_map, 
+        shot_transforms, 
+        local_flag=False,
+        cache_data=True,
+        return_incomplete_shots = False,
+        store_mast_settings={}
+    ):
+    
+    datasets_ = {"train": None, "val": None, "test": []}
+    data_set_types = ["train", "val", "test"]
+    
+    for data_set_type in data_set_types:
+        if shots[data_set_type]:
+            datasets_[data_set_type] = MastDataset(
+                local=local_flag,
+                shots_list=shots[data_set_type],
+                source_signal_list=sources_and_signals,
+                signal_level_transform_map=signal_transform_map,
+                shot_level_transform=shot_transforms,
+                return_incomplete_shots = return_incomplete_shots,
+                remove_outliers = True,
+                store_manager_settings = store_mast_settings
+            )
+            
+    if cache_data:
+        datasets_["train"] = CachedDataset(datasets_["train"])
+        datasets_["val"]   = CachedDataset(datasets_["val"]) 
+        datasets_["test"] = CachedDataset(datasets_["test"]) 
+           
+    return datasets_
+
+def initialize_dataloaders(
+        datasets,
+        collate_function,
+        batch_size,
+        num_workers,
+        shuffle=True,
+        drop_last=False,
+        persistent_workers = False
+    ):
+    
+    dataloaders_ = {"train": None, "val": None, "test": None}
+
+    data_set_types = ["train", "val", "test"]
+    
+    for data_set_type in data_set_types:
+        if datasets[data_set_type]:
+            dataloaders_[data_set_type] = DataLoader(
+                dataset=datasets[data_set_type],
+                batch_size=batch_size,
+                num_workers=num_workers,
+                shuffle=shuffle,
+                drop_last=drop_last,
+                collate_fn=collate_function,
+                persistent_workers = persistent_workers
+            )
+
+    return dataloaders_
 
 # ----------------------------------------------------------------------------------------------------------------------
 def get_train_test_val_shots(

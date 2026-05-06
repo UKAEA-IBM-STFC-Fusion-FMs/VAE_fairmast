@@ -36,7 +36,7 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
-from src.vae_pipeline.utils.layer_factory import SequentialBuilder
+from src.utils.layer_factory import SequentialBuilder
 
 def active_linear(in_features, out_features, activation_fn):
     return  {
