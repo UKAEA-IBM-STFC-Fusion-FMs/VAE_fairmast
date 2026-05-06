@@ -21,21 +21,27 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 
 from MAST_tools.MAST_dataset import MastDataset, CachedDataset
-from tokamark.tools.transforms.stdscale_transform import StdScalingTransform
 from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
 
-from src.vae_pipeline.utils.utils import ComposeTransforms
-from src.vae_pipeline.transforms.shot_level_transforms.window_segmenter_transform import WindowSegmenterTransform
+from src.common_transforms.general_transforms import StdScalingTransform
+from src.utils.utils import (
+    read_data_split_csv, ComposeTransforms, 
+    initialize_datasets, initialize_dataloaders, 
+    get_train_test_val_shots
+)
+from src.common_transforms.window_segmenter_transform import (
+    WindowSegmenterTransform,
+)
+
 from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.configs.config_setup import get_settings
-from src.vae_pipeline.models.vae_model import masked_loss_function
-from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.models.vae_model import beta_VAE
+from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
+from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
-from src.vae_pipeline.collate_functions.collate_functions import  WindowsCollate
-from src.vae_pipeline.utils.utils import get_train_test_val_shots
-from src.vae_pipeline.vae_pipeline_imputer import initialize_datasets, initialize_dataloaders
-from src.vae_pipeline.transforms.shot_level_transforms.concatenate_signals_transform import ConcatenateSignalsAfterTimeSegmentation
+from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
+from src.vae_pipeline.utils.utils import training_block
+
 
 # Determine device to train on
 if torch.cuda.is_available():
@@ -54,8 +60,8 @@ def plot_histograms(
     title_prefix,
     file_name,
     num_rows=1,
-    num_cols=1
-):
+    num_cols=1):
+
     num_features = len(properties)
     fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
 
@@ -179,13 +185,17 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     )
 
     # Prepare datasets
-    datasets_train_val_test = initialize_datasets(
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
+    datasets_train_val = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots, "test":test_shots},
+        shots={"train": train_shots, "val": val_shots, "test": []},
         signal_transform_map=signal_transform_map,
         shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
-        cache_data=False
+        cache_data=SETTINGS.DATA.cache_data,
+        return_incomplete_shots = False,
+        store_mast_settings=store_mast_settings
     )
 
     conv1d_vae_collate_fn =  WindowsCollate()
@@ -254,39 +264,17 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
             
-                x_sub_batch = x[start:end].to(device)
-                sub_tensors = x_sub_batch.size(0)
-                
-                # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.
-                # we must permute the indeces of our tensor to agree with the PyTorch conv2d.
-                if x_sub_batch.ndim == 4:
-                    x_sub_batch = x_sub_batch.permute(0, 3, 1, 2).contiguous()                                
-
-                # Mask non-finite entries (NaN)
-                mask = torch.isfinite(x_sub_batch) # booleans
-                mask = mask.float() # floats
-
-                # Impute NaN with zeros, i.e., the mean of signals after standardization
-                x_sub_batch = torch.nan_to_num(x_sub_batch, nan=0.0)                
-                
-                # Compute loss
-                try:
-                    with torch.amp.autocast('cuda', enabled=use_amp):
-                        x_recon, mu, logvar = model(x=x_sub_batch, sampling = False)
-                        total_loss, recon_loss, kl_loss = masked_loss_function(
-                            beta,
-                            x_recon,
-                            x_sub_batch,
-                            mu,
-                            logvar,
-                            mask,
-                            clamp_logvar=clamp_logvar,
-                        )
-                        loss_vs_batch.append(total_loss.item())
-                except ValueError as e:
-                    # skip this sub-batch
-                    print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+                loss, recon_loss, kl_loss, sub_tensors = training_block(
+                        start, 
+                        end, 
+                        x, 
+                        use_amp, 
+                        beta,
+                        clamp_logvar)
+                    
+                if loss is None:
                     continue
+
                 
                 if (not torch.isfinite(total_loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
                     print(

@@ -1,6 +1,20 @@
+import sys
+import os
 
+REPO_ROOT = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__) if "__file__" in globals() else os.getcwd(),
+        "..",
+        "..",
+    )
+)
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+    
+import torch
+from src.vae_pipeline.models.vae_model import masked_loss_function
 
-def training_block(start, end, x, use_amp, beta, mu, logvar, clamp_logvar):
+def training_block(start, end, x, model, use_amp, beta, clamp_logvar):
     x_sub_batch = x[start:end]
 
     # For a 3D signals (i.e., x_sub_batch dimension == 4) we use a conv2d encoder.

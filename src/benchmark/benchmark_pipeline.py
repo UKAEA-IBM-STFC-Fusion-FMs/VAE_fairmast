@@ -282,9 +282,9 @@ def process_batch(
     input_data_cat = torch.cat(input_data_list, dim=1)
     target_data = torch.cat(target_data_list, dim=1)
 
-    if input_data_cat.ndim != 3 or input_encode_mask.ndim != 3 or target_data.ndim !=3:
-        raise ValueError(f"Input data (mask) dimension expected to be 3, \
-                        instead is {input_data_cat.ndim} ({input_encode_mask.ndim}) ")
+    # if input_data_cat.ndim != 3 or input_encode_mask.ndim != 3 or target_data.ndim !=3:
+    #     raise ValueError(f"Input data (mask) dimension expected to be 3, \
+    #                     instead is {input_data_cat.ndim} ({input_encode_mask.ndim}) ")
                         
     # Get rid of poor batches
     input_encode_mask = torch.stack(input_encode_mask_list, dim=1)  # [B, n_signals]
@@ -296,8 +296,6 @@ def process_batch(
     
     # Concatenate encode mask to signal
     input_data = torch.cat([input_data_cat, input_encode_mask], dim=1)
-        
-
 
     # Get rid of poor batches
     valid_target = torch.cat(valid_target_list, dim=1)

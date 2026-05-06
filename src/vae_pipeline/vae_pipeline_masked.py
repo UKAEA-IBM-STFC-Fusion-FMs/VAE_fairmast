@@ -45,7 +45,6 @@ from src.common_transforms.window_segmenter_transform import (
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
-from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
 from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import training_block
@@ -137,10 +136,9 @@ def train_vae_model(
                         start, 
                         end, 
                         x, 
+                        model,
                         use_amp, 
                         beta,
-                        mu,
-                        logvar,
                         clamp_logvar)
                     
                 if loss is None:
@@ -232,10 +230,9 @@ def train_vae_model(
                         start, 
                         end, 
                         x, 
+                        model,
                         use_amp, 
                         beta,
-                        mu,
-                        logvar,
                         clamp_logvar)
                     
                     if loss is None:
