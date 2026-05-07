@@ -132,7 +132,7 @@ def train_vae_model(
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
-                loss, recon_loss, kl_loss, x_sub_batch, _, _, _ = training_block(
+                loss, recon_loss, kl_loss, x_sub_batch, _, _, _, _ = training_block(
                         start, 
                         end, 
                         x, 
@@ -227,7 +227,7 @@ def train_vae_model(
                 for start in range(0, total_tensors, sub_batch_size):
                     end = min(start + sub_batch_size, total_tensors)
                 
-                    loss, recon_loss, kl_loss, x_sub_batch, _, _, _ = training_block(
+                    loss, recon_loss, kl_loss, x_sub_batch, _, _, _, _ = training_block(
                         start, 
                         end, 
                         x, 
