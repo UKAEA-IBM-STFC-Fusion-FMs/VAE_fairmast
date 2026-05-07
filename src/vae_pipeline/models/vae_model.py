@@ -107,7 +107,7 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
     """
     dims = tuple(range(1, target.ndim))   # all dims except batch
     valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
-
+  
     squared_diff = mask * (target - reco)**2
 
     loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch

@@ -3,14 +3,17 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+python src/benchmark/benchmark_pipeline.py 
+--config_benchmark_file_path path_to_json_benchmark_file 
+--config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 
 
 DATA INGESTION:
 
 This pipeline enforces a strict one‑to‑one correspondence between 
 configured signals and their associated Variational Autoencoder (VAE) models at ingestion time. 
-The configuration defines three categories of signals: inputs, actuators, and outputs, each of which may require compression via a dedicated VAE.
+The configuration defines three categories of signals: inputs, actuators, and outputs, 
+each of which may require compression via a dedicated VAE.
 
 Input signals:
     All input signals must have corresponding input VAEs.

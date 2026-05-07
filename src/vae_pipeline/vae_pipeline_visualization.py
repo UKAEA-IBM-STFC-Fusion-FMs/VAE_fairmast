@@ -200,7 +200,7 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
 
     conv1d_vae_collate_fn =  WindowsCollate()
     dataloaders_train_val_test = initialize_dataloaders(
-        datasets=datasets_train_val_test,
+        datasets=datasets_train_val,
         collate_function=conv1d_vae_collate_fn,
         batch_size= SETTINGS.TRAINING.dataloader_batch_size,
         num_workers=num_workers,
@@ -246,7 +246,8 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     minimum_error = float("inf")
     clamp_logvar = (-50,50)
 
-    sub_batch_size = SETTINGS.TRAINING.train_batch_size            
+    sub_batch_size = SETTINGS.TRAINING.train_batch_size  
+    mask = None          
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
             
@@ -264,24 +265,26 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
             
-                loss, recon_loss, kl_loss, sub_tensors = training_block(
+                total_loss, recon_loss, kl_loss, x_sub_batch, x_recon, mu, logvar, mask = training_block(
                         start, 
                         end, 
-                        x, 
+                        x,
+                        model,
                         use_amp, 
                         beta,
                         clamp_logvar)
                     
-                if loss is None:
+                if total_loss is None:
                     continue
 
-                
                 if (not torch.isfinite(total_loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
                     print(
                         f"[batch {batch_idx} {start}:{end}] non-finite loss components "
                         f"(loss finite={torch.isfinite(total_loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
                     )
                     continue
+
+                loss_vs_batch.append(total_loss.item())
 
                 if total_loss.item() < best_loss:
                     best_loss = total_loss.item()
@@ -301,21 +304,21 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
 
                 # Compute correlations
                 if len(x_sub_batch.shape)<4:
-                    correl = correlations(x_sub_batch, x_recon)
+                    correl = correlations(x_sub_batch, x_recon, mask)
                     if isinstance(correl, torch.Tensor):
                         correl = correl.cpu().tolist()
                     for i, corr_values in enumerate(zip(*correl)):
                         correlations_[i].extend(corr_values)
 
                 # Compute errors
-                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(x_sub_batch, x_recon)
+                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(x_sub_batch, x_recon, mask)
                 if isinstance(errors, torch.Tensor):
                     errors = errors.cpu().tolist()
                 for i, error_values in enumerate(zip(*errors)):
                     rel_errors[i].extend(error_values)
 
                 # Compute RMSE
-                rmse.extend(get_RMSE(x_sub_batch,x_recon).tolist())
+                rmse.extend(get_RMSE(x_sub_batch,x_recon, mask).tolist())
                 
                 #Track best reconstruction
                 if minimum < minimum_error:
@@ -546,16 +549,21 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     plt.show()
 
    
-def get_RMSE(data, reco):
+def get_RMSE(data, reco, mask):
+    if mask is None:
+        diff = (data - reco)
+    else:
+        diff = mask * (data - reco)
+
     d = len(data.shape)
     if d < 4:
-        return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1, 2)))
+        return torch.sqrt(torch.mean((diff) ** 2, dim=(1, 2)))
     elif d==4:
-        return torch.sqrt(torch.mean((data - reco) ** 2, dim=(1,2,3)))
+        return torch.sqrt(torch.mean((diff) ** 2, dim=(1,2,3)))
     else:
         raise ValueError(f"Tensor shape must be < 4, reco.shape = {reco.shape}")
         
-def correlations(data, reco, eps = 1e-8):
+def correlations(data, reco, mask, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
 
@@ -575,6 +583,10 @@ def correlations(data, reco, eps = 1e-8):
     input_diff = data - data.mean(dim=-1, keepdim=True)
     reco_diff = reco - reco.mean(dim=-1, keepdim=True)
 
+    if mask is not None:
+        input_diff = mask * input_diff
+        reco_diff = mask * reco_diff
+
     # Compute numerator and denominator along time axis
     numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
 
@@ -584,7 +596,7 @@ def correlations(data, reco, eps = 1e-8):
     
     return corr
 
-def time_averaged_absolute_errors(data, reco):
+def time_averaged_absolute_errors(data, reco, mask):
     """Compute time-averaged absolute error for each feature 
     in data-reco pairs
 
@@ -609,8 +621,10 @@ def time_averaged_absolute_errors(data, reco):
     int
         index of the minimum in [batch]
     """
-
-    abs_error = torch.abs(data - reco)  # [batch, features, time]
+    if mask is None:
+        abs_error = torch.abs(data - reco)  # [batch, features, time]
+    else:
+        abs_error = mask * torch.abs(data - reco) 
 
     # Mean over time dimension
     if data.dim() < 4:

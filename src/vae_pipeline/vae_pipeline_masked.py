@@ -132,7 +132,7 @@ def train_vae_model(
             for start in range(0, total_tensors, sub_batch_size):
                 end = min(start + sub_batch_size, total_tensors)
                 
-                loss, recon_loss, kl_loss, sub_tensors = training_block(
+                loss, recon_loss, kl_loss, x_sub_batch, _, _, _ = training_block(
                         start, 
                         end, 
                         x, 
@@ -143,7 +143,7 @@ def train_vae_model(
                     
                 if loss is None:
                     continue
-
+                
                 if (not torch.isfinite(loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
                     print(
                         f"[batch {batch_idx} {start}:{end}] non-finite loss components "
@@ -152,6 +152,7 @@ def train_vae_model(
                     continue
             
                 # Update gradients (gradients are summed at each iteration)
+                sub_tensors = x_sub_batch.size(0)
                 effective_loss = loss * (sub_tensors / float(total_tensors))
 
                 if use_amp:
@@ -226,7 +227,7 @@ def train_vae_model(
                 for start in range(0, total_tensors, sub_batch_size):
                     end = min(start + sub_batch_size, total_tensors)
                 
-                    loss, recon_loss, kl_loss, sub_tensors = training_block(
+                    loss, recon_loss, kl_loss, x_sub_batch, _, _, _ = training_block(
                         start, 
                         end, 
                         x, 
@@ -238,6 +239,7 @@ def train_vae_model(
                     if loss is None:
                         continue
                     
+                    sub_tensors = x_sub_batch.size(0)
                     val_losses += loss.item() * sub_tensors 
                     val_recon_losses += recon_loss.item() * sub_tensors 
                     val_kl_losses += kl_loss.item() * sub_tensors 

@@ -3,14 +3,17 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path path_to_json_benchmark_file --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+python src/benchmark/benchmark_pipeline.py 
+--config_benchmark_file_path path_to_json_benchmark_file 
+--config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 
 
 DATA INGESTION:
 
 This pipeline enforces a strict one‑to‑one correspondence between 
 configured signals and their associated Variational Autoencoder (VAE) models at ingestion time. 
-The configuration defines three categories of signals: inputs, actuators, and outputs, each of which may require compression via a dedicated VAE.
+The configuration defines three categories of signals: inputs, actuators, and outputs, 
+each of which may require compression via a dedicated VAE.
 
 Input signals:
     All input signals must have corresponding input VAEs.
@@ -75,7 +78,7 @@ def process_data(
         data by calling the model encoder. 
 
     - If model is None
-        For batched_data without a paired model, data are reshaped to ndim = 2.
+        For batched_data without a paired model data are reshaped to ndim = 2.
 
     Assumes:
     1-  Batch_data and models are correctly alligned. 
@@ -85,7 +88,7 @@ def process_data(
 
     Parameters
     ----------
-    models :  list[beta_VAE]
+    models :  list[beta_VAE] or None
         List of pre-trained beta_VAE models or None entries.
     batched_data : list[torch.Tensor]
         List of batched tensors in the real space, each tensor has at least 2 dimensions.
@@ -119,9 +122,8 @@ def process_data(
     for model, batch in zip(models, batched_data):
         
         # Check nr. of dimensions
-        if batch.ndim != 2:
-            raise ValueError("Each batch must have at least 2 dimensions [B, ...]")
-
+        if batch.ndim < 2:
+            raise ValueError("Each batch must have at least 3 dimensions [B, C, L]")
 
         # Check data for encoding
         if model is not None:
@@ -197,11 +199,10 @@ def process_batch(
         raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
 
     # When the signals are absent from the shot the MAST_tools sets them to NaN
-    # We change them to sentinel_value as for the rest of the analysis.
     for i, inp in enumerate(input_):
-        input_[i] = torch.nan_to_num(input_[i], nan=0, posinf=sentinel, neginf=sentinel)
+        input_[i] = torch.nan_to_num(input_[i], nan=0, posinf=0, neginf=0)
     for j, tar in enumerate(target_):
-        target_[j] = torch.nan_to_num(target_[j], nan=0, posinf=sentinel, neginf=sentinel)
+        target_[j] = torch.nan_to_num(target_[j], nan=0, posinf=0, neginf=0)
 
     # Collect VAEs
     input_vae = list(vae_dictionary["input"].values()) + \
@@ -209,18 +210,18 @@ def process_batch(
     target_vae = list(vae_dictionary['output'].values())
 
     # Inputs are always encoded, hence encode_masks is used, see process_data method.
-    input_data_list = process_data(input_vae, input_, sentinel) 
+    input_data_list = process_data(input_vae, input_) 
 
     # Targets can be either encoded or left in the real space in either cases we use the masks return 
     # value of process_data since this offers a mask per entry of each tensor.
-    target_data_list = process_data(target_vae, target_, sentinel)
+    target_data_list = process_data(target_vae, target_)
 
     input_data = torch.cat(input_data_list, dim=1)
     target_data = torch.cat(target_data_list, dim=1)
 
     return input_data, target_data
     
-def masked_loss(reco, target, eps = 1e-8):
+def loss_function(reco, target, eps = 1e-8):
     """
     Compute a mean squared error loss using an explicit validity mask.
 
@@ -244,11 +245,11 @@ def masked_loss(reco, target, eps = 1e-8):
     # Reduce over all non-batch dimensions
     dims = tuple(range(1, target.ndim))
 
-    squared_diff = (target - reco)**2 # [B]
-    sqr_sum_per_sample = squared_diff.mean(data)(dim=dims) # [B]
+    squared_diff = (target - reco)**2 # [B,L]
+    loss_per_sample = squared_diff.mean(dim=dims) # [B]
 
     # Compute weighted mean loss per batch only on valid samples
-    loss = loss_per_sample[has_valid].mean()
+    loss = loss_per_sample.mean()
 
     return loss
     
@@ -312,7 +313,7 @@ def train_model(
                     
                     reconstruction = model(data)
 
-                    loss = masked_loss(reconstruction, target)
+                    loss = loss_function(reconstruction, target)
                     
                     if (not torch.isfinite(loss)):
                         if verbose:
@@ -325,7 +326,7 @@ def train_model(
                     scaler.scale(loss).backward()
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target)
+                loss = loss_function(reconstruction, target)
                 if (not torch.isfinite(loss)):
                     if verbose:
                         print(
@@ -385,10 +386,10 @@ def train_model(
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model(data)
-                        loss = masked_loss(reconstruction, target, valid_target, weights)
+                        loss = loss_function(reconstruction, target, valid_target, weights)
                 else:
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, valid_target, weights)
+                    loss = loss_function(reconstruction, target, valid_target, weights)
                 
                 if (not torch.isfinite(loss)):
                     if verbose:
@@ -510,7 +511,7 @@ def main():
         var: ComposeTransforms(
             [   
                 StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                ReplaceNaN(sentinel_value)
+                ImputerTransform()
             ]
         )
         for var in [f"{source}-{signal}" for source, signal in source_signal_list]

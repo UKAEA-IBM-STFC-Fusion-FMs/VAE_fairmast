@@ -47,4 +47,7 @@ def training_block(start, end, x, model, use_amp, beta, clamp_logvar):
         print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
         return None, None, None, None
 
-    return loss, recon_loss, kl_loss, x_sub_batch.size(0)
+    return  loss, recon_loss, kl_loss, \
+            x_sub_batch, x_recon[:,:x_sub_batch.shape[1]], \
+            mu, logvar,\
+            mask
