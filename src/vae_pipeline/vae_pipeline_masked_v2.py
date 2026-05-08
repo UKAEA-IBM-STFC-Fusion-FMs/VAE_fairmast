@@ -104,7 +104,7 @@ def train_vae_model(
         train_counts =  0
         
         # Timing 
-        t_0_dataloader = time.time()
+        # t_0_dataloader = time.time()
         
         for batch_idx, batch in enumerate(train_dataloader):
             if verbose and batch_idx%100 == 0:
@@ -457,6 +457,7 @@ def main():
         dataset=base_val_dataset,
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
+        custom_transform=model_specific_transform,
         test_mode=True,
         shuffle_windows = False,
         verbose=False
