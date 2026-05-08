@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import random
 import numpy as np
+from tokamark.tools.utils import get_config_from_yaml
+
 
 # Compute project root relative to this file
 REPO_ROOT = os.path.abspath(os.path.join(
@@ -17,10 +19,8 @@ def initialize_datasets(
         sources_and_signals, 
         shots, 
         signal_transform_map, 
-        shot_transforms, 
         local_flag=False,
-        cache_data=True,
-        return_incomplete_shots = False,
+        cache_data=False,
         store_mast_settings={}
     ):
     
@@ -34,8 +34,6 @@ def initialize_datasets(
                 shots_list=shots[data_set_type],
                 source_signal_list=sources_and_signals,
                 signal_level_transform_map=signal_transform_map,
-                shot_level_transform=shot_transforms,
-                return_incomplete_shots = return_incomplete_shots,
                 remove_outliers = True,
                 store_manager_settings = store_mast_settings
             )
@@ -195,4 +193,12 @@ class ComposeTransforms(object):
             sample = transform(sample)
         return sample
 
-
+#======================================================================================================================
+def load_task_config(yaml_file_path: str):
+    """Load YAML configuration."""
+    if not os.path.exists(yaml_file_path):
+        raise FileNotFoundError(f"YAML configuration file not found: {yaml_file_path}")
+    try:
+        return get_config_from_yaml(yaml_file_path)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load YAML config from '{yaml_file_path}': {e}") from e

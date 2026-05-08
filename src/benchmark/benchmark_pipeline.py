@@ -61,8 +61,8 @@ if REPO_ROOT not in sys.path:
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
-from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
-from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
+from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets, load_task_config)
+from src.benchmark.utils import load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.utils.layer_factory import SequentialBuilder
@@ -441,9 +441,11 @@ def train_model(
                                 f"[Training batch {batch_idx} non-finite loss components "
                                 f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
                             )
+                        scaler.unscale_(optimizer)
                         continue 
 
-                    scaler.scale(loss).backward()
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
             else:
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, valid_target, weights)
@@ -455,9 +457,6 @@ def train_model(
                         )
                     continue  
                 loss.backward()
-            
-            if use_amp:
-                scaler.unscale_(optimizer)
                 
             total_norm = None
             if grad_clip and grad_clip > 0:
@@ -646,10 +645,8 @@ def main():
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
         signal_transform_map=signal_transform_map,
-        shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = False,
         store_mast_settings=store_mast_settings
     )
 

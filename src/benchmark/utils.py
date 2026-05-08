@@ -13,21 +13,9 @@ REPO_ROOT = os.path.abspath(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
     
-from tokamark.tools.utils import get_config_from_yaml
 from src.benchmark.configs.benchmark_setup import get_benchmark_settings
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
-
-
-def load_task_config(yaml_file_path: str):
-    """Load YAML configuration."""
-    if not os.path.exists(yaml_file_path):
-        raise FileNotFoundError(f"YAML configuration file not found: {yaml_file_path}")
-    try:
-        return get_config_from_yaml(yaml_file_path)
-    except Exception as e:
-        raise RuntimeError(f"Failed to load YAML config from '{yaml_file_path}': {e}") from e
-
 
 def load_benchmark_settings(config_file_path: str):
     """Load JSON settings."""
