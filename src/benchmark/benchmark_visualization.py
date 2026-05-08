@@ -24,15 +24,20 @@ from MAST_tools.MAST_dataset import MastDataset
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
                                           
+from src.benchmark.utils import (load_task_config, 
+                                load_benchmark_settings, 
+                                parse_args, 
+                                load_vae_model, 
+                                create_vae_dictionary,
+                                process_batch, 
+                                masked_loss)
+from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
+
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.benchmark.benchmark_pipeline import process_batch, masked_loss
 
 from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
-from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
-from src.benchmark.configs.benchmark_setup import SettingsBenchmark
-from src.vae_pipeline.models.vae_model import beta_VAE
 from src.utils.layer_factory import SequentialBuilder
 from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 

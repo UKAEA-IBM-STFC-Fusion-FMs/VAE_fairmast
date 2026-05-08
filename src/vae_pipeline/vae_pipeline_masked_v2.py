@@ -107,9 +107,9 @@ def train_vae_model(
         t_0_dataloader = time.time()
         
         for batch_idx, batch in enumerate(train_dataloader):
-            if verbose:
+            if verbose and batch_idx%100 == 0:
                 print(f"Batch idx: {batch_idx}")
-                print(f"Elapsed time DataLoader {time.time()-t_0_dataloader}")
+                # print(f"Elapsed time DataLoader {time.time()-t_0_dataloader}")
 
             # Prepare tensors
             x = batch["x"][0]
@@ -120,33 +120,32 @@ def train_vae_model(
                 raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
             
             # Timing 
-            t_0_model_train = time.time()
-            device_process_time = 0
+            # t_0_model_train = time.time()
+            # device_process_time = 0
             
             # Initialiaze gradient
             optimizer.zero_grad(set_to_none=True)
-           
-            breakpoint() 
-            loss, recon_loss, kl_loss, x_sub_batch, _, _, _, _ = training_block(
+
+            loss, recon_loss, kl_loss, _, _, _, _ = training_block(
                     input, 
                     model,
                     use_amp, 
                     beta,
                     clamp_logvar)
-                
+            
+            if loss is None:
+                if verbose:
+                    print("loss is None skipping this batch")
+                continue
             
             if  ((not torch.isfinite(loss).all()) or
                 (not torch.isfinite(recon_loss).all()) or 
-                (not torch.isfinite(kl_loss).all()) or 
-                loss is None):
+                (not torch.isfinite(kl_loss).all())):
 
                 print(
-                    f"[batch {batch_idx} {start}:{end}] non-finite loss components or loss is None {loss is None}"
+                    f"[batch {batch_idx} non-finite loss components or loss is None {loss is None}"
                     f"(loss finite={torch.isfinite(loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
                 )
-
-                if use_amp:
-                    scaler.unscale_(optimizer)
                 continue
             
             if use_amp:
@@ -174,8 +173,8 @@ def train_vae_model(
             else:
                 optimizer.step()
                 
-            device_process_time += (time.time()-t_0_model_train)
-            t_0_model_train = time.time()
+            # device_process_time += (time.time()-t_0_model_train)
+            # t_0_model_train = time.time()
         
             # Keep track of losses across epochs
             train_losses += loss.item()
@@ -183,9 +182,9 @@ def train_vae_model(
             train_kl_losses += kl_loss.item()
             train_counts += 1
     
-            if verbose:
-                print(f"Batch processing time {device_process_time:.2f}")      
-            t_0_dataloader = time.time()
+            # if verbose:
+            #     print(f"Batch processing time {device_process_time:.2f}")      
+            # t_0_dataloader = time.time()
     
     
         # Validation phase
@@ -199,7 +198,7 @@ def train_vae_model(
 
         with torch.no_grad():
             for batch_idx, batch in enumerate(val_dataloader):
-                if verbose:
+                if verbose and batch_idx%100==0:
                     print(f"Batch idx: {batch_idx}")
 
                 x = batch["x"][0]
@@ -218,7 +217,16 @@ def train_vae_model(
                 
                 if loss is None:
                     continue
-
+                
+                if  ((not torch.isfinite(loss).all()) or
+                (not torch.isfinite(recon_loss).all()) or 
+                (not torch.isfinite(kl_loss).all())):
+                    print(
+                        f"[batch {batch_idx} non-finite loss components or loss is None {loss is None}"
+                        f"(loss finite={torch.isfinite(loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
+                    )
+                    continue
+                
                 val_losses += loss.item() 
                 val_recon_losses += recon_loss.item()
                 val_kl_losses += kl_loss.item()
@@ -488,13 +496,13 @@ def main():
             eta_min = 1e-4
             )
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "src/vae_pipeline/data/output/conv1d_vae_config_flux_loop_flux_new_v1/best_vae_flux_loop_flux.pt"
-    # print(f"RESUMING TRAINING from {model_path}")
-    # checkpoint = torch.load(model_path, map_location='cuda')
-    # vae_model.load_state_dict(checkpoint['model_state_dict'])
-    # vae_model.to('cuda')
-    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    model_path = "src/vae_pipeline/data/output/conv1d_vae_config_flux_loop_flux_test_p1/best_vae_flux_loop_flux.pt"
+    print(f"RESUMING TRAINING from {model_path}")
+    checkpoint = torch.load(model_path, map_location='cuda')
+    vae_model.load_state_dict(checkpoint['model_state_dict'])
+    vae_model.to('cuda')
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
 
     # Save model architecture
