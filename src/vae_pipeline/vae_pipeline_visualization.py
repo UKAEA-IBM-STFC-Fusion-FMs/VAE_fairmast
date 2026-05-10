@@ -22,24 +22,20 @@ if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 
 from MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
+from tokamark.tasks import get_task_metadata
+from tokamark.data import initialize_TokaMark_dataset
 
-from src.common_transforms.general_transforms import StdScalingTransform
+from src.common_transforms.general_transforms import StdScalingTransform, ModelSpecificTransform
 from src.utils.utils import (
     read_data_split_csv, ComposeTransforms, 
     initialize_datasets, initialize_dataloaders, 
-    get_train_test_val_shots
-)
-from src.common_transforms.window_segmenter_transform import (
-    WindowSegmenterTransform,
+    get_train_test_val_shots, load_task_config
 )
 
-from src.vae_pipeline.transforms.signal_level_transforms.imputer_transform import ImputerTransform
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.models.vae_model import masked_loss_function
-from src.vae_pipeline.transforms.shot_level_transforms.vae_transform import VAETransform
-from src.vae_pipeline.collate_functions.collate_functions import WindowsCollate
 from src.vae_pipeline.utils.utils import training_block
 
 
@@ -100,8 +96,7 @@ def plot_histograms(
     plt.savefig(file_name, dpi=300, bbox_inches='tight')
     plt.close(fig)
 
- 
-def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
+def test_model(config_task, config_file_name, source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     """Test pre-trained model 
 
     Parameters
@@ -128,17 +123,10 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
 
     source_signal_list = SETTINGS.DATA.data_names
 
-    # Parameters for window segmentation (no x/y split for VAE)
-    PARAMETERS_WINDOWS_SEGMENTER = {
-        "x_keys": [f"{source}-{signal}" for source, signal in SETTINGS.DATA.data_names],
-        "y_keys": [f"{source}-{signal}" for source, signal in SETTINGS.DATA.target_names],  # Same as x for VAE
-        "x_window_sec": SETTINGS.TIME_SEGMENTATION.x_window_sec,  # 100ms windows
-        "y_window_sec": SETTINGS.TIME_SEGMENTATION.y_window_sec,
-        "dt_sec": SETTINGS.TIME_SEGMENTATION.dt_sec, 
-        "stride_sec": SETTINGS.TIME_SEGMENTATION.stride_sec,
-        "stride_unitary": SETTINGS.TIME_SEGMENTATION.stride_unitary,
-        "verbose": False,
-    }
+    dict_task_metadata = get_task_metadata(
+        config_task,
+        verbose=False
+    )
 
     # Create sets of shot IDs for training, validation and testing
     train_shots, test_shots, val_shots = get_train_test_val_shots(
@@ -154,13 +142,12 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         dict_stats_metadata = yaml.safe_load(f)
  
     # Signal-level transform map
-    if "lcfs" in signal_name:
+    if "lcfs" in config_file_name:
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
                     StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                    ReshapeLcfsTransform(),
-                    ImputerTransform()
+                    ReshapeLcfsTransform()
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
@@ -169,45 +156,55 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
-                    ImputerTransform()
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
         }
 
-    # Shot-level transform map
-    shot_transforms = ComposeTransforms(
-        [
-            WindowSegmenterTransform(**PARAMETERS_WINDOWS_SEGMENTER),
-            VAETransform(SETTINGS.TIME_SEGMENTATION.targeted_time_stamps_per_window)
-        ]
-    )
-
     # Prepare datasets
     zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
-    datasets_train_val = initialize_datasets(
+    base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
         shots={"train": train_shots, "val": val_shots, "test": []},
         signal_transform_map=signal_transform_map,
-        shot_transforms=shot_transforms,
         local_flag=SETTINGS.DATA.local,
-        cache_data=SETTINGS.DATA.cache_data,
-        return_incomplete_shots = False,
         store_mast_settings=store_mast_settings
     )
 
-    conv1d_vae_collate_fn =  WindowsCollate()
-    dataloaders_train_val_test = initialize_dataloaders(
-        datasets=datasets_train_val,
-        collate_function=conv1d_vae_collate_fn,
-        batch_size= SETTINGS.TRAINING.dataloader_batch_size,
-        num_workers=num_workers,
-        shuffle=False
+    base_train_dataset = base_datasets['train']
+    base_val_dataset = base_datasets['val']
+
+    # Tokamark datasets
+    model_specific_transform = ModelSpecificTransform()
+
+    train_model_dataset = initialize_TokaMark_dataset(
+        dataset=base_train_dataset,
+        task_metadata=dict_task_metadata,
+        config_metadata=config_task,
+        custom_transform=model_specific_transform,
+        test_mode=True,
+        shuffle_windows = False,
+        verbose=False
+    )
+    val_model_dataset = initialize_TokaMark_dataset(
+        dataset=base_val_dataset,
+        task_metadata=dict_task_metadata,
+        config_metadata=config_task,
+        custom_transform=model_specific_transform,
+        test_mode=True,
+        shuffle_windows = False,
+        verbose=False
     )
 
-    val_dataloader = dataloaders_train_val_test["val"]
+    val_dataloader = DataLoader(
+        dataset = val_model_dataset,
+        batch_size = SETTINGS.TRAINING.dataloader_batch_size,
+        num_workers =SETTINGS.TRAINING.num_workers,
+        persistent_workers = False
+    )
+
     
     # Create conv1d-VAE models
     model = beta_VAE(SETTINGS)
@@ -246,85 +243,82 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     minimum_error = float("inf")
     clamp_logvar = (-50,50)
 
-    sub_batch_size = SETTINGS.TRAINING.train_batch_size  
     mask = None          
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
+            if batch_idx%100==0:
+                print(f"Batch idx: {batch_idx}")
+
+            x = batch["x"][0]
             
-            x = batch["x"]
+            try:
+                p = next(model.parameters())
+                input = x.to(dtype = p.dtype, device = p.device) # real space data
+            except Exception as e:
+                raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
             
-            if x.numel() == 0:
-                continue  # skip empty batch
+            loss, recon_loss, kl_loss, x_recon, mu, logvar, mask = training_block(
+                input, 
+                model,
+                use_amp, 
+                beta,
+                clamp_logvar)
+            
+            if loss is None:
+                continue
+
         
             
-            print(f"Batch idx: {batch_idx}")
-
-            x = x.to(device)
-            total_tensors = x.size(0)
-            
-            for start in range(0, total_tensors, sub_batch_size):
-                end = min(start + sub_batch_size, total_tensors)
-            
-                total_loss, recon_loss, kl_loss, x_sub_batch, x_recon, mu, logvar, mask = training_block(
-                        start, 
-                        end, 
-                        x,
-                        model,
-                        use_amp, 
-                        beta,
-                        clamp_logvar)
-                    
-                if total_loss is None:
-                    continue
-
-                if (not torch.isfinite(total_loss).all()) or (not torch.isfinite(recon_loss).all()) or (not torch.isfinite(kl_loss).all()):
+            if  ((not torch.isfinite(loss).all()) or
+                (not torch.isfinite(recon_loss).all()) or 
+                (not torch.isfinite(kl_loss).all())):
                     print(
-                        f"[batch {batch_idx} {start}:{end}] non-finite loss components "
-                        f"(loss finite={torch.isfinite(total_loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
+                        f"[batch {batch_idx} non-finite loss components or loss is None {loss is None}"
+                        f"(loss finite={torch.isfinite(loss).all()}, recon finite={torch.isfinite(recon_loss).all()}, kl finite={torch.isfinite(kl_loss).all()}); skipping sub-batch."
                     )
                     continue
+            
+            loss_vs_batch.append(loss.item())
 
-                loss_vs_batch.append(total_loss.item())
+            if loss.item() < best_loss:
+                best_loss = loss.item()
 
-                if total_loss.item() < best_loss:
-                    best_loss = total_loss.item()
+            if len(input.shape)<4:
+                num_channels = input.shape[1]
+            elif len(input.shape) == 4:
+                num_channels = input.shape[-2]
+            else:
+                raise ValueError(f"Data tensor shape is larger than 4 Dimension ")
 
-                if len(x_sub_batch.shape)<4:
-                    num_channels = x_sub_batch.shape[1]
-                elif len(x_sub_batch.shape) == 4:
-                    num_channels = x_sub_batch.shape[-2]
-                else:
-                    raise ValueError(f"Data tensor shape is larger than 4 Dimension ")
+            # Calculate correlations for time series or profiles
+            if not correlations_:
+                correlations_ = [[] for _ in range(num_channels)]
+            if not rel_errors:
+                rel_errors = [[] for _ in range(num_channels)]
 
-                # Calculate correlations for time series or profiles
-                if not correlations_:
-                    correlations_ = [[] for _ in range(num_channels)]
-                if not rel_errors:
-                    rel_errors = [[] for _ in range(num_channels)]
+            # Compute correlations
+            if len(input.shape)<4:
+                correl = correlations(input, x_recon, mask)
+                if isinstance(correl, torch.Tensor):
+                    correl = correl.cpu().tolist()
+                for i, corr_values in enumerate(zip(*correl)):
+                    correlations_[i].extend(corr_values)
 
-                # Compute correlations
-                if len(x_sub_batch.shape)<4:
-                    correl = correlations(x_sub_batch, x_recon, mask)
-                    if isinstance(correl, torch.Tensor):
-                        correl = correl.cpu().tolist()
-                    for i, corr_values in enumerate(zip(*correl)):
-                        correlations_[i].extend(corr_values)
-
-                # Compute errors
-                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(x_sub_batch, x_recon, mask)
-                if isinstance(errors, torch.Tensor):
-                    errors = errors.cpu().tolist()
-                for i, error_values in enumerate(zip(*errors)):
-                    rel_errors[i].extend(error_values)
+            # Compute errors
+            errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input, x_recon, mask)
+            if isinstance(errors, torch.Tensor):
+                errors = errors.cpu().tolist()
+            for i, error_values in enumerate(zip(*errors)):
+                rel_errors[i].extend(error_values)
 
                 # Compute RMSE
-                rmse.extend(get_RMSE(x_sub_batch,x_recon, mask).tolist())
+                rmse.extend(get_RMSE(input,x_recon, mask).tolist())
                 
                 #Track best reconstruction
                 if minimum < minimum_error:
                     minimum_error = minimum
-                    if 0 <= min_index < x_sub_batch.shape[0]:
-                        x_best_input = x_sub_batch[min_index].cpu()
+                    if 0 <= min_index < input.shape[0]:
+                        x_best_input = input[min_index].cpu()
                         x_best_recon = x_recon[min_index].cpu()
                     else:
                         print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
@@ -332,13 +326,13 @@ def test_model(source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
                 # Track worst reconstruction
                 if maximum > max_error:
                     max_error = maximum
-                    if 0<= max_index < x_sub_batch.shape[0]:
-                        x_worst_input = x_sub_batch[max_index].cpu()
+                    if 0<= max_index < input.shape[0]:
+                        x_worst_input = input[max_index].cpu()
                         x_worst_recon = x_recon[max_index].cpu()
                     
             # Track first sample in each batch
             if len(x_input_N) <= N:
-                x_input_N.append(x_sub_batch[0])
+                x_input_N.append(x[0])
                 x_recon_N.append(x_recon[0])
                         
                         
@@ -587,6 +581,7 @@ def correlations(data, reco, mask, eps = 1e-8):
         input_diff = mask * input_diff
         reco_diff = mask * reco_diff
 
+
     # Compute numerator and denominator along time axis
     numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
 
@@ -626,6 +621,7 @@ def time_averaged_absolute_errors(data, reco, mask):
     else:
         abs_error = mask * torch.abs(data - reco) 
 
+
     # Mean over time dimension
     if data.dim() < 4:
         time_averaged_errors = abs_error.mean(dim=-1)  # [batch, features]
@@ -651,9 +647,27 @@ if __name__ == "__main__":
         type=str,
         help="Path to configuration file for the pipeline.")
     
+    parser.add_argument(
+        "--config_task_file_path",
+        default="",
+        type=str,
+        help="Path to configuration YAML task file."
+    )
+    
+
     args = parser.parse_args()
     
+     # Load task config
+    config_task_file_path: str = args.config_task_file_path
+    print(f"config_task_file_path = {config_task_file_path}")
+    
+    try:
+        config_task = load_task_config(config_task_file_path)
+    except Exception as e:
+        print(f"[ERROR] {e}")
+
     config_file_path = args.config_file_path
+    config_file_name = os.path.basename(config_file_path)
     
     output_dir =  os.path.dirname(config_file_path) 
     
@@ -661,4 +675,4 @@ if __name__ == "__main__":
     
     source, signal_name = SETTINGS.DATA.data_names[0]
 
-    test_model(source, signal_name, output_dir, SETTINGS, use_amp=True)
+    test_model(config_task, config_file_name, source, signal_name, output_dir, SETTINGS, use_amp=True)

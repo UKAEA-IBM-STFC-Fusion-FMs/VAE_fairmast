@@ -497,7 +497,7 @@ def main():
             eta_min = 1e-4
             )
     ########### Use this block to continue training from a specific checkpoint ####
-    model_path = "src/vae_pipeline/data/output/conv1d_vae_config_flux_loop_flux_test_p1/best_vae_flux_loop_flux.pt"
+    model_path = "src/vae_pipeline/data/New_VAEs/conv1d_vae_config_flux_loop_flux_p2/best_vae_flux_loop_flux.pt"
     print(f"RESUMING TRAINING from {model_path}")
     checkpoint = torch.load(model_path, map_location='cuda')
     vae_model.load_state_dict(checkpoint['model_state_dict'])
