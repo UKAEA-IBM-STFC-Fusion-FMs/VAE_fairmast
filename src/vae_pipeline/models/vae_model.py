@@ -38,11 +38,45 @@ class beta_VAE(nn.Module):
         self.fc_mu = nn.Linear(self.size_before_vae, self.latent_dim)
         self.fc_logvar = nn.Linear(self.size_before_vae, self.latent_dim)
 
+    def _prepare(x: torch.Tensor):
+        """
+        Prepare input signals for convolutional encoders.
+
+        1. Constructing a binary validity mask from finite entries.
+        2. Imputing NaNs with zeros.
+        3. Concatenating the mask to the signal along the channel dimension.
+
+        Supported input layouts
+        -----------------------
+        - 1D signals (Conv1d):
+            Input shape:  [B, C, L]
+            Output shape: [B, 2C, L]
+
+        - 2D signals (Conv2d, channels-last input):
+            Input shape:  [B, H, W, C]
+            After permute: [B, C, H, W]
+            Output shape: [B, 2C, H, W]
+        """
+
+        # For a 3D signals (i.e., x dimension == 4) we use a conv2d encoder.
+        # we must permute the indices of our tensor to agree with the PyTorch conv2d convention.
+        if x.ndim == 4:
+            x = x.permute(0, 3, 1, 2).contiguous() 
+        
+        mask = torch.isfinite(x)
+        x0 = torch.nan_to_num(x, nan=0.0)
+
+        mask = mask.to(dtype=x0.dtype) 
+        x_cat = torch.cat([x0, mask], dim=1)
+        
+    return x0, mask, x_cat
+        
     def encode(self, x):
-        encoded = self.encoder(x)
+        x0, mask, x_cat = self._prepare(x)
+        encoded = self.encoder(x_cat)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
-        return mu, logvar
+        return mu, logvar, mask
 
     def reparameterize(self, mu, logvar, sampling: bool = True):
         if not sampling:
@@ -56,10 +90,10 @@ class beta_VAE(nn.Module):
         return self.decoder(z)
 
     def forward(self, x, sampling: bool = True):
-        mu, logvar = self.encode(x)
+        mu, logvar, mask = self.encode(x)
         z = self.reparameterize(mu, logvar, sampling=sampling)
         x_recon = self.decode(z)
-        return x_recon, mu, logvar
+        return x_recon, mu, logvar, mask
 
 
 def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20), eps = 1e-8):

@@ -3,7 +3,7 @@ For breaf summary check vae_pipeline.py introduction.
 
 New: in this version of the pipeline a masked loss was introduced.
 
-python src/vae_pipeline/vae_pipeline_masked_v2.py --config_file_path src/vae_pipeline/configs/config_flux_loop_flux_test.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_flux_loop_flux_test.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 '''
 
 import argparse
@@ -47,7 +47,6 @@ from src.common_transforms.window_segmenter_transform import (
 
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
-from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
 from src.vae_pipeline.utils.utils import training_block
 from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform
 
@@ -494,16 +493,16 @@ def main():
             optimizer,
             T_0 = SETTINGS.TRAINING.num_epochs,
             T_mult = 1, 
-            eta_min = 1e-4
+            eta_min = 1e-5
             )
     ########### Use this block to continue training from a specific checkpoint ####
-    model_path = "src/vae_pipeline/data/New_VAEs/conv1d_vae_config_flux_loop_flux_p2/best_vae_flux_loop_flux.pt"
-    print(f"RESUMING TRAINING from {model_path}")
-    checkpoint = torch.load(model_path, map_location='cuda')
-    vae_model.load_state_dict(checkpoint['model_state_dict'])
-    vae_model.to('cuda')
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    # model_path = "src/vae_pipeline/data/New_VAEs/conv1d_vae_config_flux_loop_flux_p2/best_vae_flux_loop_flux.pt"
+    # print(f"RESUMING TRAINING from {model_path}")
+    # checkpoint = torch.load(model_path, map_location='cuda')
+    # vae_model.load_state_dict(checkpoint['model_state_dict'])
+    # vae_model.to('cuda')
+    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     #######################################################################
 
     # Save model architecture

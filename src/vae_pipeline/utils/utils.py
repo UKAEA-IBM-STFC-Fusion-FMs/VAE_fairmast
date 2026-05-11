@@ -14,29 +14,53 @@ if REPO_ROOT not in sys.path:
 import torch
 from src.vae_pipeline.models.vae_model import masked_loss_function
 
-def training_block(x, model, use_amp, beta, clamp_logvar):
+def training_block(x_cat, model, use_amp, beta, clamp_logvar):
+    
+    """
+    Run a single forward + loss-computation step for VAE training.
 
-    # For a 3D signals (i.e., x dimension == 4) we use a conv2d encoder.
-    # we must permute the indeces of our tensor to agree with the PyTorch conv2d convention.
-    if x.ndim == 4:
-        x = x.permute(0, 3, 1, 2).contiguous() 
+    Automatic Mixed Precision (AMP) is used if enabled.
 
-    # Mask non-finite entries and NaN
-    mask = torch.isfinite(x) # booleans
-    mask = mask.float() # floats
+    Parameters
+    ----------
+    x_cat : torch.Tensor
+        Input tensor containing signal and concatenated mask.
+    model : torch.nn.Module
+        VAE model.
+    use_amp : bool
+        Whether to enable AMP autocasting during the forward pass.
+    beta : float
+        Weight of the KL divergence term in the VAE loss.
+    clamp_logvar : bool
+        Whether to clamp the log-variance for numerical stability.
 
-    # Impute NaN with zeros, i.e., the mean of signals after standardization
-    x = torch.nan_to_num(x, nan=0.0)
-    x_mask_cat = torch.cat([x,mask], dim=1)
+    Returns
+    -------
+    loss : torch.Tensor or None
+        Total VAE loss (reconstruction + beta * KL).
+    recon_loss : torch.Tensor or None
+        Masked reconstruction loss.
+    kl_loss : torch.Tensor or None
+        KL divergence term.
+    x_recon : torch.Tensor or None
+        Reconstructed signal.
+    mu : torch.Tensor or None
+        Latent mean.
+    logvar : torch.Tensor or None
+        Latent log-variance.
+    mask : torch.Tensor or None
+        Validity mask used for the masked loss.
+    """
 
     if use_amp:
         with torch.amp.autocast('cuda', enabled=use_amp):
             try:
-                x_recon, mu, logvar = model(x_mask_cat)
+                breakpoint()
+                x_recon, mu, logvar, mask = model(x_cat)
                 loss, recon_loss, kl_loss = masked_loss_function(
                     beta,
-                    x_recon[:,:x.shape[1]],
-                    x,
+                    x_recon,
+                    x_cat,
                     mu,
                     logvar,
                     mask,
@@ -48,11 +72,11 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
                 return None, None, None, None, None, None, None
     else:
         try:
-            x_recon, mu, logvar = model(x_mask_cat)
+            x_recon, mu, logvar, mask = model(x_cat)
             loss, recon_loss, kl_loss = masked_loss_function(
                 beta,
-                x_recon[:,:x.shape[1]],
-                x,
+                x_recon,
+                x_cat,
                 mu,
                 logvar,
                 mask,
@@ -63,4 +87,4 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
             print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
             return None, None, None, None, None, None, None
 
-    return  loss, recon_loss, kl_loss, x_recon[:,:x.shape[1]], mu, logvar, mask
+    return  loss, recon_loss, kl_loss, x_recon, mu, logvar, mask
