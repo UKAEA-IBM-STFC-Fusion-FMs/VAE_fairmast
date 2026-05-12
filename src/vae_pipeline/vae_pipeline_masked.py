@@ -70,7 +70,12 @@ def train_vae_model(
     # From SETTINGS
     _, signal_name = SETTINGS.DATA.data_names[0]
     beta = SETTINGS.BETA_VAE.beta
-
+    beta_min, beta_max = 1e-5, 10.0
+    target_scale = 0.1 # scale between kl and reco. terms in loss
+    ema_kl = ema_recon = None # Exponential moving average
+    ema_decay = 0.7
+    
+    
     # For tracking
     best_val_loss = float("inf")
     loss_curves = {'train_total': [],'train_recon': [],'train_kl': [],'val_total': [], 'val_recon': [], 'val_kl': []}
@@ -250,14 +255,29 @@ def train_vae_model(
             avg_val_recon = float("inf")
             avg_val_kl = float("inf")
         
-        # Adapt beta after a few epochs from the start
+        # EMA smoothing of beta
+        if ema_kl is None:
+            ema_kl = avg_train_kl
+            ema_recon = avg_train_recon
+        else:
+            ema_kl = ( ema_decay * ema_kl + (1 - ema_decay) * avg_train_kl)
+            ema_recon = (ema_decay * ema_recon + (1 - ema_decay) * avg_train_recon)
+
         if epoch > SETTINGS.TRAINING.patience:
-            w1= 0.7
-            w2= 1-w1
-            if avg_val_kl > 0:
-                beta = w1*beta + w2*(0.1*avg_val_recon/avg_val_kl )
-            else:
-                beta = beta
+            eps = 1e-8
+            current_scale = ema_kl/(ema_recon + eps)          
+            ratio = target_scale/current_scale
+            error = np.log(ratio + eps)
+
+            if abs(error) < 0.05:
+                error = 0.0
+
+            # bounded update step
+            step = np.clip(error, -0.2, 0.2)
+
+            beta *= np.exp(step)
+            beta = np.clip(beta, beta_min, beta_max)
+            
         
         beta_history.append(beta)
         lr_history.append(optimizer.param_groups[0]['lr'])

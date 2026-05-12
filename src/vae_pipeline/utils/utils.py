@@ -55,7 +55,6 @@ def training_block(x_cat, model, use_amp, beta, clamp_logvar):
     if use_amp:
         with torch.amp.autocast('cuda', enabled=use_amp):
             try:
-                breakpoint()
                 x_recon, mu, logvar, mask = model(x_cat)
                 loss, recon_loss, kl_loss = masked_loss_function(
                     beta,

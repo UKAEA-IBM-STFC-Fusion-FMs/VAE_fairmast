@@ -38,7 +38,7 @@ class beta_VAE(nn.Module):
         self.fc_mu = nn.Linear(self.size_before_vae, self.latent_dim)
         self.fc_logvar = nn.Linear(self.size_before_vae, self.latent_dim)
 
-    def _prepare(x: torch.Tensor):
+    def _prepare(self, x: torch.Tensor):
         """
         Prepare input signals for convolutional encoders.
 
@@ -62,14 +62,14 @@ class beta_VAE(nn.Module):
         # we must permute the indices of our tensor to agree with the PyTorch conv2d convention.
         if x.ndim == 4:
             x = x.permute(0, 3, 1, 2).contiguous() 
-        
+
         mask = torch.isfinite(x)
         x0 = torch.nan_to_num(x, nan=0.0)
 
         mask = mask.to(dtype=x0.dtype) 
         x_cat = torch.cat([x0, mask], dim=1)
         
-    return x0, mask, x_cat
+        return x0, mask, x_cat
         
     def encode(self, x):
         x0, mask, x_cat = self._prepare(x)

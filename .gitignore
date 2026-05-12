@@ -184,20 +184,9 @@ output_chronos_test/
 
 
 
-src/vae_pipeline/transforms/signal_level_transforms/fill_profile_with_zeros_imputer_transform.py 
-src/vae_pipeline/transforms/signal_level_transforms/fill_thomson_with_zeros_imputer_transform.py 
-src/vae_pipeline/transforms/signal_level_transforms/fill_with_zeros_imputer_transform.py
-src/vae_pipeline/transforms/signal_level_transforms/forward_fill_imputer_transform.py
-src/vae_pipeline/transforms/signal_level_transforms/pca_transform.py 
-src/vae_pipeline/transforms/signal_level_transforms/pretrained_stdscale_normalize_transform.py
-src/vae_pipeline/transforms/signal_level_transforms/sampling_reference_time_transform.py 
-src/vae_pipeline/transforms/shot_level_transforms/cast_1D_transform.py 
-src/vae_pipeline/transforms/shot_level_transforms/combine_signals_transform.py 
-src/vae_pipeline/transforms/shot_level_transforms/concatenate_signals_transform.py
-src/vae_pipeline/transforms/shot_level_transforms/drop_sample_with_nans.py
-src/vae_pipeline/transforms/shot_level_transforms/truncation_transform.py
+src/vae_pipeline/transforms/signal_level_transforms/*
+src/vae_pipeline/transforms/shot_level_transforms/*
 src/benchmark/data/output/*
-src/vae_pipeline/data/output/*
-src/vae_pipeline/data/VAEs
+src/vae_pipeline/data/*
 src/benchmark/configs/*
 src/vae_pipeline/configs/*
