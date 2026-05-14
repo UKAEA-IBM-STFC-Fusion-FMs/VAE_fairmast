@@ -73,7 +73,10 @@ def plot_histograms(
     # Plot
     for i in range(plots_to_draw):
         ax = axes_list[i]
-        data = properties[i]
+        if plots_to_draw > 1:
+            data = properties[i]
+        else:
+            data = properties
 
         q95 = float(np.quantile(data,0.95))
         
@@ -242,7 +245,8 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     best_loss = float("inf")
     minimum_error = float("inf")
     clamp_logvar = (-50,50)
-
+    ndim = 0
+    
     mask = None          
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
@@ -267,8 +271,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if loss is None:
                 continue
 
-        
-            
             if  ((not torch.isfinite(loss).all()) or
                 (not torch.isfinite(recon_loss).all()) or 
                 (not torch.isfinite(kl_loss).all())):
@@ -283,12 +285,16 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if loss.item() < best_loss:
                 best_loss = loss.item()
 
-            if len(input.shape)<4:
-                num_channels = input.shape[1]
-            elif len(input.shape) == 4:
-                num_channels = input.shape[-2]
+            ndim = input.ndim  # same as len(x.shape)
+
+            if ndim == 2:
+                num_channels = 0
+            elif ndim == 3:
+                num_channels = x.shape[1]
+            elif ndim == 4:
+                num_channels = x.shape[-2]
             else:
-                raise ValueError(f"Data tensor shape is larger than 4 Dimension ")
+                raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
 
             # Calculate correlations for time series or profiles
             if not correlations_:
@@ -301,16 +307,26 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 correl = correlations(input, x_recon, mask)
                 if isinstance(correl, torch.Tensor):
                     correl = correl.cpu().tolist()
-                for i, corr_values in enumerate(zip(*correl)):
-                    correlations_[i].extend(corr_values)
+                if num_channels>0:
+                    for i, corr_values in enumerate(zip(*correl)):
+                        correlations_[i].extend(corr_values)
+                else:
+                    for i, corr_values in enumerate(correl):
+                        
+                        correlations_.append(corr_values)
+                    
 
             # Compute errors
             errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input, x_recon, mask)
             if isinstance(errors, torch.Tensor):
                 errors = errors.cpu().tolist()
-            for i, error_values in enumerate(zip(*errors)):
-                rel_errors[i].extend(error_values)
-
+            if num_channels>0:
+                for i, error_values in enumerate(zip(*errors)):
+                    rel_errors[i].extend(error_values)
+            else:
+                for i, error_values in enumerate(errors):
+                    rel_errors.append(error_values)
+                    
                 # Compute RMSE
                 rmse.extend(get_RMSE(input,x_recon, mask).tolist())
                 
@@ -334,8 +350,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if len(x_input_N) <= N:
                 x_input_N.append(x[0])
                 x_recon_N.append(x_recon[0])
-                        
-                        
+                                        
     try:
         with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
             data = {
@@ -368,7 +383,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         print(f"Error in making flattened_reconstruction.pdf {e}")
     
     try:
-       
         # Prepare data
         x_best_in = x_best_input.squeeze(0)   
         x_best_re = x_best_recon.squeeze(0)
@@ -413,11 +427,15 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     except Exception as e:
         print(f"Error in making image_reconstruction.pdf {e}")
 
-    num_rows= math.floor(len(correlations_)/2)
-    if num_rows >0:
+    if ndim >2:
+        num_rows= math.floor(len(correlations_)/2)
+    else:
+        num_rows = 1
+        
+    if num_rows > 1:
         num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
     else:
-        num_rows = num_cols = 1
+        num_cols = 1
 
     if correlations_[0]: 
         plot_histograms(
@@ -544,19 +562,21 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
 
    
 def get_RMSE(data, reco, mask):
+    d = len(data.shape)
+    r = len(reco.shape)
+    
+    if d!=r or d > 4:
+        raise ValueError(f"Tensor shape must be < 4, reco.shape = {reco.shape}")
+    
     if mask is None:
         diff = (data - reco)
     else:
         diff = mask * (data - reco)
+    
+    dim = tuple(range(1,diff.ndim))
 
-    d = len(data.shape)
-    if d < 4:
-        return torch.sqrt(torch.mean((diff) ** 2, dim=(1, 2)))
-    elif d==4:
-        return torch.sqrt(torch.mean((diff) ** 2, dim=(1,2,3)))
-    else:
-        raise ValueError(f"Tensor shape must be < 4, reco.shape = {reco.shape}")
-        
+    return torch.sqrt(torch.mean((diff) ** 2, dim=dim))
+
 def correlations(data, reco, mask, eps = 1e-8):
     """Compute time correlations for each feature 
     in data-reco pairs
@@ -580,7 +600,6 @@ def correlations(data, reco, mask, eps = 1e-8):
     if mask is not None:
         input_diff = mask * input_diff
         reco_diff = mask * reco_diff
-
 
     # Compute numerator and denominator along time axis
     numerator = torch.sum(input_diff * reco_diff, dim=-1)  # [batch, features]
