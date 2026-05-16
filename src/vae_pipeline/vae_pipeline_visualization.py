@@ -267,10 +267,10 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 use_amp, 
                 beta,
                 clamp_logvar)
-            
+
             if loss is None:
                 continue
-
+            
             if  ((not torch.isfinite(loss).all()) or
                 (not torch.isfinite(recon_loss).all()) or 
                 (not torch.isfinite(kl_loss).all())):
@@ -327,24 +327,24 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 for i, error_values in enumerate(errors):
                     rel_errors.append(error_values)
                     
-                # Compute RMSE
-                rmse.extend(get_RMSE(input,x_recon, mask).tolist())
-                
-                #Track best reconstruction
-                if minimum < minimum_error:
-                    minimum_error = minimum
-                    if 0 <= min_index < input.shape[0]:
-                        x_best_input = input[min_index].cpu()
-                        x_best_recon = x_recon[min_index].cpu()
-                    else:
-                        print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
-                
-                # Track worst reconstruction
-                if maximum > max_error:
-                    max_error = maximum
-                    if 0<= max_index < input.shape[0]:
-                        x_worst_input = input[max_index].cpu()
-                        x_worst_recon = x_recon[max_index].cpu()
+            # Compute RMSE
+            rmse.extend(get_RMSE(input,x_recon, mask).tolist())
+            
+            #Track best reconstruction
+            if minimum < minimum_error:
+                minimum_error = minimum
+                if 0 <= min_index < input.shape[0]:
+                    x_best_input = input[min_index].cpu()
+                    x_best_recon = x_recon[min_index].cpu()
+                else:
+                    print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
+            
+            # Track worst reconstruction
+            if maximum > max_error:
+                max_error = maximum
+                if 0<= max_index < input.shape[0]:
+                    x_worst_input = input[max_index].cpu()
+                    x_worst_recon = x_recon[max_index].cpu()
                     
             # Track first sample in each batch
             if len(x_input_N) <= N:
