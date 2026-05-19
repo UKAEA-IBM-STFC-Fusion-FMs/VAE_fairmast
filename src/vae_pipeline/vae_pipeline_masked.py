@@ -3,7 +3,7 @@ For breaf summary check vae_pipeline.py introduction.
 
 New: in this version of the pipeline a masked loss was introduced.
 
-python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_flux_loop_flux_test.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_equilibrium_lcfs_r.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
 '''
 
 import argparse
@@ -59,7 +59,7 @@ def train_vae_model(
     train_dataloader, 
     val_dataloader, 
     output_dir,
-    use_amp=True, 
+    use_amp=False, 
     grad_clip=1,   
     verbose=False,
     ):
@@ -87,7 +87,9 @@ def train_vae_model(
     clamp_logvar = (-50,50)
     stop_early = False
     model.to(device)
-    scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
+    
+    if use_amp:
+        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
 
     # Main loop over epochs
     for epoch in range(SETTINGS.TRAINING.num_epochs):
@@ -101,7 +103,6 @@ def train_vae_model(
 
         # Set training
         model.train()
-        scaler = torch.amp.GradScaler('cuda', enabled=use_amp)
         
         # Initialize loss variables
         train_losses = train_recon_losses = train_kl_losses = 0.0
