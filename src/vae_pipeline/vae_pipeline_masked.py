@@ -7,13 +7,9 @@ python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeli
 '''
 
 import argparse
-from collections import defaultdict
-import copy
 import json
-import matplotlib.pyplot as plt
 import numpy as np
 import os
-import pickle
 import sys
 import torch
 import torch.multiprocessing as mp
@@ -36,13 +32,8 @@ from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransfo
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
-from src.utils.utils import (
-    read_data_split_csv, ComposeTransforms, 
-    initialize_datasets, initialize_dataloaders, 
-    get_train_test_val_shots, load_task_config
-)
-from src.common_transforms.window_segmenter_transform import (
-    WindowSegmenterTransform,
+from src.utils.utils import (ComposeTransforms, 
+    initialize_datasets, get_train_test_val_shots, load_task_config
 )
 
 from src.vae_pipeline.configs.config_setup import get_settings
