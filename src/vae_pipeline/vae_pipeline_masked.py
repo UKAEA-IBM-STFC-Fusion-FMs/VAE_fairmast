@@ -61,7 +61,7 @@ def train_vae_model(
     output_dir,
     use_amp=False, 
     grad_clip=1,   
-    verbose=False,
+    verbose=True,
     ):
     
     # Make directory
@@ -115,9 +115,16 @@ def train_vae_model(
             if verbose and batch_idx%100 == 0:
                 print(f"Batch idx: {batch_idx}")
                 # print(f"Elapsed time DataLoader {time.time()-t_0_dataloader}")
-
+ 
             # Prepare tensors
             x = batch["x"][0]
+            
+            # Guarantee a minimum number of finite samples 
+            breakpoint()
+            finite_frac = x.isfinite().float().mean(dim=tuple(range(1, x.dim())))
+            if (finite_frac < 0.75).float().mean() >= 0.25: 
+                continue
+   
             try:
                 p = next(model.parameters())
                 input = x.to(dtype = p.dtype, device = p.device) # real space data
@@ -130,7 +137,6 @@ def train_vae_model(
             
             # Initialiaze gradient
             optimizer.zero_grad(set_to_none=True)
-
             loss, recon_loss, kl_loss, _, _, _, _ = training_block(
                     input, 
                     model,

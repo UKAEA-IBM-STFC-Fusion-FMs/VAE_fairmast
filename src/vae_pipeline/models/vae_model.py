@@ -65,7 +65,6 @@ class beta_VAE(nn.Module):
 
         mask = torch.isfinite(x)
         x0 = torch.nan_to_num(x, nan=0.0)
-
         mask = mask.to(dtype=x0.dtype) 
         x_cat = torch.cat([x0, mask], dim=1)
         
