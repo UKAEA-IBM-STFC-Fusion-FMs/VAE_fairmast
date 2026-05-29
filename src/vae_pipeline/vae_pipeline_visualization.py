@@ -2,12 +2,10 @@ import argparse
 import json
 import os
 import sys
-import pickle
 import matplotlib.pyplot as plt
 import math
 import numpy as np
 import torch
-import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 import yaml
 
@@ -20,22 +18,17 @@ REPO_ROOT = os.path.abspath(
 )
 if REPO_ROOT not in sys.path:sys.path.insert(0, REPO_ROOT)
 
-from MAST_tools.MAST_dataset import MastDataset, CachedDataset
 from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
 from src.common_transforms.general_transforms import StdScalingTransform, ModelSpecificTransform
-from src.utils.utils import (
-    read_data_split_csv, ComposeTransforms, 
-    initialize_datasets, initialize_dataloaders, 
-    get_train_test_val_shots, load_task_config
-)
+from src.utils.utils import (ComposeTransforms, 
+    initialize_datasets, get_train_test_val_shots, load_task_config)
 
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.models.vae_model import loss_function_batch_mean as loss_function
-from src.vae_pipeline.models.vae_model import masked_loss_function
 from src.vae_pipeline.utils.utils import training_block
 
 
@@ -47,57 +40,6 @@ else:
     device = torch.device("cpu")
     print(f"--------------- RUNNING ON CPUs ---------------")
     
-
-def plot_histograms(
-    properties,
-    color,
-    x_label,
-    y_label,
-    title_prefix,
-    file_name,
-    num_rows=1,
-    num_cols=1):
-
-    num_features = len(properties)
-    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
-
-    # Normalize axes to a flat list
-    if isinstance(axes, plt.Axes):
-        axes_list = [axes]
-    else:
-        axes_list = axes.ravel().tolist()
-
-    max_plots = len(axes_list)
-    plots_to_draw = min(num_features, max_plots)
-
-    # Plot
-    for i in range(plots_to_draw):
-        ax = axes_list[i]
-        if plots_to_draw > 1:
-            data = properties[i]
-        else:
-            data = properties
-
-        q95 = float(np.quantile(data,0.95))
-        
-        min_data = min(data)
-        max_data = float(np.quantile(data,0.9973))
-        
-        bins = np.linspace(min_data, max_data, 100)
-        ax.hist(data, bins=bins, color=color, alpha=0.7, range=(min_data, max_data))
-        ax.axvline(q95, color='green', linestyle='--', linewidth=1.5, label=f'95% threshold: {q95:.4g}')
-
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.legend([f"Ch. {i+1}: {len(data)} items", f'95% threshold: {q95:.4g}'])
-
-    # Hide unused subplots
-    for j in range(plots_to_draw, max_plots):
-        axes_list[j].axis('off')
-
-    plt.tight_layout()
-    plt.savefig(file_name, dpi=300, bbox_inches='tight')
-    plt.close(fig)
 
 def test_model(config_task, config_file_name, source:str, signal_name:str, output_dir:str, SETTINGS, use_amp):
     """Test pre-trained model 
@@ -121,9 +63,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     else:
         output_directory = os.path.dirname(model_path)
 
-    # HPC settings for CPUs only
-    num_workers = SETTINGS.TRAINING.num_workers
-
     source_signal_list = SETTINGS.DATA.data_names
 
     dict_task_metadata = get_task_metadata(
@@ -132,7 +71,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     )
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, test_shots, val_shots = get_train_test_val_shots(
+    train_shots, _, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
         max_index_for_test = None,
@@ -176,21 +115,11 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         store_mast_settings=store_mast_settings
     )
 
-    base_train_dataset = base_datasets['train']
     base_val_dataset = base_datasets['val']
 
     # Tokamark datasets
     model_specific_transform = ModelSpecificTransform()
 
-    train_model_dataset = initialize_TokaMark_dataset(
-        dataset=base_train_dataset,
-        task_metadata=dict_task_metadata,
-        config_metadata=config_task,
-        custom_transform=model_specific_transform,
-        test_mode=True,
-        shuffle_windows = False,
-        verbose=False
-    )
     val_model_dataset = initialize_TokaMark_dataset(
         dataset=base_val_dataset,
         task_metadata=dict_task_metadata,
@@ -207,7 +136,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         num_workers =SETTINGS.TRAINING.num_workers,
         persistent_workers = False
     )
-
     
     # Create conv1d-VAE models
     model = beta_VAE(SETTINGS)
@@ -232,8 +160,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     correlations_ = []
     rel_errors = []
     rmse = []
-    best_rel_error = None
-    worst_rel_error =None
     x_best_input = None
     x_best_recon = None
     x_worst_input = None
@@ -254,20 +180,28 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 print(f"Batch idx: {batch_idx}")
 
             x = batch["x"][0]
-            
+           
             try:
                 p = next(model.parameters())
                 input = x.to(dtype = p.dtype, device = p.device) # real space data
             except Exception as e:
                 raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
             
-            loss, recon_loss, kl_loss, x_recon, mu, logvar, mask = training_block(
+            loss, recon_loss, kl_loss, x_recon, _, _, mask = training_block(
                 input, 
                 model,
                 use_amp, 
                 beta,
                 clamp_logvar)
 
+            if input.ndim == 4:
+                x_recon = x_recon.permute(0, 2, 3, 1).contiguous() 
+                mask = mask.permute(0, 2, 3, 1).contiguous() 
+            
+            # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
+            if input.shape[-1] == 1 and input.ndim == 3:
+                input = input[..., 0] 
+            
             if loss is None:
                 continue
             
@@ -285,39 +219,55 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if loss.item() < best_loss:
                 best_loss = loss.item()
 
-            ndim = input.ndim  # same as len(x.shape)
+            ndim = input.ndim
 
             if ndim == 2:
                 num_channels = 0
             elif ndim == 3:
-                num_channels = x.shape[1]
+                num_channels = input.shape[1]
             elif ndim == 4:
-                num_channels = x.shape[-2]
+                num_channels = input.shape[-1]
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
 
-            # Calculate correlations for time series or profiles
+            # Initialize correlations and errors lists
             if not correlations_:
                 correlations_ = [[] for _ in range(num_channels)]
             if not rel_errors:
                 rel_errors = [[] for _ in range(num_channels)]
 
             # Compute correlations
-            if len(input.shape)<4:
+            if ndim <4:
                 correl = correlations(input, x_recon, mask)
-                if isinstance(correl, torch.Tensor):
-                    correl = correl.cpu().tolist()
-                if num_channels>0:
-                    for i, corr_values in enumerate(zip(*correl)):
-                        correlations_[i].extend(corr_values)
-                else:
-                    for i, corr_values in enumerate(correl):
-                        
-                        correlations_.append(corr_values)
-                    
-
+            elif ndim ==4:
+                correl = image_correlations(input, x_recon, mask) # shape [B,T]
+            else:
+                raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
+            
+            if isinstance(correl, torch.Tensor):
+                correl = correl.cpu().tolist()
+            if num_channels>0:
+                for i, corr_values in enumerate(zip(*correl)):
+                    correlations_[i].extend(corr_values)
+            else:
+                for i, corr_values in enumerate(correl):
+                    correlations_.append(corr_values)
+            
             # Compute errors
-            errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input, x_recon, mask)
+            minimum = None
+            maximum = None
+            
+            if ndim <4:
+                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input, x_recon, mask)
+            elif ndim ==4:
+                errors, min_b, min_t, max_b, max_t = image_errors(input, x_recon, mask) # shape [B, T]
+                minimum = errors[min_b, min_t].item()
+                min_index = min_b
+                maximum = errors[max_b, max_t].item()
+                max_index = max_b
+            else:
+                raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
+                
             if isinstance(errors, torch.Tensor):
                 errors = errors.cpu().tolist()
             if num_channels>0:
@@ -326,31 +276,41 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             else:
                 for i, error_values in enumerate(errors):
                     rel_errors.append(error_values)
-                    
+                        
             # Compute RMSE
             rmse.extend(get_RMSE(input,x_recon, mask).tolist())
             
             #Track best reconstruction
-            if minimum < minimum_error:
+            if minimum is not None and minimum < minimum_error:
                 minimum_error = minimum
                 if 0 <= min_index < input.shape[0]:
-                    x_best_input = input[min_index].cpu()
-                    x_best_recon = x_recon[min_index].cpu()
+                    if ndim <4:
+                        x_best_input = input[min_index].cpu()
+                        x_best_recon = x_recon[min_index].cpu()
+                    if ndim ==4:
+                        x_best_input = input[min_b, :, :, min_t].cpu()
+                        x_best_recon = x_recon[min_b, :, :, min_t].cpu()
                 else:
                     print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
             
             # Track worst reconstruction
-            if maximum > max_error:
+            if maximum is not None and maximum > max_error:
                 max_error = maximum
                 if 0<= max_index < input.shape[0]:
-                    x_worst_input = input[max_index].cpu()
-                    x_worst_recon = x_recon[max_index].cpu()
+                    if ndim <4:
+                        x_worst_input = input[max_index].cpu()
+                        x_worst_recon = x_recon[max_index].cpu()
+                    if ndim ==4:
+                        x_worst_input = input[max_b, :, :, max_t].cpu()
+                        x_worst_recon = x_recon[max_b, :, :, max_t].cpu()
+                else:
+                    print(f"Warning: max_index {max_index} out of range for batch {batch_idx}")
                     
             # Track first sample in each batch
             if len(x_input_N) <= N:
                 x_input_N.append(x[0])
                 x_recon_N.append(x_recon[0])
-                                        
+                                  
     try:
         with open(os.path.join(output_directory , 'test_loss.json'), 'w') as f:
             data = {
@@ -362,7 +322,8 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             json.dump(data, f, indent=4)
     except Exception as e:
         print(f"Error opening test_loss.json {e}")
-        
+      
+    # Plot best and worst reconstructions as line plots  
     try:  
         fig, axs = plt.subplots(2, figsize=(8, 6))
 
@@ -381,7 +342,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         plt.savefig(output_dir + f"/{this_signal}_flattened_reconstruction.pdf", dpi=300, bbox_inches='tight')
     except Exception as e:
         print(f"Error in making flattened_reconstruction.pdf {e}")
-    
+
     try:
         # Prepare data
         x_best_in = x_best_input.squeeze(0)   
@@ -427,40 +388,42 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     except Exception as e:
         print(f"Error in making image_reconstruction.pdf {e}")
 
-    if ndim >2:
-        num_rows= math.floor(len(correlations_)/2)
-    else:
-        num_rows = 1
-        
-    if num_rows > 1:
-        num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
-    else:
-        num_cols = 1
+    if correlations_:
+        if ndim >2:
+            num_rows= math.floor(len(correlations_)/2)
+        else:
+            num_rows = 1
+            
+        if num_rows > 1:
+            num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
+        else:
+            num_cols = 1
 
-    if correlations_[0]: 
+        if correlations_[0]: 
+            plot_histograms(
+                correlations_,
+                'blue',
+                x_label="Correlations",
+                y_label="frequency",
+                file_name=f'{output_dir}/{this_signal}_correlations.pdf',
+                num_rows = num_rows,
+                num_cols = num_cols)
+    
+    
+    if ndim < 4:
         plot_histograms(
-            correlations_,
-            'blue',
-            x_label="Correlations",
+            rel_errors,
+            'red',
+            x_label="Relative absolute errors",
             y_label="frequency",
-            title_prefix=f'',
-            file_name=f'{output_dir}/{this_signal}_correlations.pdf',
+            file_name= f'{output_dir}/{this_signal}_rel_errors.pdf',
             num_rows = num_rows,
             num_cols = num_cols)
-    
-    plot_histograms(
-        rel_errors,
-        'red',
-        x_label="Relative absolute errors",
-        y_label="frequency",
-        title_prefix=f'',
-        file_name= f'{output_dir}/{this_signal}_rel_errors.pdf',
-        num_rows = num_rows,
-        num_cols = num_cols)
-    
+
     signal = this_signal
     file_path = output_dir
     
+    # Loss curves 
     with open(os.path.join(file_path, "loss_curves.json"), 'r') as file:
         data = json.load(file)
         
@@ -470,7 +433,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     train_loss = data["Loss"]["train_total"]
     train_recon_loss = data["Loss"]["train_recon"]
     train_kl_loss =  np.array(data["Loss"]["train_kl"])*np.asarray(beta_history)
-    # Epochs
     epochs = list(range(1, len(val_loss) + 1))
 
     patience = 5
@@ -479,7 +441,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     slope = np.polyfit(x, y, 1)[0] 
     print(f"Fit slope of {patience} last validation losses : {slope}")
         
-    # Create scatter plot
+    # Loss scatter plots
     fig, ax = plt.subplots()
     ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation total" )
     ax.plot(epochs, val_recon_loss, linestyle='dashed', color='blue', label="Validation recon")
@@ -494,7 +456,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     ax.grid(True)
     ax.legend()
 
-    fig.savefig(file_path + '/losses_vs_batch.pdf')
+    fig.savefig(file_path + '/losses_vs_epoch.pdf')
 
     # Total loss
     loss = loss_vs_batch
@@ -534,7 +496,6 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     ax.legend([f'Items: {len(rmse)}', f'95% threshold: {p95_rmse:.4g}'])
     ax.set_title(signal + "RMSE")
     fig.savefig(file_path + f"/{this_signal}_RMSE.pdf")
- 
 
     # Plot N reconstructions
     x_input_N = torch.stack(x_input_N)
@@ -561,6 +522,56 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     plt.show()
 
    
+def plot_histograms(
+    properties,
+    color,
+    x_label,
+    y_label,
+    file_name,
+    num_rows=1,
+    num_cols=1):
+
+    num_features = len(properties)
+    fig, axes = plt.subplots(nrows=num_rows, ncols=num_cols, figsize=(20, 12))
+
+    # Normalize axes to a flat list
+    if isinstance(axes, plt.Axes):
+        axes_list = [axes]
+    else:
+        axes_list = axes.ravel().tolist()
+
+    max_plots = len(axes_list)
+    plots_to_draw = min(num_features, max_plots)
+
+    # Plot
+    for i in range(plots_to_draw):
+        ax = axes_list[i]
+        if plots_to_draw > 1:
+            data = properties[i]
+        else:
+            data = properties
+
+        q95 = float(np.quantile(data,0.95))
+        
+        min_data = min(data)
+        max_data = float(np.quantile(data,0.9973))
+        
+        bins = np.linspace(min_data, max_data, 100)
+        ax.hist(data, bins=bins, color=color, alpha=0.7, range=(min_data, max_data))
+        ax.axvline(q95, color='green', linestyle='--', linewidth=1.5, label=f'95% threshold: {q95:.4g}')
+
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        ax.legend([f"Ch. {i+1}: {len(data)} items", f'95% threshold: {q95:.4g}'])
+
+    # Hide unused subplots
+    for j in range(plots_to_draw, max_plots):
+        axes_list[j].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(file_name, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    
 def get_RMSE(data, reco, mask):
     d = len(data.shape)
     r = len(reco.shape)
@@ -576,6 +587,38 @@ def get_RMSE(data, reco, mask):
     dim = tuple(range(1,diff.ndim))
 
     return torch.sqrt(torch.mean((diff) ** 2, dim=dim))
+
+
+
+def image_correlations(data, reco, mask, eps=1e-12):
+    """
+    Pearson correlation between each original image and its reconstruction.
+
+    Parameters
+    ----------
+    data, reco : torch.Tensor
+        Shape [B, F1, F2, T]
+
+    Returns
+    -------
+    corr : torch.Tensor
+        Shape [B, T], where corr[b, t] is the correlation between
+        data[b, :, :, t] and reco[b, :, :, t].
+    """
+    # [B, T, F1*F2]
+    x = data.permute(0, 3, 1, 2).flatten(start_dim=2)
+    y = reco.permute(0, 3, 1, 2).flatten(start_dim=2)
+    mask = mask.permute(0, 3, 1, 2).flatten(start_dim=2)
+    
+    x = mask *(x - x.mean(dim=2, keepdim=True))
+    y = mask *(y - y.mean(dim=2, keepdim=True))
+
+    num = (x * y).sum(dim=2)
+    den = torch.sqrt((x**2).sum(dim=2) * (y**2).sum(dim=2) + eps)
+
+    corr = num / den
+    return corr   # [B, T]
+
 
 def correlations(data, reco, mask, eps = 1e-8):
     """Compute time correlations for each feature 
@@ -610,6 +653,47 @@ def correlations(data, reco, mask, eps = 1e-8):
     
     return corr
 
+def image_errors(data, reco, mask):
+    """
+    description:
+        Calculate absolute error for the image reconstruction.
+        To be used for Psi maps in fairMAST.
+        
+    parameters:
+        data : tensor
+            [batch, features_1, features_2, time]
+        reco : tensor
+             [batch, features_1, features_2, time]
+        mask: tensor
+            [batch, features_1, features_2, time]
+        
+        An image has size  [features_1, features_2] and we have a batch of them evolving in time.
+    returns:
+        Tensor
+        absolute errors for each image in time
+    """
+    if mask is None:
+        abs_error = torch.abs(data - reco)  # [batch, features_1, features_2, time]
+    else:
+        abs_error = mask * torch.abs(data - reco) 
+    
+    abs_errors_per_sample = abs_error.mean(dim=(1,2)) # [batch, time]
+    
+    
+    min_val = abs_errors_per_sample.min()
+    max_val = abs_errors_per_sample.max()
+
+    min_flat = abs_errors_per_sample.argmin()
+    max_flat = abs_errors_per_sample.argmax()
+
+    min_b, min_t = torch.unravel_index(min_flat, abs_errors_per_sample.shape)
+    max_b, max_t = torch.unravel_index(max_flat, abs_errors_per_sample.shape)
+
+
+    
+    return  abs_errors_per_sample, min_b, min_t, max_b, max_t
+    
+    
 def time_averaged_absolute_errors(data, reco, mask):
     """Compute time-averaged absolute error for each feature 
     in data-reco pairs
@@ -618,43 +702,34 @@ def time_averaged_absolute_errors(data, reco, mask):
     ----------
     data : tensor
         [batch, features, time]
-        or
-        [batch, time, features_1, features_2]
     reco : tensor
         [batch, features, time]
-         or
-        [batch, time, features_1, features_2]
 
     Returns
     -------
     Tensor
     time averaged absolute errors for each features in data-reco pairs
-        [batch, features] or  [batch, features_1, features_2]
+        [batch, features]
     Tensor [batch]
         minimum in the time- and features- averaged absolute error
     int
         index of the minimum in [batch]
     """
+
     if mask is None:
         abs_error = torch.abs(data - reco)  # [batch, features, time]
     else:
         abs_error = mask * torch.abs(data - reco) 
 
-
-    # Mean over time dimension
-    if data.dim() < 4:
-        time_averaged_errors = abs_error.mean(dim=-1)  # [batch, features]
-        rel_error_per_sample = time_averaged_errors.mean(dim =-1) # [batch]
+    time_averaged_errors = abs_error.mean(dim=-1)  # [batch, features]
     
-    elif data.dim() == 4:
-        time_averaged_errors = abs_error.mean(dim=(1,3))  # [batch, features_1]
-        rel_error_per_sample = abs_error.mean(dim=(1, 2, 3))  # [batch]
-
-    else:
-        raise ValueError(f"Tensor dimension must be <= 4. Current dimension = {data.dim()}")
+    rel_error_per_sample = time_averaged_errors.mean(
+        dim=tuple(range(1, time_averaged_errors.dim()))
+    )
 
     min_vals, min_index = torch.min(rel_error_per_sample, dim = 0) 
     max_vals, max_index = torch.max(rel_error_per_sample, dim = 0) 
+    
     return time_averaged_errors, min_vals.item(), min_index.item(), max_vals, max_index
 
 

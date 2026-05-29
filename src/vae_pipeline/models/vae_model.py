@@ -48,6 +48,9 @@ class beta_VAE(nn.Module):
 
         Supported input layouts
         -----------------------
+        -1D signals (Linear layers):
+            Input shape:  [B, C]
+            Output shape: [B, 2C]
         - 1D signals (Conv1d):
             Input shape:  [B, C, L]
             Output shape: [B, 2C, L]
@@ -63,15 +66,20 @@ class beta_VAE(nn.Module):
         if x.ndim == 4:
             x = x.permute(0, 3, 1, 2).contiguous() 
 
+        # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
+        if x.shape[-1] == 1 and x.ndim == 3:
+            x = x[..., 0]   
+            
         mask = torch.isfinite(x)
-        x0 = torch.nan_to_num(x, nan=0.0)
-        mask = mask.to(dtype=x0.dtype) 
-        x_cat = torch.cat([x0, mask], dim=1)
+        mask = mask.to(dtype=x.dtype) 
         
+        x0 = torch.nan_to_num(x, nan=0.0)
+        x_cat = torch.cat([x0, mask], dim=1)
+
         return x0, mask, x_cat
         
     def encode(self, x):
-        x0, mask, x_cat = self._prepare(x)
+        _, mask, x_cat = self._prepare(x)
         encoded = self.encoder(x_cat)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
@@ -95,8 +103,7 @@ class beta_VAE(nn.Module):
         return x_recon, mu, logvar, mask
 
 
-def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20), eps = 1e-8):
-    
+def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20), eps = 1e-8): 
     """
     Compute a masked β-VAE loss for batched signals.
 
@@ -138,6 +145,13 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
     kl_loss : torch.Tensor
         Scalar tensor containing the KL-divergence term averaged across the batch
     """
+    if target.ndim == 4:
+         target = target.permute(0, 3, 1, 2).contiguous() 
+
+    # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
+    if target.shape[-1] == 1 and target.ndim == 3:
+        target = target[..., 0]  
+        
     dims = tuple(range(1, target.ndim))   # all dims except batch
     valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
   
