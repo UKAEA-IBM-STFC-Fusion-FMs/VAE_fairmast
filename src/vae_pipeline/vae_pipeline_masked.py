@@ -87,7 +87,7 @@ def train_vae_model(
         
         if stop_early:
             break
-        
+
         if verbose:
             print("Training phase")
             print(f"\n Epoch {epoch+1} \n")
@@ -133,7 +133,7 @@ def train_vae_model(
                     use_amp, 
                     beta,
                     clamp_logvar)
-            
+
             if loss is None:
                 if verbose:
                     print("loss is None skipping this batch")
@@ -465,7 +465,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
@@ -474,7 +474,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )

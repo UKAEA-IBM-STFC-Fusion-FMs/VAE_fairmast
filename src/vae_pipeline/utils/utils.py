@@ -14,7 +14,7 @@ if REPO_ROOT not in sys.path:
 import torch
 from src.vae_pipeline.models.vae_model import masked_loss_function
 
-def training_block(x_cat, model, use_amp, beta, clamp_logvar):
+def training_block(x, model, use_amp, beta, clamp_logvar):
     
     """
     Run a single forward + loss-computation step for VAE training.
@@ -23,8 +23,8 @@ def training_block(x_cat, model, use_amp, beta, clamp_logvar):
 
     Parameters
     ----------
-    x_cat : torch.Tensor
-        Input tensor containing signal and concatenated mask.
+    x : torch.Tensor
+        Input tensor containing signal
     model : torch.nn.Module
         VAE model.
     use_amp : bool
@@ -55,11 +55,11 @@ def training_block(x_cat, model, use_amp, beta, clamp_logvar):
     if use_amp:
         with torch.amp.autocast('cuda', enabled=use_amp):
             try:
-                x_recon, mu, logvar, mask = model(x_cat)
+                x_recon, mu, logvar, mask, x0 = model(x)
                 loss, recon_loss, kl_loss = masked_loss_function(
                     beta,
                     x_recon,
-                    x_cat,
+                    x0,
                     mu,
                     logvar,
                     mask,
@@ -67,15 +67,15 @@ def training_block(x_cat, model, use_amp, beta, clamp_logvar):
                 )
             except ValueError as e:
                 # skip this sub-batch
-                print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+                print(f"[Error in loss calc: {e}")
                 return None, None, None, None, None, None, None
     else:
         try:
-            x_recon, mu, logvar, mask = model(x_cat)
+            x_recon, mu, logvar, mask, x0 = model(x)
             loss, recon_loss, kl_loss = masked_loss_function(
                 beta,
                 x_recon,
-                x_cat,
+                x0,
                 mu,
                 logvar,
                 mask,
@@ -83,7 +83,7 @@ def training_block(x_cat, model, use_amp, beta, clamp_logvar):
             )
         except ValueError as e:
             # skip this sub-batch
-            print(f"[batch {batch_idx} {start}:{end}] Error in loss calc: {e}")
+            print(f"[Error in loss calc: {e}")
             return None, None, None, None, None, None, None
 
     return  loss, recon_loss, kl_loss, x_recon, mu, logvar, mask

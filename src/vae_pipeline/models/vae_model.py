@@ -69,7 +69,7 @@ class beta_VAE(nn.Module):
         # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
         if x.shape[-1] == 1 and x.ndim == 3:
             x = x[..., 0]   
-            
+
         mask = torch.isfinite(x)
         mask = mask.to(dtype=x.dtype) 
         
@@ -79,11 +79,11 @@ class beta_VAE(nn.Module):
         return x0, mask, x_cat
         
     def encode(self, x):
-        _, mask, x_cat = self._prepare(x)
+        x0, mask, x_cat = self._prepare(x)
         encoded = self.encoder(x_cat)
         mu = self.fc_mu(encoded)
         logvar = self.fc_logvar(encoded)
-        return mu, logvar, mask
+        return mu, logvar, mask, x0
 
     def reparameterize(self, mu, logvar, sampling: bool = True):
         if not sampling:
@@ -97,10 +97,10 @@ class beta_VAE(nn.Module):
         return self.decoder(z)
 
     def forward(self, x, sampling: bool = True):
-        mu, logvar, mask = self.encode(x)
+        mu, logvar, mask, x0 = self.encode(x)
         z = self.reparameterize(mu, logvar, sampling=sampling)
         x_recon = self.decode(z)
-        return x_recon, mu, logvar, mask
+        return x_recon, mu, logvar, mask, x0
 
 
 def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20, 20), eps = 1e-8): 
@@ -154,7 +154,7 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
         
     dims = tuple(range(1, target.ndim))   # all dims except batch
     valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
-  
+
     squared_diff = mask * (target - reco)**2
 
     loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch
