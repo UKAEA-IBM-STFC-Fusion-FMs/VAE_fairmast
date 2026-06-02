@@ -3,7 +3,7 @@ For breaf summary check vae_pipeline.py introduction.
 
 New: in this version of the pipeline a masked loss was introduced.
 
-python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_equilibrium_lcfs_r.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_b_field_pol_probe_obv_field.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE.yaml
 '''
 
 import argparse
@@ -50,7 +50,7 @@ def train_vae_model(
     train_dataloader, 
     val_dataloader, 
     output_dir,
-    use_amp=False, 
+    use_amp=True, 
     grad_clip=1,   
     verbose=True,
     ):
@@ -101,7 +101,7 @@ def train_vae_model(
         
         # Timing 
         # t_0_dataloader = time.time()
-        
+
         for batch_idx, batch in enumerate(train_dataloader):
             if verbose and batch_idx%100 == 0:
                 print(f"Batch idx: {batch_idx}")
@@ -111,7 +111,6 @@ def train_vae_model(
             x = batch["x"][0]
             
             # Guarantee a minimum number of finite samples 
-            breakpoint()
             finite_frac = x.isfinite().float().mean(dim=tuple(range(1, x.dim())))
             if (finite_frac < 0.75).float().mean() >= 0.25: 
                 continue
