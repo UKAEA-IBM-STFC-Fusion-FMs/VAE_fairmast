@@ -51,11 +51,11 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
     mask : torch.Tensor or None
         Validity mask used for the masked loss.
     """
-
     if use_amp:
         with torch.amp.autocast('cuda', enabled=use_amp):
             try:
                 x_recon, mu, logvar, mask, x0 = model(x)
+                
                 loss, recon_loss, kl_loss = masked_loss_function(
                     beta,
                     x_recon,
@@ -65,6 +65,7 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
                     mask,
                     clamp_logvar
                 )
+                
             except ValueError as e:
                 # skip this sub-batch
                 print(f"[Error in loss calc: {e}")
@@ -72,6 +73,7 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
     else:
         try:
             x_recon, mu, logvar, mask, x0 = model(x)
+                  
             loss, recon_loss, kl_loss = masked_loss_function(
                 beta,
                 x_recon,
@@ -81,6 +83,7 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
                 mask,
                 clamp_logvar
             )
+            
         except ValueError as e:
             # skip this sub-batch
             print(f"[Error in loss calc: {e}")

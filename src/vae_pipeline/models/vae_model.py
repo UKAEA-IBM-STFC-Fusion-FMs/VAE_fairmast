@@ -144,14 +144,7 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
         the batch. 
     kl_loss : torch.Tensor
         Scalar tensor containing the KL-divergence term averaged across the batch
-    """
-    if target.ndim == 4:
-         target = target.permute(0, 3, 1, 2).contiguous() 
-
-    # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
-    if target.shape[-1] == 1 and target.ndim == 3:
-        target = target[..., 0]  
-        
+    """  
     dims = tuple(range(1, target.ndim))   # all dims except batch
     valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
 

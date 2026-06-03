@@ -125,7 +125,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
@@ -176,31 +176,40 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     mask = None          
     with torch.no_grad(): 
         for batch_idx, batch in enumerate(val_dataloader):
+            
             if batch_idx%100==0:
                 print(f"Batch idx: {batch_idx}")
 
             x = batch["x"][0]
-           
+    
             try:
                 p = next(model.parameters())
-                input = x.to(dtype = p.dtype, device = p.device) # real space data
+                input_data = x.to(dtype = p.dtype, device = p.device) # real space data
             except Exception as e:
                 raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
             
             loss, recon_loss, kl_loss, x_recon, _, _, mask = training_block(
-                input, 
+                input_data, 
                 model,
                 use_amp, 
                 beta,
                 clamp_logvar)
 
-            if input.ndim == 4:
+            input_data = torch.nan_to_num(input_data, nan=0.0)
+            ndim = input_data.ndim
+           
+            # For images such as psi maps, permutation is required to match conv2d input shape [C, C, H, W]
+            if ndim == 4:
                 x_recon = x_recon.permute(0, 2, 3, 1).contiguous() 
                 mask = mask.permute(0, 2, 3, 1).contiguous() 
-            
-            # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
-            if input.shape[-1] == 1 and input.ndim == 3:
-                input = input[..., 0] 
+                # Recompute ndim after reshaping
+                ndim = input_data.ndim
+                
+            # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input_data shape.
+            if input_data.shape[-1] == 1 and ndim == 3:
+                input_data = input_data[..., 0] 
+                # Recompute ndim after reshaping
+                ndim = input_data.ndim
             
             if loss is None:
                 continue
@@ -218,49 +227,46 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
 
             if loss.item() < best_loss:
                 best_loss = loss.item()
-
-            ndim = input.ndim
-
+                
             if ndim == 2:
-                num_channels = 0
+                num_channels = 1
             elif ndim == 3:
-                num_channels = input.shape[1]
+                num_channels = input_data.shape[1]
             elif ndim == 4:
-                num_channels = input.shape[-1]
+                num_channels = input_data.shape[-1]
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
 
             # Initialize correlations and errors lists
-            if not correlations_:
+            if num_channels>1:
                 correlations_ = [[] for _ in range(num_channels)]
-            if not rel_errors:
                 rel_errors = [[] for _ in range(num_channels)]
 
             # Compute correlations
             if ndim <4:
-                correl = correlations(input, x_recon, mask)
+                correl = correlations(input_data, x_recon, mask)
             elif ndim ==4:
-                correl = image_correlations(input, x_recon, mask) # shape [B,T]
+                correl = image_correlations(input_data, x_recon, mask) # shape [B,T]
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
             
             if isinstance(correl, torch.Tensor):
                 correl = correl.cpu().tolist()
-            if num_channels>0:
+
+            if num_channels>1:
                 for i, corr_values in enumerate(zip(*correl)):
                     correlations_[i].extend(corr_values)
             else:
-                for i, corr_values in enumerate(correl):
-                    correlations_.append(corr_values)
+                correlations_.extend(correl)
             
             # Compute errors
             minimum = None
             maximum = None
             
             if ndim <4:
-                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input, x_recon, mask)
+                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input_data, x_recon, mask)
             elif ndim ==4:
-                errors, min_b, min_t, max_b, max_t = image_errors(input, x_recon, mask) # shape [B, T]
+                errors, min_b, min_t, max_b, max_t = image_errors(input_data, x_recon, mask) # shape [B, T]
                 minimum = errors[min_b, min_t].item()
                 min_index = min_b
                 maximum = errors[max_b, max_t].item()
@@ -270,25 +276,24 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 
             if isinstance(errors, torch.Tensor):
                 errors = errors.cpu().tolist()
-            if num_channels>0:
+            if num_channels>1:
                 for i, error_values in enumerate(zip(*errors)):
                     rel_errors[i].extend(error_values)
             else:
-                for i, error_values in enumerate(errors):
-                    rel_errors.append(error_values)
+                rel_errors.extend(errors)
                         
             # Compute RMSE
-            rmse.extend(get_RMSE(input,x_recon, mask).tolist())
+            rmse.extend(get_RMSE(input_data,x_recon, mask).tolist())
             
             #Track best reconstruction
             if minimum is not None and minimum < minimum_error:
                 minimum_error = minimum
-                if 0 <= min_index < input.shape[0]:
+                if 0 <= min_index < input_data.shape[0]:
                     if ndim <4:
-                        x_best_input = input[min_index].cpu()
+                        x_best_input = input_data[min_index].cpu()
                         x_best_recon = x_recon[min_index].cpu()
                     if ndim ==4:
-                        x_best_input = input[min_b, :, :, min_t].cpu()
+                        x_best_input = input_data[min_b, :, :, min_t].cpu()
                         x_best_recon = x_recon[min_b, :, :, min_t].cpu()
                 else:
                     print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
@@ -296,12 +301,12 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             # Track worst reconstruction
             if maximum is not None and maximum > max_error:
                 max_error = maximum
-                if 0<= max_index < input.shape[0]:
+                if 0<= max_index < input_data.shape[0]:
                     if ndim <4:
-                        x_worst_input = input[max_index].cpu()
+                        x_worst_input = input_data[max_index].cpu()
                         x_worst_recon = x_recon[max_index].cpu()
                     if ndim ==4:
-                        x_worst_input = input[max_b, :, :, max_t].cpu()
+                        x_worst_input = input_data[max_b, :, :, max_t].cpu()
                         x_worst_recon = x_recon[max_b, :, :, max_t].cpu()
                 else:
                     print(f"Warning: max_index {max_index} out of range for batch {batch_idx}")
@@ -550,7 +555,7 @@ def plot_histograms(
             data = properties[i]
         else:
             data = properties
-
+        
         q95 = float(np.quantile(data,0.95))
         
         min_data = min(data)
@@ -588,8 +593,6 @@ def get_RMSE(data, reco, mask):
 
     return torch.sqrt(torch.mean((diff) ** 2, dim=dim))
 
-
-
 def image_correlations(data, reco, mask, eps=1e-12):
     """
     Pearson correlation between each original image and its reconstruction.
@@ -618,7 +621,6 @@ def image_correlations(data, reco, mask, eps=1e-12):
 
     corr = num / den
     return corr   # [B, T]
-
 
 def correlations(data, reco, mask, eps = 1e-8):
     """Compute time correlations for each feature 
@@ -691,8 +693,7 @@ def image_errors(data, reco, mask):
 
 
     
-    return  abs_errors_per_sample, min_b, min_t, max_b, max_t
-    
+    return  abs_errors_per_sample, min_b, min_t, max_b, max_t   
     
 def time_averaged_absolute_errors(data, reco, mask):
     """Compute time-averaged absolute error for each feature 
@@ -751,7 +752,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-     # Load task config
+    # Load task config
     config_task_file_path: str = args.config_task_file_path
     print(f"config_task_file_path = {config_task_file_path}")
     

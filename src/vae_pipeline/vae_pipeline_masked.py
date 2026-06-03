@@ -117,7 +117,7 @@ def train_vae_model(
    
             try:
                 p = next(model.parameters())
-                input = x.to(dtype = p.dtype, device = p.device) # real space data
+                input_data = x.to(dtype = p.dtype, device = p.device) # real space data
             except Exception as e:
                 raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
             
@@ -128,7 +128,7 @@ def train_vae_model(
             # Initialiaze gradient
             optimizer.zero_grad(set_to_none=True)
             loss, recon_loss, kl_loss, _, _, _, _ = training_block(
-                    input, 
+                    input_data, 
                     model,
                     use_amp, 
                     beta,
@@ -205,12 +205,12 @@ def train_vae_model(
                 x = batch["x"][0]
                 try:
                     p = next(model.parameters())
-                    input = x.to(dtype = p.dtype, device = p.device) # real space data
+                    input_data = x.to(dtype = p.dtype, device = p.device) # real space data
                 except Exception as e:
                     raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
                 
                 loss, recon_loss, kl_loss, _, _, _, _ = training_block(
-                    input, 
+                    input_data, 
                     model,
                     use_amp, 
                     beta,
