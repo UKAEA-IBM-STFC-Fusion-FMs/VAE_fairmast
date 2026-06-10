@@ -68,8 +68,8 @@ class SettingsBenchmark:
         else:
             raise KeyError("'training' not found in config")
         
-        if "model" in config.keys():
-            self.MODEL = Model(config)
+        if ("signal_model" in config.keys() and "mask_model" in config.keys()) or "model" in config.keys():
+            self.MODEL = Models(config)
         else:
             raise KeyError("'model' not found in config")
         
@@ -78,6 +78,11 @@ class SettingsBenchmark:
         else:
             print("'local' not defined in benchmark_setup; settting to True")
             self.local = True
+        
+        if "output_dim" in config.keys():
+            self.output_dim = config["output_dim"]
+        else:
+            raise KeyError("'output_dim' not found in config")
 
         if "cache_data" in config.keys():
             self.cache = config["cache_data"]
@@ -115,7 +120,6 @@ class TrainingSettings:
             
         
         self.dataloader_batch_size = self._get_key(training_specs, "dataloader_batch_size")
-        self.train_batch_size = self._get_key(training_specs, "train_batch_size")
         self.num_workers = self._get_key(training_specs, "num_workers")
         self.num_train_samples = self._get_key(training_specs, "num_train_samples")
         self.num_val_samples = self._get_key(training_specs, "num_val_samples")
@@ -149,11 +153,27 @@ class LocalPaths:
             return None
 
 # ----------------------------------------------------------------------------------------------------------------------
-class Model:
+class Models:
     def __init__(self, config):
+
+        signal_model = config.get("signal_model", {})
+        if signal_model:
+            self.signal_layers = self._get_key(signal_model,"layers")
+        else:
+            self.signal_layers = None
+        
+        mask_model = config.get("mask_model", {})
+        if mask_model:
+            self.mask_layers = self._get_key(mask_model,"layers")
+        else:
+            self.mask_layers = None
+        
         model = config.get("model", {})
-        self.layers = self._get_key(model,"layers")
-    
+        if model:
+            self.model_layers = self._get_key(model, "layers")
+        else:
+            self.model_layers = None
+            
     def _get_key(self, section, key):
         if key in section:
             return section[key]

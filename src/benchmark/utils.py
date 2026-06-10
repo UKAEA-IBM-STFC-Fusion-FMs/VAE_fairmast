@@ -72,13 +72,15 @@ def load_vae_model(config_path:str):
     return model
     
 
-def create_vae_dictionary(vae_dictionary, type_of_signal, list_of_signals, SETTINGS, model_sub_paths):
+def create_vae_dictionary(mode, vae_dictionary, type_of_signal, list_of_signals, SETTINGS, model_sub_paths):
     """ Loads VAE models into a dictionary for signals in the list.
 
        Reinforce the one-to-one correspondence between input or actuator signals and VAE models.
 
     Parameters
     ----------
+    mode: string
+        eval or train
     vae_dictionary : _type_
        vae_dictionary = {"input": {}, "actuator": {}, "output": {}}
     type_of_signal : str
@@ -110,7 +112,12 @@ def create_vae_dictionary(vae_dictionary, type_of_signal, list_of_signals, SETTI
                 full_path = os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, model_path)
 
                 # store model keyed by source-signal
-                vae_dictionary[type_of_signal][key] = load_vae_model(full_path)
+                if mode == 'eval':
+                    vae_dictionary[type_of_signal][key] = load_vae_model(full_path).eval()
+                elif mode == "train":
+                    vae_dictionary[type_of_signal][key] = load_vae_model(full_path).train()
+                else:
+                    raise ValueError(f"mode must be `eval` or `train`. Current mode value: `{mode}`")
                 break
 
     num_inputs = len(list_of_signals)
@@ -196,11 +203,11 @@ def process_data(
         dims = tuple(range(1, batch.ndim))
         
         # Mask invalid entries (NaN or inf) in the batch
-        invalid_entries = torch.isnan(batch) | torch.isinf(batch)
-        
+        finite_mask = torch.isfinite(batch)
+        invalid_entries = ~finite_mask
+
         # Ground invalid entries with zero
-        x = batch.clone()
-        x[invalid_entries] = 0
+        batch[invalid_entries] = 0
         
         # Check data for encoding
         if model is not None:
@@ -209,31 +216,24 @@ def process_data(
             if batch.device != p.device or batch.dtype != p.dtype:
                 raise ValueError(f"Batch is not on the same device as the model: {p.device}")
             
-            
             # Initialize mask and latent representation with zeros
             z = torch.zeros(B, model.latent_dim, device=batch.device, dtype=batch.dtype)
             mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
             
             # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
             invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-            tau = 0.05 
+            tau = 0.25
             valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
 
             if valid_samples.any():
                 with torch.no_grad():
-                    z[valid_samples] = model.encode(x[valid_samples])[0]
+                    z[valid_samples] = model.encode(batch[valid_samples])[0]
                 mask[valid_samples, :]  = 1
                 mask = mask.to(dtype=batch.dtype)   
         else:
-            z = batch.reshape(B, -1).clone()
-            mask = (~(torch.isnan(z)|torch.isinf(z))).to(dtype=batch.dtype)
+            z = batch.reshape(B, -1)
+            mask = finite_mask.reshape(B, -1).to(dtype=batch.dtype)
             z = z * mask
-
-        # Ensure output is 2D [B, latent_dim]
-        if z.ndim != 2 or z.shape[0] != batch.shape[0]:
-            raise ValueError(
-                f"Encoder output shape mismatch: expected [B, D], got {z.shape}"
-            )
 
         data.append(z)
         masks.append(mask)
@@ -243,8 +243,8 @@ def process_data(
     
 def process_batch(
         batch,
-        vae_dictionary,
-        filtering = 'weights'
+        input_vae,
+        target_vae
     ):
     
     """
@@ -262,8 +262,8 @@ def process_batch(
         - 'y': list[Tensor] (targets)
         All tensors must share the same batch size B.
 
-    vae_dictionary : dict
-        {
+    input(target)_vae : list[dic]
+        dic =  {
             "input": dict[str, beta_VAE],
             "actuator": dict[str, beta_VAE] or {},
             "output": dict[str, beta_VAE] or {}
@@ -288,96 +288,73 @@ def process_batch(
     x = batch['x'] # Input + actuator
     y = batch['y'] # Output
 
-    # Alignment and data transfer
-    if len(vae_dictionary["input"]) == 0:
-        raise ValueError("Input VAE is required.")
+    first_input_model = input_vae[0]
 
     try:
-        first_input_model = next(iter(vae_dictionary["input"].values()))
         p = next(first_input_model.parameters())
-        input_  = [x_.to(dtype = p.dtype, device = p.device) for x_ in x] # real space data
-        target_ = [y_.to(dtype = p.dtype, device = p.device) for y_ in y] # real space target
+
+        input_ = [
+            x_ if (x_.device == p.device and x_.dtype == p.dtype) else x_.to(device=p.device, dtype=p.dtype)
+            for x_ in x
+        ]
+
+        target_ = [
+            y_ if (y_.device == p.device and y_.dtype == p.dtype) else y_.to(device=p.device, dtype=p.dtype)
+            for y_ in y
+        ]
     except Exception as e:
         raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
 
-    # Collect VAEs
-    actuator_dict = vae_dictionary["actuator"] or {}
-    output_dict = vae_dictionary["output"] or {}
-
-    input_vae = list(vae_dictionary["input"].values()) + list(actuator_dict.values())
-    target_vae = list(output_dict.values())
-    
-    if len(input_vae) != len(input_):
-        raise ValueError("Mismatch between number of input tensors and VAEs")
 
     # Inputs are always encoded, hence encode_masks is used, see process_data method.
     input_data_list, input_mask_list = process_data(input_vae, input_) 
     target_data_list, target_mask_list = process_data(target_vae, target_)
 
-    input_data_cat = torch.cat(input_data_list, dim=1) # [B, sum n_signals]
-    target_data = torch.cat(target_data_list, dim=1)  # [B, sum n_signals]
- 
-    input_mask = torch.cat(input_mask_list, dim=1)  # [B, sum n_signals]
-    input_data = torch.cat([input_data_cat, input_mask], dim=1)  # [B, 2 * sum n_signals]
+    input_data = torch.cat([*input_data_list, *input_mask_list], dim=1)
 
+    target_data = torch.cat(target_data_list, dim=1)  # [B, sum n_signals]
     target_mask = torch.cat(target_mask_list, dim=1)  # [B, sum n_signals]
     
-    # Sample-level completeness
-    input_sample_completness = input_mask.mean(dim=1)  # [B]
-    target_sample_completness = target_mask.mean(dim=1)  # [B]
-    
-    if filtering == 'hard_filtering':
-        weights = None
-        hard_filter = (input_sample_completness >= 0.75) & (target_sample_completness >= 0.5)
 
-        # Filter data and mask
-        return input_data[hard_filter],  target_data[hard_filter], target_mask[hard_filter], None
-    else:
-        weights = torch.minimum(input_sample_completness, target_sample_completness)
-        return input_data, target_data, target_mask, weights
+    return input_data, target_data, target_mask
     
     
-def masked_loss(reco, target, mask, weights, eps = 1e-8):
+def masked_loss(reco, target, mask, eps = 1e-8):
     """
-    Compute a mean squared error loss using an explicit validity mask.
+    
+    Compute a masked mean squared error over all valid entries.
 
-    The loss is computed per sample over valid target entries only
-    and then averaged over the batch.
+    The loss is computed across all elements in the batch where mask == 1,
+    ensuring each valid entry contributes equally.
 
     Args:
         reco (torch.Tensor): Reconstructed output tensor, shape [B, ...].
         target (torch.Tensor): Target tensor, shape [B, ...].
         mask (torch.Tensor): tensor, same shape as target, 1 (0) valid (invalid) entries.
-        weights : (torch.Tensor) 
-            for each sampe b in B, a weight is given that provides % of completness.
-        eps (float, optional): Small constant to avoid division by zero.
-
     Returns:
         torch.Tensor: Scalar loss value.
     """
+    
     if target.shape != mask.shape:  
         raise ValueError(
             f"target and valid_target must have the same shape, "
             f"got {target.shape} and {mask.shape}"
         )
+        
+    
+    if target.shape != reco.shape:
+        raise ValueError(
+            f"target and reco must have the same shape, "
+            f"got {target.shape} and {reco.shape}"
+        )
 
     if target.ndim !=2:
-        print(f"WARNING target ndim: expected 2 but got {target.ndim}")
-
-    # Reduce over all non-batch dimensions
-    dims = tuple(range(1, target.ndim))
-    valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample [B]
-
-    squared_diff = mask * (target - reco)**2 # [B]
-    sqr_sum_per_sample = squared_diff.sum(dim=dims) # [B]
-    loss_per_sample = sqr_sum_per_sample/(valid_per_sample + eps) # loss per sample # [B]
+         raise ValueError(f"ERROR: target dimension must be 2. Current dim is {target.ndim}")
     
-    has_valid = valid_per_sample > 0
-
-    # Compute weighted mean loss per batch only on valid samples
-    if weights is not None:
-        loss = (weights[has_valid] * loss_per_sample[has_valid]).sum() / weights[has_valid].sum()
+    sum_mask = mask.sum()
+    if sum_mask > 0:
+        loss = (mask * (target - reco)**2).sum() / sum_mask
     else:
-        loss = loss_per_sample[has_valid].mean()
-
+        loss  = torch.tensor(0.0, device=target.device, dtype=target.dtype)
+        
     return loss
