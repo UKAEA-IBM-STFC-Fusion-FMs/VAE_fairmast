@@ -24,7 +24,12 @@ def training_block(x, model, use_amp, beta, clamp_logvar):
     Parameters
     ----------
     x : torch.Tensor
-        Input tensor containing signal
+        Input tensor containing signal. This is the original signal from the Dataset.
+        1- It may contain NaN values.
+        2- Its shape might be different from the reconstructed signal (see _prepare() in 
+        the vae_model.py for details).
+        The masked loss uses X0, i.e., 
+        the original signal preprocessed to match the shape of the reco one and with 0 instead of NaN.
     model : torch.nn.Module
         VAE model.
     use_amp : bool

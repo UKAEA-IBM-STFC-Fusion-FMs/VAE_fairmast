@@ -1,3 +1,8 @@
+"""
+    
+    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_1_config_v20test.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
+       
+"""
 from typing import Iterable, Optional, Tuple, Dict
 import math
 import matplotlib.pyplot as plt
@@ -24,20 +29,18 @@ from MAST_tools.MAST_dataset import MastDataset
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
                                           
-from src.benchmark.utils import (load_task_config, 
+from src.benchmark.utils_ import (
                                 load_benchmark_settings, 
-                                parse_args, 
-                                load_vae_model, 
+                                parse_args,
                                 create_vae_dictionary,
                                 process_batch, 
                                 masked_loss)
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
-from src.benchmark.utils import load_task_config, load_benchmark_settings, parse_args, load_vae_model, create_vae_dictionary
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 
 from src.vae_pipeline.models.vae_model import beta_VAE
 
-from src.utils.utils import (read_data_split_csv, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
+from src.utils.utils import ( load_task_config, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
 from src.utils.layer_factory import SequentialBuilder
 from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
@@ -152,11 +155,7 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, _, valid_target, weights = process_batch(
-                batch,
-                vae_dictionary,
-                sentinel_value,
-                verbose = False)
+            data, target, target_mask, weights = process_batch(batch, vae_dictionary)
 
             if data is None:
                 continue
@@ -164,10 +163,10 @@ def evaluate_model(
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
                     reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, valid_target, weights)
+                    loss = masked_loss(reconstruction, target, target_mask, weights)
             else:
                 reconstruction = model(data)
-                loss = masked_loss(reconstruction, target, valid_target, weights)
+                loss = masked_loss(reconstruction, target, target_mask, weights)
             
             if (not torch.isfinite(loss).all()) and verbose:
                 print(
@@ -178,7 +177,7 @@ def evaluate_model(
             
             batch_losses.append(loss.item())
             
-            rmse = get_RMSE(reconstruction,target,valid_target)
+            rmse = get_RMSE(reconstruction,target,target_mask)
             batch_rmse.extend(rmse.tolist())
          
     return batch_losses, batch_rmse
@@ -268,10 +267,8 @@ def main():
         sources_and_signals=source_signal_list,
         shots={"train": [], "val": val_shots, "test": test_shots},
         signal_transform_map=signal_transform_map,
-        shot_transforms={},
         local_flag=SETTINGS.local,
         cache_data=False,
-        return_incomplete_shots = False,
         store_mast_settings=store_mast_settings
     )
 

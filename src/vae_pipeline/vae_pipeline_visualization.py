@@ -236,7 +236,11 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
                 num_channels = input_data.shape[-1]
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
-
+            
+            # Psi map 65x65 in 5ms interval
+            if ndim ==4 and input_data.shape[-1] ==1:
+                num_channels = input_data.shape[-2]
+                
             # Initialize correlations and errors lists
             if num_channels>1:
                 correlations_ = [[] for _ in range(num_channels)]
@@ -245,8 +249,10 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             # Compute correlations
             if ndim <4:
                 correl = correlations(input_data, x_recon, mask)
-            elif ndim ==4:
+            elif ndim ==4 and input_data.shape[-1] >1: # Psi map 25 ms interval
                 correl = image_correlations(input_data, x_recon, mask) # shape [B,T]
+            elif ndim ==4 and input_data.shape[-1] ==1: # Psi map 5 ms interval
+                correl = correlations(input_data, x_recon, mask)
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
             
@@ -265,12 +271,14 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             
             if ndim <4:
                 errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input_data, x_recon, mask)
-            elif ndim ==4:
+            elif ndim ==4 and input_data.shape[-1] >1: # Psi map 25 ms interval:
                 errors, min_b, min_t, max_b, max_t = image_errors(input_data, x_recon, mask) # shape [B, T]
                 minimum = errors[min_b, min_t].item()
                 min_index = min_b
                 maximum = errors[max_b, max_t].item()
                 max_index = max_b
+            elif ndim ==4 and input_data.shape[-1] ==1: # Psi map 5 ms interval
+                errors, minimum, min_index, maximum, max_index = time_averaged_absolute_errors(input_data, x_recon, mask)
             else:
                 raise ValueError(f"Data tensor must have 2, 3, or 4 dimensions, got {ndim}.")
                 
@@ -289,12 +297,12 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if minimum is not None and minimum < minimum_error:
                 minimum_error = minimum
                 if 0 <= min_index < input_data.shape[0]:
-                    if ndim <4:
+                    if ndim <4 or (ndim ==4 and input_data.shape[-1] ==1): # For non-image data and Psi map 5 ms interval
                         x_best_input = input_data[min_index].cpu()
                         x_best_recon = x_recon[min_index].cpu()
-                    if ndim ==4:
+                    if ndim ==4 and input_data.shape[-1] >1: # Psi map 25 ms interval:
                         x_best_input = input_data[min_b, :, :, min_t].cpu()
-                        x_best_recon = x_recon[min_b, :, :, min_t].cpu()
+                        x_best_recon = x_recon[min_b, :, :, min_t].cpu() 
                 else:
                     print(f"Warning: min_index {min_index} out of range for batch {batch_idx}")
             
@@ -302,10 +310,10 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
             if maximum is not None and maximum > max_error:
                 max_error = maximum
                 if 0<= max_index < input_data.shape[0]:
-                    if ndim <4:
+                    if ndim <4 or (ndim ==4 and input_data.shape[-1] ==1): # For non-image data and Psi map 5 ms interval:
                         x_worst_input = input_data[max_index].cpu()
                         x_worst_recon = x_recon[max_index].cpu()
-                    if ndim ==4:
+                    if ndim ==4 and input_data.shape[-1] >1: # Psi map 25 ms interval:
                         x_worst_input = input_data[max_b, :, :, max_t].cpu()
                         x_worst_recon = x_recon[max_b, :, :, max_t].cpu()
                 else:
@@ -392,38 +400,38 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
 
     except Exception as e:
         print(f"Error in making image_reconstruction.pdf {e}")
-
-    if correlations_:
-        if ndim >2:
-            num_rows= math.floor(len(correlations_)/2)
-        else:
-            num_rows = 1
+    
+    # if correlations_:
+    #     if ndim >2:
+    #         num_rows= math.floor(len(correlations_)/2)
+    #     else:
+    #         num_rows = 1
             
-        if num_rows > 1:
-            num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
-        else:
-            num_cols = 1
+    #     if num_rows > 1:
+    #         num_cols= math.floor(len(correlations_)/num_rows) + len(correlations_)%2
+    #     else:
+    #         num_cols = 1
 
-        if correlations_[0]: 
-            plot_histograms(
-                correlations_,
-                'blue',
-                x_label="Correlations",
-                y_label="frequency",
-                file_name=f'{output_dir}/{this_signal}_correlations.pdf',
-                num_rows = num_rows,
-                num_cols = num_cols)
+    #     if correlations_[0]: 
+    #         plot_histograms(
+    #             correlations_,
+    #             'blue',
+    #             x_label="Correlations",
+    #             y_label="frequency",
+    #             file_name=f'{output_dir}/{this_signal}_correlations.pdf',
+    #             num_rows = num_rows,
+    #             num_cols = num_cols)
     
     
-    if ndim < 4:
-        plot_histograms(
-            rel_errors,
-            'red',
-            x_label="Relative absolute errors",
-            y_label="frequency",
-            file_name= f'{output_dir}/{this_signal}_rel_errors.pdf',
-            num_rows = num_rows,
-            num_cols = num_cols)
+    # if ndim < 4:
+    #     plot_histograms(
+    #         rel_errors,
+    #         'red',
+    #         x_label="Relative absolute errors",
+    #         y_label="frequency",
+    #         file_name= f'{output_dir}/{this_signal}_rel_errors.pdf',
+    #         num_rows = num_rows,
+    #         num_cols = num_cols)
 
     signal = this_signal
     file_path = output_dir
