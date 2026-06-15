@@ -18,7 +18,7 @@ from src.utils.layer_factory import SequentialBuilder
 
 
 class BenchmarkModel(nn.Module):
-    def __init__(self, SETTINGS, out_dim):
+    def __init__(self, SETTINGS):
         super().__init__()
 
 
@@ -26,6 +26,9 @@ class BenchmarkModel(nn.Module):
 
         self.mask_mlp = SequentialBuilder({"layers": SETTINGS.MODEL.mask_layers})
         
+        self.fusion_mlp = SequentialBuilder({"layers": SETTINGS.MODEL.end_layers})
+        
+        # Find signal input-output dimensions
         self.signal_dim = None
         self.signal_out_features = None
         for l in SETTINGS.MODEL.signal_layers:
@@ -33,6 +36,7 @@ class BenchmarkModel(nn.Module):
                 if self.signal_dim ==None: self.signal_dim = l["params"]["in_features"]
                 self.signal_out_features = l["params"]["out_features"]
         
+        # Find mask input-output dimensions
         self.mask_dim = None
         self.mask_out_features = None
         for l in SETTINGS.MODEL.mask_layers:
@@ -40,13 +44,27 @@ class BenchmarkModel(nn.Module):
                 if self.mask_dim ==None: self.mask_dim = l["params"]["in_features"]
                 self.mask_out_features = l["params"]["out_features"]
         
-        self.fusion_mlp = nn.Sequential(
-            nn.Linear(self.signal_out_features + self.mask_out_features, 32),
-            nn.LayerNorm(32),
-            nn.GELU(),
-            nn.Linear(32, out_dim)
-        )
-
+        # Find end_model input-output dimensions
+        self.end_model_dim = None
+        self.end_model_out_features = None
+        for l in SETTINGS.MODEL.end_layers:
+            if l["type"] == "linear":
+                if self.end_model_dim ==None: self.end_model_dim = l["params"]["in_features"]
+                self.end_model_out_features = l["params"]["out_features"]
+    
+        if  self.mask_dim is None or self.mask_out_features is None:
+            raise ValueError("Mask input and output dimensions could not be determined. Make sure the mask_model linear")
+        
+        if  self.signal_dim is None or self.signal_out_features is None:
+            raise ValueError("Signal input and output dimensions could not be determined. Make sure the signal_model linear")
+        
+        if  self.end_model_dim is None or self.end_model_out_features is None:
+            raise ValueError("The end_model input and output dimensions could not be determined. Make sure the end_model_model linear")
+        
+        if self.end_model_dim != self.signal_out_features + self.mask_out_features :
+            raise ValueError(f"The `end_model` input size (currently {self.end_model_dim}) \
+                must be equal to the signal+mask output size, (currently {self.signal_out_features + self.mask_out_features})")
+        
     def forward(self, x):
 
         x_signal = x[..., :self.signal_dim] 

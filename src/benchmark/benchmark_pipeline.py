@@ -3,8 +3,8 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline_.py --config_benchmark_file_path src/benchmark/configs/task1_1_config_v21.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-1.yaml
-python src/benchmark/benchmark_pipeline_.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_v6.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 
 
 DATA INGESTION:
@@ -62,7 +62,7 @@ from tokamark.data import initialize_TokaMark_dataset
 from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransform
 
 from src.utils.utils import (ComposeTransforms, get_train_test_val_shots, initialize_datasets, load_task_config)
-from src.benchmark.utils_ import (load_benchmark_settings, 
+from src.benchmark.utils import (load_benchmark_settings, 
                                 parse_args,
                                 create_vae_dictionary,
                                 process_batch,
@@ -128,7 +128,7 @@ def train_model(
             if batch_idx % 100 == 0:
                 if verbose:
                     print(f"\nBatch {batch_idx}")
-
+            
             data, target, target_mask = process_batch(batch, input_vae, target_vae)
 
             if data is None:
@@ -370,7 +370,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
@@ -379,7 +379,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
@@ -416,7 +416,7 @@ def main():
     
     # Initialize model and send it to device
     try:
-        model = BenchmarkModel(SETTINGS,  SETTINGS.output_dim)
+        model = BenchmarkModel(SETTINGS)
         model.to(device)
     except:
         # Initialize model and send it to device

@@ -68,10 +68,10 @@ class SettingsBenchmark:
         else:
             raise KeyError("'training' not found in config")
         
-        if ("signal_model" in config.keys() and "mask_model" in config.keys()) or "model" in config.keys():
+        if ("signal_model" in config.keys() and "mask_model" in config.keys() and "end_model" in config.keys()) or "model" in config.keys():
             self.MODEL = Models(config)
         else:
-            raise KeyError("'model' not found in config")
+            raise KeyError("One or more `models` not found in config")
         
         if "local" in config.keys():
             self.local = config["local"]
@@ -79,11 +79,11 @@ class SettingsBenchmark:
             print("'local' not defined in benchmark_setup; settting to True")
             self.local = True
         
-        if "output_dim" in config.keys():
-            self.output_dim = config["output_dim"]
+        if "output_signals_len" in config.keys():
+            self.output_signals_len = config["output_signals_len"]
         else:
-            raise KeyError("'output_dim' not found in config")
-
+            self.output_signals_len = None
+            
         if "cache_data" in config.keys():
             self.cache = config["cache_data"]
         else:
@@ -167,7 +167,13 @@ class Models:
             self.mask_layers = self._get_key(mask_model,"layers")
         else:
             self.mask_layers = None
-        
+            
+        end_model = config.get("end_model", {})
+        if end_model:
+            self.end_layers = self._get_key(end_model, "layers")
+        else:
+            self.end_layers = None
+            
         model = config.get("model", {})
         if model:
             self.model_layers = self._get_key(model, "layers")

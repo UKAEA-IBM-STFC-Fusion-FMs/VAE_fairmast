@@ -60,7 +60,6 @@ class beta_VAE(nn.Module):
             After permute: [B, C, H, W]
             Output shape: [B, 2C, H, W]
         """
-
         # For a 3D signals (i.e., x dimension == 4) we use a conv2d encoder.
         # we must permute the indices of our tensor to agree with the PyTorch conv2d convention.
         if x.ndim == 4:
@@ -146,8 +145,8 @@ def masked_loss_function(beta, reco, target, mu, logvar, mask, clamp_logvar=(-20
         Scalar tensor containing the KL-divergence term averaged across the batch
     """  
     dims = tuple(range(1, target.ndim))   # all dims except batch
-    valid_per_sample = mask.sum(dim=dims).clamp_min(1.0) # nr. of valid entries per sample 
-
+    valid_per_sample = mask.sum(dim=dims) # nr. of valid entries per sample 
+    
     squared_diff = mask * (target - reco)**2
 
     loss_per_sample = squared_diff.sum(dim=dims) # per sample in batch

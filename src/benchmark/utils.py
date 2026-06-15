@@ -209,6 +209,11 @@ def process_data(
         # Ground invalid entries with zero
         batch[invalid_entries] = 0
         
+        # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
+        invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
+        tau = 0.25
+        valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
+            
         # Check data for encoding
         if model is not None:
         
@@ -219,11 +224,6 @@ def process_data(
             # Initialize mask and latent representation with zeros
             z = torch.zeros(B, model.latent_dim, device=batch.device, dtype=batch.dtype)
             mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
-            
-            # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
-            invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-            tau = 0.25
-            valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
 
             if valid_samples.any():
                 with torch.no_grad():
@@ -309,7 +309,13 @@ def process_batch(
     # Inputs are always encoded, hence encode_masks is used, see process_data method.
     input_data_list, input_mask_list = process_data(input_vae, input_) 
     target_data_list, target_mask_list = process_data(target_vae, target_)
-
+    
+    input_validity_test = torch.tensor([(mask.mean()>0.5).float() for mask in input_mask_list])
+    target_validity_test = torch.tensor([(mask.mean()>0.5).float() for mask in target_mask_list])
+    
+    if input_validity_test.mean() < 0.5 or target_validity_test.mean() < 0.5:
+        return None, None, None
+    
     input_data = torch.cat([*input_data_list, *input_mask_list], dim=1)
 
     target_data = torch.cat(target_data_list, dim=1)  # [B, sum n_signals]
