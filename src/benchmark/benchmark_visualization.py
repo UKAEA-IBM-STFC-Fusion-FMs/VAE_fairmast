@@ -1,6 +1,6 @@
 """
     
-    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_2.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -270,7 +270,6 @@ def decode_reco_signals(output_vaes, signals_latent_space, SETTINGS):
                 once the signal was flattened. For signals with associated VAE, `l` is the length
                 of the signal in its latent space representation.
     """
-    
     latent_dims = [vae.latent_dim if vae is not None else None for vae in output_vaes]
     
     # decoding individual signals START
@@ -320,7 +319,7 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, target_mask = process_batch(batch, input_vae, target_vae)
+            data, target, target_mask, target_, input_ = process_batch(batch, input_vae, target_vae)
 
             if data is None:
                 continue
@@ -345,7 +344,6 @@ def evaluate_model(
             rmse = get_RMSE(reconstruction,target,target_mask)
             batch_rmse.extend(rmse.tolist())
             
-           
             max_value = torch.max(rmse)
             max_idx = torch.argmax(rmse)
         
@@ -362,11 +360,11 @@ def evaluate_model(
                 best_reco[1] = target[min_idx]
                 
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
-            y = batch['y']
-            for i,signal in enumerate(y):
-                reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
             
-            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, y)
+            for i, signal in enumerate(target_):
+                reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
+
+            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_)
             
             if all_rmse_per_signal is None:
                 all_rmse_per_signal = [[] for _ in rmse_list_signals]
@@ -579,7 +577,7 @@ def main():
         xlabel = "loss",
         save_path = save_fig_loss_path)
     
-    rmse_signals = [torch.cat(t_list, dim=0) for t_list in all_rmse_per_signal]
+    rmse_signals = [torch.cat(t_list, dim=0).cpu() for t_list in all_rmse_per_signal]
 
     for i,rmse_signal in enumerate(rmse_signals):
         save_fig_loss_path = os.path.join(output_directory,f"RMSE_real_space_{i}_{config_benchmark_file_name.removesuffix('.json')}.pdf")

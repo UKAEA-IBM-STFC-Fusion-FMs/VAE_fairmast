@@ -132,10 +132,61 @@ def create_vae_dictionary(mode, vae_dictionary, type_of_signal, list_of_signals,
 
     return vae_dictionary
     
+def skim_batch(input_, target_):
+    
+    """
+    Return a boolean mask indicating which batch samples should be kept.
 
+    A sample is considered valid for a given entry
+    if more than half of its values are finite.
+
+    Then, for each batch sample:
+      - the fraction of valid entries across `input_` is computed;
+      - the fraction of valid entries across `target_` is computed.
+
+    A batch sample is discarded only if fewer than half of the input entries
+    are valid *OR* fewer than half of the target entries are valid.
+    Otherwise, it is kept.
+
+    Args:
+        input_ (list[torch.Tensor]):
+            List of input tensors. Each tensor must have shape `[B, ...]`,
+            where the batch dimension `B` is shared across all tensors.
+        target_ (list[torch.Tensor]):
+            List of target tensors. Each tensor must have shape `[B, ...]`,
+            where the batch dimension `B` is shared across all tensors.
+
+    Returns:
+        torch.Tensor:
+            Boolean tensor of shape `[B]`, where `True` means the
+            corresponding batch sample should be kept and `False` means it
+            should be discarded.
+    """
+
+    valid_input_entries = torch.stack(
+        [(torch.isfinite(x_).float().mean(dim=tuple(range(1, x_.ndim))) > 0.5).float()
+        for x_ in input_],
+        dim=1
+    )  # [B, n_input_entries]
+
+    valid_target_entries = torch.stack(
+        [(torch.isfinite(y_).float().mean(dim=tuple(range(1, y_.ndim))) > 0.5).float()
+        for y_ in target_],
+        dim=1
+    )  # [B, n_target_entries]
+
+    
+    input_validity = valid_input_entries.mean(dim=1)   # [B], fraction of valid input entries
+    target_validity = valid_target_entries.mean(dim=1) # [B], fraction of valid target entries
+
+    valid_samples = ~((input_validity < 0.5) | (target_validity < 0.5))  # [B] boolean mask
+    
+    return valid_samples
+    
 def process_data(
     models: List[Optional[beta_VAE]],
-    batched_data: List[torch.Tensor]):
+    batched_data: List[torch.Tensor],
+    mask_type):
     """
     - If model is not None
         For each pair of batched_data and model we get the latent space representation of the 
@@ -223,7 +274,11 @@ def process_data(
             
             # Initialize mask and latent representation with zeros
             z = torch.zeros(B, model.latent_dim, device=batch.device, dtype=batch.dtype)
-            mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
+            if mask_type  == "expand_over_latent_dim": 
+                mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
+            else:
+                mask = torch.zeros(B, 1, device=batch.device, dtype = batch.dtype)
+
 
             if valid_samples.any():
                 with torch.no_grad():
@@ -304,17 +359,14 @@ def process_batch(
         ]
     except Exception as e:
         raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
-
-
+ 
+    valid_samples = skim_batch(input_, target_).to(input_[0].device)
+    input_  = [x_[valid_samples] for x_ in input_]
+    target_ = [y_[valid_samples] for y_ in target_]
+        
     # Inputs are always encoded, hence encode_masks is used, see process_data method.
-    input_data_list, input_mask_list = process_data(input_vae, input_) 
-    target_data_list, target_mask_list = process_data(target_vae, target_)
-    
-    input_validity_test = torch.tensor([(mask.mean()>0.5).float() for mask in input_mask_list])
-    target_validity_test = torch.tensor([(mask.mean()>0.5).float() for mask in target_mask_list])
-    
-    if input_validity_test.mean() < 0.5 or target_validity_test.mean() < 0.5:
-        return None, None, None
+    input_data_list, input_mask_list = process_data(input_vae, input_, "do_not_expand_over_latent_dim") 
+    target_data_list, target_mask_list = process_data(target_vae, target_, "expand_over_latent_dim")
     
     input_data = torch.cat([*input_data_list, *input_mask_list], dim=1)
 
@@ -322,7 +374,7 @@ def process_batch(
     target_mask = torch.cat(target_mask_list, dim=1)  # [B, sum n_signals]
     
 
-    return input_data, target_data, target_mask
+    return input_data, target_data, target_mask, target_, input_
     
     
 def masked_loss(reco, target, mask, eps = 1e-8):

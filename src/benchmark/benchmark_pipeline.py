@@ -3,7 +3,7 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_v6.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_v4_copy.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
 python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 
 
@@ -129,7 +129,7 @@ def train_model(
                 if verbose:
                     print(f"\nBatch {batch_idx}")
             
-            data, target, target_mask = process_batch(batch, input_vae, target_vae)
+            data, target, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
 
             if data is None:
                 continue
@@ -202,7 +202,7 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, target_mask = process_batch(batch, input_vae, target_vae)
+                data, target, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
 
                 if data is None:
                     continue
@@ -370,7 +370,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=False,
+        test_mode=True,
         shuffle_windows = False,
         verbose=False
     )
@@ -379,7 +379,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=False,
+        test_mode=True,
         shuffle_windows = False,
         verbose=False
     )
@@ -420,6 +420,7 @@ def main():
         model.to(device)
     except:
         # Initialize model and send it to device
+        print("USING single MLP model as a benchmark model")
         from src.utils.layer_factory import SequentialBuilder
         model = SequentialBuilder({"layers": SETTINGS.MODEL.model_layers})
         model.to(device)
