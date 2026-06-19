@@ -48,7 +48,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_vae_model(config_path:str):
+def load_vae_model(config_path:str, signal_name: str, device):
     """
     config_path : str
         Path to the config.json containing parameters for initializing the model
@@ -68,11 +68,21 @@ def load_vae_model(config_path:str):
     except Exception as e:
         print(f"Error in initializing vae model: {e}")
         return None
-            
+    
+    
+    parent_dir = os.path.dirname(config_path)
+    best_model_path = os.path.join(parent_dir, "best_vae_" + signal_name + ".pt")
+    
+    checkpoint = torch.load(best_model_path, map_location=torch.device('cpu'))
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    model.to(device)
+    model.eval()
+    
     return model
     
 
-def create_vae_dictionary(mode, vae_dictionary, type_of_signal, list_of_signals, SETTINGS, model_sub_paths):
+def create_vae_dictionary(device, vae_dictionary, type_of_signal, list_of_signals, SETTINGS, model_sub_paths):
     """ Loads VAE models into a dictionary for signals in the list.
 
        Reinforce the one-to-one correspondence between input or actuator signals and VAE models.
@@ -102,7 +112,7 @@ def create_vae_dictionary(mode, vae_dictionary, type_of_signal, list_of_signals,
     if type_of_signal not in [ "input","actuator", "output"]:
         raise ValueError(f"Type of signal specified {type_of_signal} not in the list of correct keys:  [input, actuator,output] ")
 
-    for i, (source, signal_name) in enumerate(list_of_signals):
+    for source, signal_name in list_of_signals:
         key = f"{source}-{signal_name}"
         vae_dictionary[type_of_signal][key] = None
 
@@ -110,15 +120,7 @@ def create_vae_dictionary(mode, vae_dictionary, type_of_signal, list_of_signals,
             if signal_name in model_path:
                 
                 full_path = os.path.join(SETTINGS.LOCAL_PATHS.vae_directory, model_path)
-
-                # store model keyed by source-signal
-                if mode == 'eval':
-                    vae_dictionary[type_of_signal][key] = load_vae_model(full_path).eval()
-                elif mode == "train":
-                    vae_dictionary[type_of_signal][key] = load_vae_model(full_path).train()
-                else:
-                    raise ValueError(f"mode must be `eval` or `train`. Current mode value: `{mode}`")
-                break
+                vae_dictionary[type_of_signal][key] = load_vae_model(full_path, signal_name, device)
 
     num_inputs = len(list_of_signals)
     num_loaded = len(vae_dictionary[type_of_signal])

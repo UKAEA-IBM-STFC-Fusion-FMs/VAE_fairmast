@@ -3,7 +3,7 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_v4_copy.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
 python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 
 
@@ -72,6 +72,7 @@ from src.benchmark.benchmark_model import BenchmarkModel
 
 from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, ReplaceNaN
 
+
 def train_model(
     SETTINGS:SettingsBenchmark,
     train_dataloader:DataLoader,
@@ -138,12 +139,10 @@ def train_model(
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
-                    
                     reconstruction = model(data)
-
                     loss = masked_loss(reconstruction, target, target_mask)
                     
-                    if (not torch.isfinite(loss)):
+                    if not torch.isfinite(loss).item():
                         if verbose:
                             print(
                                 f"[Training batch {batch_idx} non-finite loss components "
@@ -157,7 +156,7 @@ def train_model(
             else:
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, target_mask)
-                if (not torch.isfinite(loss)):
+                if not torch.isfinite(loss).item():
                     if verbose:
                         print(
                             f"[Training batch {batch_idx} non-finite loss components "
@@ -214,7 +213,7 @@ def train_model(
                 else:
                     reconstruction = model(data)
                     loss = masked_loss(reconstruction, target, target_mask)
-                if (not torch.isfinite(loss)):
+                if not torch.isfinite(loss).item():
                     if verbose:
                         print(
                         f"[batch {batch_idx} non-finite loss components "
@@ -301,7 +300,7 @@ def main():
     print( f"output_directory = {output_directory}")
     
     # Get lists of shot IDs for train, test and val samples
-    train_shots, test_shots, val_shots = get_train_test_val_shots(
+    train_shots, _, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
         max_index_for_test = None,
@@ -401,10 +400,9 @@ def main():
     # Load VAEs 
     # ----------------------------------------
     vae_dictionary = {"input": {}, "actuator": {}, "output": {}}
-    mode = "eval"
-    create_vae_dictionary(mode, vae_dictionary, "input", config_task["sources_and_signals"].get("input_name"), SETTINGS, SETTINGS.LOCAL_PATHS.input_vae_models)
-    create_vae_dictionary(mode, vae_dictionary, "actuator", config_task["sources_and_signals"].get("actuator_name"), SETTINGS, SETTINGS.LOCAL_PATHS.actuator_vae_models)
-    create_vae_dictionary(mode, vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "input", config_task["sources_and_signals"].get("input_name"), SETTINGS, SETTINGS.LOCAL_PATHS.input_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "actuator", config_task["sources_and_signals"].get("actuator_name"), SETTINGS, SETTINGS.LOCAL_PATHS.actuator_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
 
     # Set VAEs mode:
     for group in ("input", "actuator", "output"):
@@ -412,7 +410,6 @@ def main():
             if m is None:
                 continue
             m.to(device)
-            m.eval() 
     
     # Initialize model and send it to device
     try:
@@ -468,7 +465,7 @@ def main():
         optimizer,
         scheduler,
         output_directory,
-        use_amp = True,
+        use_amp = False,
         grad_clip=1,
         verbose = True
         )

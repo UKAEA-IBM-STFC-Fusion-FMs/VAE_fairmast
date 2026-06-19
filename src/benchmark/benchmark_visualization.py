@@ -1,6 +1,6 @@
 """
     
-    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
+    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_tmp.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -314,12 +314,12 @@ def evaluate_model(
     input_vae = list(vae_dictionary["input"].values()) + list(actuator_dict.values())
     target_vae = list(output_dict.values())
     
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, target_mask, target_, input_ = process_batch(batch, input_vae, target_vae)
+            data, target, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae)
 
             if data is None:
                 continue
@@ -332,13 +332,14 @@ def evaluate_model(
                 reconstruction = model(data)
                 loss = masked_loss(reconstruction, target, target_mask)
             
-            if (not torch.isfinite(loss).all()) and verbose:
-                print(
-                    f"[batch {batch_idx} non-finite loss components "
-                    f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
-                )
-                continue 
-            
+            if not torch.isfinite(loss).item():
+                if verbose:
+                    print(
+                        f"[Training batch {batch_idx} non-finite loss components "
+                        f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
+                    )
+                continue  
+
             batch_losses.append(loss.item())
             
             rmse = get_RMSE(reconstruction,target,target_mask)
@@ -361,10 +362,10 @@ def evaluate_model(
                 
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
             
-            for i, signal in enumerate(target_):
+            for i, signal in enumerate(target_real_space):
                 reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
 
-            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_)
+            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_real_space)
             
             if all_rmse_per_signal is None:
                 all_rmse_per_signal = [[] for _ in rmse_list_signals]
@@ -511,10 +512,9 @@ def main():
     # Load VAEs 
     # ----------------------------------------
     vae_dictionary = {"input": {}, "actuator": {}, "output": {}}
-    mode = "eval"
-    create_vae_dictionary(mode, vae_dictionary, "input", config_task["sources_and_signals"].get("input_name"), SETTINGS, SETTINGS.LOCAL_PATHS.input_vae_models)
-    create_vae_dictionary(mode, vae_dictionary, "actuator", config_task["sources_and_signals"].get("actuator_name"), SETTINGS, SETTINGS.LOCAL_PATHS.actuator_vae_models)
-    create_vae_dictionary(mode, vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "input", config_task["sources_and_signals"].get("input_name"), SETTINGS, SETTINGS.LOCAL_PATHS.input_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "actuator", config_task["sources_and_signals"].get("actuator_name"), SETTINGS, SETTINGS.LOCAL_PATHS.actuator_vae_models)
+    create_vae_dictionary(device, vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
 
     # Move VAEs to device:
     for group in ("input", "actuator", "output"):
@@ -522,33 +522,37 @@ def main():
             if m is None:
                 continue
             m.to(device)
-            m.eval() 
-
-    # Retrieve model architecture
-    # if SETTINGS.MODEL.layers is None:
-    #     raise ValueError("Model layers not specified correctly in task config .json")
-    # Retrieve model architecture
-    if SETTINGS.MODEL.signal_layers is None or SETTINGS.MODEL.mask_layers is None:
-        raise ValueError("Model layers not specified correctly in task config .json")
+            
+    # Initialize model and send it to device
+    try:
+        model = BenchmarkModel(SETTINGS)
+        model.to(device)
+    except:
+        # Initialize model and send it to device
+        print("USING single MLP model as a benchmark model")
+        from src.utils.layer_factory import SequentialBuilder
+        model = SequentialBuilder({"layers": SETTINGS.MODEL.model_layers})
+        model.to(device)
     
     # Initialize model, load parameters and send it to device
     model = BenchmarkModel(SETTINGS)
     
-    checkpoint = torch.load(model_path, map_location=torch.device('cpu'))
+
+    checkpoint = torch.load(model_path, map_location=device)
     epoch_best_model = checkpoint['epoch']
     print(f"Epoch of the best model: {epoch_best_model}")
     
-    model.load_state_dict(checkpoint['model_state_dict'])
-    
+    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
     model.to(device)
     model.eval()
         
+
     all_losses, rmse, all_rmse_per_signal, worst_reco, best_reco = evaluate_model(
         model,
         val_dataloader,
         vae_dictionary,
         SETTINGS,
-        use_amp = True,
+        use_amp = False,
         verbose = True
     )
     
