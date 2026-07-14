@@ -433,11 +433,11 @@ def main():
             )
     
     ########### Use this block to continue training from a specific checkpoint ####
-    # model_path = "src/benchmark/data/output/task1_1_config_v3_part1/best_model.pt"
+    # model_path = "src/benchmark/data/output/task1_3_config/best_model.pt"
     # print(f"RESUMING TRAINING from {model_path}")
     # checkpoint = torch.load(model_path, map_location='cuda')
     # model.load_state_dict(checkpoint['model_state_dict'])
-    # model.to('cuda')
+    # model.to(device)
     # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     

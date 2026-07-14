@@ -1,6 +1,6 @@
 """
     
-    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_2_config_tmp.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_2_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -135,6 +135,12 @@ def hist_rmse(
     bins = np.linspace(min_rmse, max_rmse, 200)
 
     p95_rmse = float(np.quantile(rmse, 0.95))
+    if isinstance(rmse, list):
+        mean_rmse = float(np.mean(rmse))
+        std_rmse = float(np.std(rmse))
+    if isinstance(rmse, torch.Tensor):
+        mean_rmse = rmse.mean().item()
+        std_rmse = rmse.std().item()
     
     fig, ax =  plt.subplots()
     ax.hist(rmse, bins=bins)
@@ -145,6 +151,26 @@ def hist_rmse(
     ax.set_title(title)
     plt.tight_layout()
     
+    
+    stats_text = (
+        f"Mean = {mean_rmse:.4g}\n"
+        f"Std = {std_rmse:.4g}"
+    )
+
+    ax.text(
+        0.98, 0.82, stats_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        bbox=dict(
+            boxstyle="round",
+            facecolor="white",
+            edgecolor="black",
+            alpha=0.8,
+        ),
+    )
+
+
     if save_path:
         fig.savefig(save_path, dpi=150)
         plt.close(fig)  
