@@ -1,0 +1,64 @@
+{
+  "input": {
+    "data_names": [["magnetics","flux_loop_flux"]]
+  },
+  "time_settings":{
+    "x_window_sec": 0.005,
+    "stride_sec": 0.0,
+    "targeted_time_stamps_per_window": 25
+  },
+  "windowed_data_specs":{
+    "window_channels":15,
+    "window_length": 25
+  },
+  "beta-vae":{
+    "latent_dim":12,
+    "beta":0.001
+  },
+   "training": {
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "num_test_samples": 1110,
+    "dataloader_batch_size": 2000,
+    "num_workers": 1
+  },
+  "encoder":{
+    "type": "encoder_decoder",
+    "activation_fn": "leaky_relu",
+    "layers": [
+      {"type": "conv1d", "params": {"in_channels": 30, "out_channels": 64, "kernel_size": 5, "stride": 2, "padding": 0}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 2, "padding": 0}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv1d", "params": {"in_channels": 128, "out_channels": 256, "kernel_size": 4, "stride": 1, "padding": 0}}, 
+      {"type": "leaky_relu"},
+      {"type": "flatten", "params":{"start_dim":1}},
+      {"type": "linear", "params":{"in_features": 512, "out_features": 256}},
+      {"type": "leaky_relu"}
+    ]
+  },
+  "decoder": {
+    "type": "encoder_decoder",
+    "activation_fn": "leaky_relu",
+    "layers": [
+        { "type": "linear", "params": { "in_features": 12, "out_features": 256 } },
+        { "type": "leaky_relu" },
+         { "type": "linear", "params": { "in_features": 256, "out_features": 512 } },
+        { "type": "leaky_relu" },
+        { "type": "unflatten", "params": {"dim":1, "unflattened_size": [256, 2] }},
+        { "type": "conv_transpose1d", "params": { "in_channels": 256, "out_channels": 128, "kernel_size": 4, "stride": 1, "padding": 0 } },
+        { "type": "leaky_relu" }, 
+        { "type": "conv_transpose1d", "params": { "in_channels": 128, "out_channels": 64, "kernel_size": 3, "stride": 2, "padding": 0 } },
+        { "type": "leaky_relu" },  
+        { "type": "conv_transpose1d", "params": { "in_channels": 64, "out_channels": 15, "kernel_size": 5, "stride": 2, "padding": 0 } }
+    ]
+    },
+  "paths": {
+    "data_split_csv_path":  "VAE_fairmast/tokamark/src/tokamark/metadata/TokaMark_data_splits.csv",
+    "global_mean_std_path":"tokamark/src/tokamark/metadata",
+    "data_output_directory": "src/probe_diagnostics/data/output/",
+    "model_path": "src/vae_pipeline/data/New_VAEs/conv1d_vae_config_flux_loop_flux/best_vae_flux_loop_flux.pt"
+  },
+  "local": true,
+  "cache_data": false
+}
