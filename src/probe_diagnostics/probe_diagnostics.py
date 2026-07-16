@@ -56,6 +56,7 @@ from src.benchmark.utils import (process_data, masked_loss)
 from src.common_transforms.general_transforms import ProbeDiagnosticTransform, StdScalingTransform
 
 from src.probe_diagnostics.configs.config_setup import get_settings
+from src.probe_diagnostics.utils import get_shots_for
 from src.vae_pipeline.models.vae_model import beta_VAE
 
 
@@ -117,8 +118,14 @@ def main():
         max_index_for_test = SETTINGS.TRAINING.num_test_samples,
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
-    print(len(test_shots))
     
+    filtered_shots = list(get_shots_for("heating", "SW Beam"))
+    print(f"len(filtered_shots): {len(filtered_shots)}")
+
+    common = [shot for shot in test_shots if shot in filtered_shots]
+    if len(common)==0:
+        raise ValueError(f"No shots available with the current filters")
+
     #### INITIALIZE DATA TRANSFORMS
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_signals_stats.yaml"), "r") as f:
         dict_stats_metadata = yaml.safe_load(f)
@@ -151,7 +158,7 @@ def main():
     
     base_datasets = initialize_datasets(
         sources_and_signals=SETTINGS.DATA.data_names,
-        shots={"train": [], "val": [], "test": test_shots},
+        shots={"train": [], "val": [], "test": common},
         signal_transform_map=signal_transform_map,
         local_flag=SETTINGS.DATA.local,
         store_mast_settings=store_mast_settings
@@ -205,7 +212,6 @@ def main():
             residual.detach().cpu()
         else:
             continue
-        
 
         for shot_id, window_idx, latent in zip(
             batch["shot_id"],
@@ -255,7 +261,6 @@ def plot_mu_vs_shot_id(latent_data, window_index, save_path):
         raise ValueError(
             f"No shots contain window_index={window_index}"
         )
-
     mu_matrix = np.stack([
         latent_data[shot_id][window_index]["mu"]
         for shot_id in shot_ids
