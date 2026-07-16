@@ -135,7 +135,6 @@ def train_vae_model(
                         beta,
                         clamp_logvar)
             except Exception:
-                breakpoint()
 
             if loss is None:
                 if verbose:

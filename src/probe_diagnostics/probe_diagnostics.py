@@ -189,11 +189,11 @@ def main():
     
     latent_data = defaultdict(dict)
     for batch_nr, batch in enumerate(dataloader):
-        
-        if batch_nr % 100 == 0: 
-            print(f"Batch nr = {batch_nr}")
 
-        x = batch["x"].to(dtype=model_type)
+        if batch_nr % 10 == 0:
+            print(f"Batch nr = {batch_nr}")
+        
+        x = batch["x"].to(device=device, dtype=model_type)
 
         x_recon, mu, _, mask, x0 = model(x)
         
@@ -222,11 +222,22 @@ def main():
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
+   
+    shot_ids, mu_matrix, sample_idx, latent_dim_idx  = plot_mu_vs_shot_id(latent_data, window_index = 10, save_path = os.path.join(output_directory,"z_vs_shot.pdf"))
     
+    with open(os.path.join(output_directory,"latent_outliers.csv"), "w") as f:
+        f.write("shot_id,latent_dim,z_score,mu\n")
+
+        for s_idx, d_idx in zip(sample_idx, latent_dim_idx):
+            f.write(
+                f"{shot_ids[s_idx]},"
+                f"{d_idx},"
+                f"{mu_matrix[s_idx, d_idx]:.6f}\n"
+            )
     with open(os.path.join(output_directory,"latent_representations.pkl"), "wb") as f:
         pickle.dump(dict(latent_data), f)
-   
-    plot_mu_vs_shot_id(latent_data, window_index = 50, save_path = os.path.join(output_directory,"z_vs_shot.pdf"))
+    
+    
 
 def plot_mu_vs_shot_id(latent_data, window_index, save_path):
     """
@@ -252,6 +263,17 @@ def plot_mu_vs_shot_id(latent_data, window_index, save_path):
 
     latent_dim = mu_matrix.shape[1]
 
+    # Find outlayers
+    mu_mean = mu_matrix.mean(axis=0)
+    mu_std = mu_matrix.std(axis=0)
+
+    z = (mu_matrix - mu_mean) / mu_std
+    
+    outlier_mask = np.abs(z) > 3
+    
+    sample_idx, latent_dim_idx = np.where(outlier_mask)
+    
+    # make plots
     fig, axes = plt.subplots(
         latent_dim,
         1,
@@ -270,10 +292,28 @@ def plot_mu_vs_shot_id(latent_data, window_index, save_path):
             linewidth=1,
         )
 
+        axes[d].axhline(
+            mu_mean[d] + 3 * mu_std[d],
+            color="red",
+            linestyle="--",
+            linewidth=1,
+            label="+3std",
+        )
+
+        axes[d].axhline(
+            mu_mean[d] - 3 * mu_std[d],
+            color="red",
+            linestyle="--",
+            linewidth=1,
+            label="-3std",
+        )
+        
         axes[d].set_ylabel(f"$z_{d}$")
         axes[d].grid(True)
-        axes[d].tick_params(axis="x", labelbottom=False)
-
+        tick_idx = np.arange(0, len(shot_ids), 10)
+        axes[d].set_xticks([shot_ids[i] for i in tick_idx])
+        axes[d].set_xticklabels([shot_ids[i] for i in tick_idx], rotation=90)
+        axes[d].tick_params(axis="x", labelbottom=True, labelsize = 4)  # <- important
 
     fig.suptitle(
         f"Latent coordinates for window {window_index}",
@@ -283,8 +323,9 @@ def plot_mu_vs_shot_id(latent_data, window_index, save_path):
     plt.tight_layout()
     fig.savefig(save_path)
     
-         
+        
+    return shot_ids, mu_matrix, sample_idx, latent_dim_idx
+
 if __name__ == "__main__":
     main()
-    
     

@@ -129,7 +129,7 @@ def train_model(
             if batch_idx % 100 == 0:
                 if verbose:
                     print(f"\nBatch {batch_idx}")
-            
+
             data, target, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
 
             if data is None:
