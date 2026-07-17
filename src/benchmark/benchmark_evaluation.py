@@ -1,15 +1,15 @@
 """
-    
-    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
+    How to call it, example"
+    python src/benchmark/benchmark_evaluation.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 """
-from typing import Iterable, Optional, Tuple, Dict
+
+from typing import Iterable, Optional
 import matplotlib.pyplot as plt
 import json
 import os
 import sys
 import torch
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
 import yaml
 import numpy as np
 
@@ -40,88 +40,7 @@ from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 
 from src.utils.utils import ( load_task_config, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
 from src.utils.layer_factory import SequentialBuilder
-from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform
-
-
-def plot_loss_vs_epoch(
-    data: Iterable[float],
-    title: str = "Task nr",
-    ylabel: str = "Loss",
-    xlabel: str = "Epoch",
-    save_path: Optional[str] = None) -> None:
-        
-    val_loss = data["val_losses"]
-    train_loss = data["train_losses"]
-
-    # Epochs
-    epochs = list(range(1, len(val_loss) + 1))
-
-    # Create scatter plot
-    fig, ax = plt.subplots()
-    ax.plot(epochs, val_loss, linestyle='solid',color='blue', marker='o', label="Validation loss" )
-    ax.plot(epochs, train_loss, linestyle='solid',color='red', marker='o', label="Training loss")
-    ax.set_yscale('log')
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.grid(True)
-    ax.legend()
-
-    if save_path is not None:
-        fig.savefig(save_path)
-        plt.close(fig)  
-    else:
-        plt.show()
-
-def plot_target_vs_data(worst_reco, best_reco, file_save, x_label, y_label):
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-    cases = [
-        ("Best Reconstruction", best_reco, axes[0]),
-        ("Worst Reconstruction", worst_reco, axes[1]),
-    ]
-
-    for title, reco, ax in cases:
-        data = reco[0]
-        target = reco[1]
-        rmse = reco[2]
-
-        data_np = data.detach().cpu().numpy().flatten()
-        target_np = target.detach().cpu().numpy().flatten()
-
-        x = range(len(data_np))
-
-        # Reconstructed signal
-        ax.plot(
-            x,
-            data_np,
-            color="blue",
-            marker="o",
-            markersize=5,
-            linewidth=1.5,
-            label="Reconstructed"
-        )
-
-        # Ground truth
-        ax.plot(
-            x,
-            target_np,
-            color="red",
-            marker="s",
-            markersize=5,
-            linewidth=1.5,
-            label="Ground Truth"
-        )
-
-        ax.set_title(f"{title}\nRMSE = {rmse:.4f}")
-        ax.set_xlabel(x_label)
-        ax.set_ylabel(y_label)
-        ax.grid(True)
-        ax.legend()
-
-    plt.tight_layout()
-    fig.savefig(file_save, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, StdDescalingTransform
 
 
 def hist_rmse(
@@ -295,6 +214,9 @@ def decode_reco_signals(output_vaes, signals_latent_space, SETTINGS):
                 For signals without associated VAE, `l` is the length of the signal in the real space 
                 once the signal was flattened. For signals with associated VAE, `l` is the length
                 of the signal in its latent space representation.
+    Returns:
+        - signals_real_space List[torch.Tensor]:
+        A list of real space (decoded) signals.
     """
     latent_dims = [vae.latent_dim if vae is not None else None for vae in output_vaes]
     
@@ -320,26 +242,29 @@ def evaluate_model(
     dataloader: DataLoader,
     vae_dictionary,
     SETTINGS,
-    use_amp = True,
+    dict_stats_metadata,
+    target_names,
     verbose = True
 ):
-    """Evaluate model on a dataloader and compute losses/RMSE.
+    """Evaluate model on a dataloader and compute RMSE.
     """
-    batch_losses = []
+
+    # Initialization
     batch_rmse = []
     all_rmse_per_signal = None
-    best_reco = [None, None, float("inf")]
-    worst_reco = [None, None, float("-inf")]
     
-    # Collect VAEs for inputs and targets
+
+    # Collect VAEs for inputs, actuators and targets
     actuator_dict = vae_dictionary["actuator"] or {}
     output_dict = vae_dictionary["output"] or {}
 
     if len(vae_dictionary["input"]) == 0:
         raise ValueError("Input VAE is required.")
+    
     input_vae = list(vae_dictionary["input"].values()) + list(actuator_dict.values())
     target_vae = list(output_dict.values())
     
+
     with torch.inference_mode():
         for batch_idx, batch in enumerate(dataloader):
             if batch_idx % 100 == 0 and verbose:
@@ -350,13 +275,8 @@ def evaluate_model(
             if data is None:
                 continue
             
-            if use_amp:
-                with torch.amp.autocast('cuda', enabled=use_amp):
-                    reconstruction = model(data)
-                    loss = masked_loss(reconstruction, target, target_mask)
-            else:
-                reconstruction = model(data)
-                loss = masked_loss(reconstruction, target, target_mask)
+            reconstruction = model(data)
+            loss = masked_loss(reconstruction, target, target_mask)
             
             if not torch.isfinite(loss).item():
                 if verbose:
@@ -365,31 +285,18 @@ def evaluate_model(
                         f"loss finite={torch.isfinite(loss).all()}; skipping sub-batch."
                     )
                 continue  
-
-            batch_losses.append(loss.item())
             
             rmse = get_RMSE(reconstruction,target,target_mask)
             batch_rmse.extend(rmse.tolist())
-            
-            max_value = torch.max(rmse)
-            max_idx = torch.argmax(rmse)
-        
-            if max_value > worst_reco[2]:
-                worst_reco[2] = max_value
-                worst_reco[0] = reconstruction[max_idx]
-                worst_reco[1] = target[max_idx]
-            
-            min_value = torch.min(rmse)
-            min_idx = torch.argmin(rmse)
-            if min_value < best_reco[2]:
-                best_reco[2] = min_value
-                best_reco[0] = reconstruction[min_idx]
-                best_reco[1] = target[min_idx]
                 
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
             
             for i, signal in enumerate(target_real_space):
                 reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
+                name = f"{target_names[i][0]}-{target_names[i][1]}"
+                reco_signals_real_space[i]= (reco_signals_real_space[i]  *  dict_stats_metadata[name]["std"]) + dict_stats_metadata[name]["mean"]
+                breakpoint()
+
 
             rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_real_space)
             
@@ -397,19 +304,22 @@ def evaluate_model(
                 all_rmse_per_signal = [[] for _ in rmse_list_signals]
                 
             for i, rmse_signal in enumerate(rmse_list_signals):
-                all_rmse_per_signal[i].append(rmse_signal)
+                all_rmse_per_signal[i].append(rmse_signal/dict_stats_metadata[name]["std"])
                 
-    return batch_losses, batch_rmse, all_rmse_per_signal, worst_reco, best_reco
+    return batch_rmse, all_rmse_per_signal
 
 def main():
     # Determine device to train on
     if torch.cuda.is_available():
         device = torch.device("cuda")
-        print(f"--------------- RUNNING ON GPUs ---------------")
+        print("--------------- RUNNING ON NVIDIA GPU (CUDA) ---------------")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+        print("--------------- RUNNING ON APPLE SILICON GPU (MPS) ---------------")
     else:
         device = torch.device("cpu")
-        print(f"--------------- RUNNING ON CPUs ---------------")
-        
+        print("--------------- RUNNING ON CPU ---------------")
+
     args = parse_args()
 
     config_task_file_path: str = args.config_task_file_path
@@ -573,12 +483,13 @@ def main():
     model.eval()
         
 
-    all_losses, rmse, all_rmse_per_signal, worst_reco, best_reco = evaluate_model(
+    rmse, all_rmse_per_signal = evaluate_model(
         model,
-        val_dataloader,
+        test_dataloader,
         vae_dictionary,
         SETTINGS,
-        use_amp = False,
+        dict_stats_metadata,
+        config_task["sources_and_signals"].get("output_name"),
         verbose = True
     )
     
@@ -586,39 +497,26 @@ def main():
         data = json.load(file)
     
     save_fig_losses_path = os.path.join(output_directory,f"losses_{config_benchmark_file_name.removesuffix('.json')}.pdf")
-    plot_loss_vs_epoch(
-    data,
-    title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-    ylabel = "Loss",
-    xlabel = "Epoch",
-    save_path = save_fig_losses_path) 
     
-    save_fig_rmse_path = os.path.join(output_directory,f"RMSE_latent_space{config_benchmark_file_name.removesuffix('.json')}.pdf")
+
+    save_fig_rmse_path = os.path.join(output_directory,f"eval_RMSE_latent_space{config_benchmark_file_name.removesuffix('.json')}.pdf")
     hist_rmse(
         rmse,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
         xlabel = "RMSE",
         save_path = save_fig_rmse_path)
 
-    save_fig_loss_path = os.path.join(output_directory,f"All_samples_loss_{config_benchmark_file_name.removesuffix('.json')}.pdf")
-    hist_rmse(
-        all_losses,
-        title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-        xlabel = "loss",
-        save_path = save_fig_loss_path)
     
     rmse_signals = [torch.cat(t_list, dim=0).cpu() for t_list in all_rmse_per_signal]
 
     for i,rmse_signal in enumerate(rmse_signals):
-        save_fig_loss_path = os.path.join(output_directory,f"RMSE_real_space_{i}_{config_benchmark_file_name.removesuffix('.json')}.pdf")
+        save_fig_loss_path = os.path.join(output_directory,f"eval_RMSE_real_space_{i}_{config_benchmark_file_name.removesuffix('.json')}.pdf")
         hist_rmse(
             rmse_signal,
             title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
             xlabel = "loss",
             save_path = save_fig_loss_path)
     
-    save_reco_fig_path = os.path.join(output_directory,f"Reco_examples_{config_benchmark_file_name.removesuffix('.json')}.pdf")
-    plot_target_vs_data(worst_reco, best_reco, save_reco_fig_path, "Samples", "Signals")
         
 if __name__ == "__main__":
     main()

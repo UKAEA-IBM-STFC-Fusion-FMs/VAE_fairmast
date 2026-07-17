@@ -155,13 +155,14 @@ def main():
     # INITIALIZE DATASET
     zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
-    
+
+    # store_mast_settings = {"s3_mast_dataset_path":"mast/level2/shots"} 
     base_datasets = initialize_datasets(
         sources_and_signals=SETTINGS.DATA.data_names,
-        shots={"train": [], "val": [], "test": common},
+        shots={"train": [], "val": [], "test": test_shots},
         signal_transform_map=signal_transform_map,
         local_flag=SETTINGS.DATA.local,
-        store_mast_settings=store_mast_settings
+        store_mast_settings = store_mast_settings 
     )
     
     base_dataset = base_datasets['test']
@@ -209,7 +210,7 @@ def main():
         sum_mask = mask.sum()
         if sum_mask > 0:
             residual = (mask * abs(x_recon - x0)).sum() / sum_mask
-            residual.detach().cpu()
+            residual
         else:
             continue
 
@@ -220,7 +221,7 @@ def main():
         ):
             latent_data[int(shot_id)][int(window_idx)] = {
                 "mu":latent.numpy(),
-                "residual": residual
+                "residual": residual.item()
                 }
   
     #### MAKE OUTPUT FOLDER

@@ -241,9 +241,11 @@ def plot_merged_latent_spaces(
                 f"got {latent_dim}"
             )
 
-        x = mu_matrix[:, 0]
-        y = mu_matrix[:, 1]
-        z = mu_matrix[:, 2]
+        z_test = (mu_matrix - mu_matrix.mean(axis=0))/mu_matrix.std(axis=0)
+        idx = (abs(z_test)<3).all(axis=1)
+        x = mu_matrix[idx, 0]
+        y = mu_matrix[idx, 1]
+        z = mu_matrix[idx, 2]
 
         label = Path(pickle_file).stem
 

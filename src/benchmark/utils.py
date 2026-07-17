@@ -329,16 +329,21 @@ def process_batch(
     Returns
     -------
     input_data : Tensor [B, D_in + n_in]
-        Concatenated encoded inputs with sample-level masks.
+        Encoded inputs concatenated with sample- or element wise- level masks (1 if valid, 0 if invalid).
 
     target_data : Tensor [B, D_out + n_out]
-        Concatenated encoded targets with sample-level masks.
+        CEncoded/real targets.
         
     target_mask : Tensor [B, n_out]
-        Sample-level mask for the target data (1 if valid, 0 if invalid).
+        sample- or element wise- mask for the target data (1 if valid, 0 if invalid).
 
-    weights : Tensor [B] or None
-        Sample-wise weights (soft filtering) or None if hard filtering is used.
+    input_ : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one input signal.
+        A batch is skimmed to retain only valid samples.
+    
+    target_ : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one target signal.
+        A batch is skimmed to retain only valid samples.
     """
 
     # Original data

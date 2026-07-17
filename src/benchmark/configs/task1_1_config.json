@@ -1,21 +1,64 @@
 {
   "training": {
-    "num_epochs": 65,
-    "min_nr_epochs": 45,
-    "lr": 0.5e-3,
+    "num_epochs": 100,
+    "min_nr_epochs": 70,
+    "patience":5,
+    "lr": 5e-3,
     "num_train_samples":9259,
     "num_val_samples": 1157,
-    "dataloader_batch_size": 1,
-    "train_batch_size":1,
-    "num_workers": 0
+    "dataloader_batch_size": 2000,
+    "num_workers": 6
   },
   "paths": {
-    "data_split_csv_path": "fairmast_tools/metadata/2025-05-12/data_splits.csv",
-    "global_mean_std_path": "fairmast_data_processing/src/MAST_benchmark/metadata",
-    "vae_directory": "src/vae_pipeline/data/trained_VAEs/",
-    "output_directory": "src/benchmark/data/output"
+    "data_split_csv_path": "VAE_fairmast/tokamark/src/tokamark/metadata/TokaMark_data_splits.csv",
+    "global_mean_std_path": "tokamark/src/tokamark/metadata",
+    "vae_directory": "src/vae_pipeline/data/New_VAEs/",
+    "output_directory": "src/benchmark/data/output/",
+    "input_vae_models": ["conv1d_vae_config_flux_loop_flux/config_flux_loop_flux.json",
+                        "conv1d_vae_config_b_field_pol_probe_ccbv_field/config_b_field_pol_probe_ccbv_field.json",
+                        "conv1d_vae_config_b_field_pol_probe_obr_field/config_b_field_pol_probe_obr_field.json",
+                        "conv1d_vae_config_b_field_pol_probe_obv_field/config_b_field_pol_probe_obv_field.json",
+                        "conv1d_vae_config_b_field_tor_probe_saddle_voltage/config_b_field_tor_probe_saddle_voltage.json",
+                        "conv1d_vae_config_coil_current/config_coil_current.json",
+                        "linear_vae_config_solenoid_current/config_solenoid_current.json",
+                        "linear_vae_config_summary_ip/config_summary_ip.json"
+    ],
+    "actuator_vae_models": [],
+    "output_vae_models": []
   },
+  "signal_model":{
+    "layers": [
+      {"type": "linear", "params": {"in_features": 93, "out_features": 256}},
+      {"type": "layer_norm", "params": {"normalized_shape": 256}},
+      {"type": "gelu"},
+      {"type": "linear", "params": {"in_features": 256, "out_features": 128}},
+      {"type": "layer_norm", "params": {"normalized_shape": 128}},
+      {"type": "gelu"},
+      {"type": "linear", "params": {"in_features": 128, "out_features": 64}}, 
+      {"type": "layer_norm", "params": {"normalized_shape": 64}},
+      {"type": "gelu"}
+    ]
+  },
+   "mask_model":{
+    "layers": [
+      {"type": "linear", "params": {"in_features": 8, "out_features": 32}},
+      {"type": "layer_norm", "params": {"normalized_shape": 32}},
+      {"type": "leaky_relu"},
+      {"type": "linear", "params": {"in_features": 32, "out_features": 64}}, 
+      {"type": "layer_norm", "params": {"normalized_shape": 64}},
+      {"type": "leaky_relu"}
+    ]
+  },
+  "end_model":{
+    "layers":[
+        {"type": "linear", "params": {"in_features": 128, "out_features": 64}},
+        {"type": "layer_norm", "params": {"normalized_shape": 64}},
+        {"type": "gelu"},
+        {"type": "linear", "params": {"in_features": 64, "out_features": 17}}
+    ]
+  },
+  "output_signals_len":[1,1,1,1,2,2,1,1,1,1,1,1,1,1,1],
   "local": true,
-  "cache_data": true,
+  "cache_data": false,
   "task": 1
 }

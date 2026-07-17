@@ -53,6 +53,6 @@
     "data_output_directory": "src/probe_diagnostics/data/output/",
     "model_path": "/home/ir-lore2/VAE_fairmast/src/vae_pipeline/data/New_VAEs/linear_vae_config_power_nbi/best_vae_power_nbi.pt"
   },
-  "local": true,
+  "local": false,
   "cache_data": false
 }
