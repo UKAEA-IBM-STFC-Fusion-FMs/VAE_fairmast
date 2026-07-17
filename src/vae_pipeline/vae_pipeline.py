@@ -127,14 +127,13 @@ def train_vae_model(
             
             # Initialiaze gradient
             optimizer.zero_grad(set_to_none=True)
-            try:
-                loss, recon_loss, kl_loss, _, _, _, _ = training_block(
-                        input_data, 
-                        model,
-                        use_amp, 
-                        beta,
-                        clamp_logvar)
-            except Exception:
+
+            loss, recon_loss, kl_loss, _, _, _, _ = training_block(
+                    input_data, 
+                    model,
+                    use_amp, 
+                    beta,
+                    clamp_logvar)
 
             if loss is None:
                 if verbose:
