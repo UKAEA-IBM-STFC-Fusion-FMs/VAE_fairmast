@@ -237,30 +237,28 @@ def get_RMSE_for_list_signals(
         tensors do not have matching shapes.
     """
     
-    mask_list = [
-        torch.isfinite(m).to(dtype=m.dtype, device=m.device)
-        for m in target_list
-    ]
-    
-    if not (len(reco_list) == len(target_list) == len(mask_list)):
+    valid_entries = [ torch.isfinite(t) for t in target_list]
+
+    if not (len(reco_list) == len(target_list) == len(valid_entries)):
         raise ValueError(
             f"Input lists must have the same length, got "
-            f"{len(reco_list)=}, {len(target_list)=}, {len(mask_list)=}"
+            f"{len(reco_list)=}, {len(target_list)=}, {len(valid_entries)=}"
         )
 
     rmse_list = []
 
-    for i, (reco, target, mask) in enumerate(zip(reco_list, target_list, mask_list)):
+    for i, (reco, target, valid) in enumerate(zip(reco_list, target_list, valid_entries)):
+      
         if reco.shape != target.shape:
             raise ValueError(
                 f"reco and target must have the same shape at index {i}, "
                 f"got {reco.shape} and {target.shape}"
             )
 
-        if target.shape != mask.shape:
+        if target.shape != valid.shape:
             raise ValueError(
                 f"target and mask must have the same shape at index {i}, "
-                f"got {target.shape} and {mask.shape}"
+                f"got {target.shape} and {valid.shape}"
             )
 
         if target.ndim < 2:
@@ -268,7 +266,10 @@ def get_RMSE_for_list_signals(
                 f"Target ndim must be at least 2 at index {i}. "
                 f"Here we have ndim = {target.ndim}"
             )
-
+       
+        mask = valid.to(dtype=reco.dtype)
+        target[~valid]=0
+        
         dims = tuple(range(1, target.ndim))
 
         valid_entries_per_sample = mask.sum(dim=dims)                # shape [B]
