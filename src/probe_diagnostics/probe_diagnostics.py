@@ -56,14 +56,14 @@ from src.benchmark.utils import (process_data, masked_loss)
 from src.common_transforms.general_transforms import ProbeDiagnosticTransform, StdScalingTransform
 
 from src.probe_diagnostics.configs.config_setup import get_settings
-from src.probe_diagnostics.utils import get_shots_for
+from src.probe_diagnostics.utils import find_outlayers, plot_latent_space_vs_shot_id, plot_residual_vs_shot_id
 from src.vae_pipeline.models.vae_model import beta_VAE
 
 
 
 def main():
     
-    #### DETERMINE DEVICE
+    #### DETERMINE DEVICE ####################################
     if torch.cuda.is_available():
         device = torch.device("cuda")
         print(f"--------------- RUNNING ON GPUs ---------------")
@@ -72,7 +72,7 @@ def main():
         print(f"--------------- RUNNING ON CPUs ---------------")
     
     
-    #### PARSE INPUT
+    #### PARSE INPUT ####################################
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config_file_path",
@@ -90,7 +90,7 @@ def main():
     args = parser.parse_args()
     
     
-    #### LOAD CONFIG
+    #### LOAD CONFIG ####################################
     config_file_path = args.config_file_path
     if not os.path.exists(config_file_path):
         raise FileNotFoundError(f"Configuration file {config_file_path} not found.") 
@@ -111,7 +111,7 @@ def main():
     dict_task_metadata = get_task_metadata(config_task,verbose=False)
     
     
-    # MAKE LISTS OF DATA 
+    # MAKE LISTS OF DATA ####################################
     _, test_shots, _ = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
@@ -119,14 +119,14 @@ def main():
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
-    filtered_shots = list(get_shots_for("heating", "SW Beam"))
-    print(f"len(filtered_shots): {len(filtered_shots)}")
+    # filtered_shots = list(get_shots_for("heating", "SW Beam"))
+    # print(f"len(filtered_shots): {len(filtered_shots)}")
 
-    common = [shot for shot in test_shots if shot in filtered_shots]
-    if len(common)==0:
-        raise ValueError(f"No shots available with the current filters")
+    # common = [shot for shot in test_shots if shot in filtered_shots]
+    # if len(common)==0:
+    #     raise ValueError(f"No shots available with the current filters")
 
-    #### INITIALIZE DATA TRANSFORMS
+    #### INITIALIZE DATA TRANSFORMS ####################################
     with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_signals_stats.yaml"), "r") as f:
         dict_stats_metadata = yaml.safe_load(f)
 
@@ -152,7 +152,7 @@ def main():
         }
       
     
-    # INITIALIZE DATASET
+    # INITIALIZE DATASET ####################################
     zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
 
@@ -178,7 +178,7 @@ def main():
     )
     
     
-    #### INITIALIZE DATALOADER
+    #### INITIALIZE DATALOADER ####################################
     dataloader = DataLoader(
         dataset = dataset,
         batch_size = SETTINGS.TRAINING.dataloader_batch_size,
@@ -186,7 +186,7 @@ def main():
         persistent_workers = False
     )
     
-    #### LOAD BETA-VAE MODEL
+    #### LOAD BETA-VAE MODEL ####################################
     model = beta_VAE(SETTINGS)
     checkpoint = torch.load(SETTINGS.LOCAL_PATHS.model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
@@ -195,11 +195,13 @@ def main():
     model_type  = next(model.parameters()).dtype
 
     
+    #### MAIN LOOP TO CREATE LATENT DATA DIC ####################################
     latent_data = defaultdict(dict)
     for batch_nr, batch in enumerate(dataloader):
-
-        if batch_nr % 10 == 0:
-            print(f"Batch nr = {batch_nr}")
+        print(f"Batch nr = {batch_nr}")
+        if batch_nr == 10:
+            # print(f"Batch nr = {batch_nr}")
+            break
         
         x = batch["x"].to(device=device, dtype=model_type)
 
@@ -213,7 +215,7 @@ def main():
             residual
         else:
             continue
-
+        
         for shot_id, window_idx, latent in zip(
             batch["shot_id"],
             batch["window_index"],
@@ -221,8 +223,9 @@ def main():
         ):
             latent_data[int(shot_id)][int(window_idx)] = {
                 "mu":latent.numpy(),
-                "residual": residual.item()
+                "shot_average_residual": residual.item()
                 }
+  
   
     #### MAKE OUTPUT FOLDER
     output_directory = SETTINGS.LOCAL_PATHS.data_output_directory + probe_name[1] + "/"
@@ -230,107 +233,26 @@ def main():
         os.makedirs(output_directory)
     print( f"output_directory = {output_directory}")
    
-    shot_ids, mu_matrix, sample_idx, latent_dim_idx  = plot_mu_vs_shot_id(latent_data, window_index = 10, save_path = os.path.join(output_directory,"z_vs_shot.pdf"))
+   
+    #### PLOTs
+    shot_ids, mu_matrix, idx_0, idx_1, z_score  = plot_latent_space_vs_shot_id(latent_data, time_window_idx = 10, save_path = output_directory)
+    plot_residual_vs_shot_id(latent_data, save_path = output_directory)
     
-    with open(os.path.join(output_directory,"latent_outliers.csv"), "w") as f:
-        f.write("shot_id,latent_dim,z_score,mu\n")
-
-        for s_idx, d_idx in zip(sample_idx, latent_dim_idx):
+    
+    #### SAVE FILES
+    with open(os.path.join(output_directory,"outliers_latent_space.csv"), "w") as f:
+        f.write("shot_id, latent_dim, z-score, mu \n")
+        for s_idx, d_idx in zip(idx_0, idx_1):
             f.write(
                 f"{shot_ids[s_idx]},"
                 f"{d_idx},"
+                f"{z_score}"
                 f"{mu_matrix[s_idx, d_idx]:.6f}\n"
             )
     with open(os.path.join(output_directory,"latent_representations.pkl"), "wb") as f:
         pickle.dump(dict(latent_data), f)
     
     
-
-def plot_mu_vs_shot_id(latent_data, window_index, save_path):
-    """
-    Plot each latent dimension as a function of shot_id
-    for a fixed window_index.
-    """
-
-    shot_ids = sorted(
-        shot_id
-        for shot_id in latent_data
-        if window_index in latent_data[shot_id]
-    )
-
-    if len(shot_ids) == 0:
-        raise ValueError(
-            f"No shots contain window_index={window_index}"
-        )
-    mu_matrix = np.stack([
-        latent_data[shot_id][window_index]["mu"]
-        for shot_id in shot_ids
-    ])
-
-    latent_dim = mu_matrix.shape[1]
-
-    # Find outlayers
-    mu_mean = mu_matrix.mean(axis=0)
-    mu_std = mu_matrix.std(axis=0)
-
-    z = (mu_matrix - mu_mean) / mu_std
-    
-    outlier_mask = np.abs(z) > 3
-    
-    sample_idx, latent_dim_idx = np.where(outlier_mask)
-    
-    # make plots
-    fig, axes = plt.subplots(
-        latent_dim,
-        1,
-        figsize=(10, 2.5 * latent_dim),
-        sharex=True,
-    )
-
-    if latent_dim == 1:
-        axes = [axes]
-
-    for d in range(latent_dim):
-        axes[d].plot(
-            shot_ids,
-            mu_matrix[:, d],
-            marker="o",
-            linewidth=1,
-        )
-
-        axes[d].axhline(
-            mu_mean[d] + 3 * mu_std[d],
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="+3std",
-        )
-
-        axes[d].axhline(
-            mu_mean[d] - 3 * mu_std[d],
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="-3std",
-        )
-        
-        axes[d].set_ylabel(f"$z_{d}$")
-        axes[d].grid(True)
-        tick_idx = np.arange(0, len(shot_ids), 10)
-        axes[d].set_xticks([shot_ids[i] for i in tick_idx])
-        axes[d].set_xticklabels([shot_ids[i] for i in tick_idx], rotation=90)
-        axes[d].tick_params(axis="x", labelbottom=True, labelsize = 4)  # <- important
-
-    fig.suptitle(
-        f"Latent coordinates for window {window_index}",
-        y=0.995,
-    )
-
-    plt.tight_layout()
-    fig.savefig(save_path)
-    
-        
-    return shot_ids, mu_matrix, sample_idx, latent_dim_idx
 
 if __name__ == "__main__":
     main()

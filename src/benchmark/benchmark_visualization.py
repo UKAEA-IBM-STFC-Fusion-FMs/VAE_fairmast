@@ -1,6 +1,5 @@
 """
-    
-    python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
+python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task2_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_2_magnetics_dynamics/task_2-3.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -218,7 +217,7 @@ def get_RMSE_for_list_signals(
     ----------
     reco_list : list[torch.Tensor]
         List of reconstructed tensors. Each tensor must have the same shape
-        as the corresponding target and mask tensor.
+        as the corresponding target.
     target_list : list[torch.Tensor]
         List of target tensors. Each tensor is expected to have shape [B, ...].
     eps : float, optional
@@ -242,7 +241,6 @@ def get_RMSE_for_list_signals(
         torch.isfinite(m).to(dtype=m.dtype, device=m.device)
         for m in target_list
     ]
-
     
     if not (len(reco_list) == len(target_list) == len(mask_list)):
         raise ValueError(
@@ -345,17 +343,30 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae)
+            data, target, input_mask, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae)
 
+            # Exact shape equality
+            assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
+                f"Shapes differ:\n"
+                f"data        : {data.shape[0]}\n"
+                f"target      : {target.shape[0]}\n"
+                f"input_mask  : {input_mask.shape[0]}\n"
+                f"target_mask : {target_mask.shape[0]}\n"
+            )
+            
+            for t_real in target_real_space:
+                if t_real.shape[0]!=data.shape[0]:
+                    raise ValueError(f"target real space batch dimension {t_real.shape[0]} differes from that one of data {data.shape[0]}")
+            
             if data is None:
                 continue
             
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
-                    reconstruction = model(data)
+                    reconstruction = model(data, input_mask)
                     loss = masked_loss(reconstruction, target, target_mask)
             else:
-                reconstruction = model(data)
+                reconstruction = model(data, input_mask)
                 loss = masked_loss(reconstruction, target, target_mask)
             
             if not torch.isfinite(loss).item():
@@ -387,7 +398,7 @@ def evaluate_model(
                 best_reco[1] = target[min_idx]
                 
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
-            
+
             for i, signal in enumerate(target_real_space):
                 reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
 

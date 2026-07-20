@@ -106,7 +106,18 @@ def train_model(
     input_vae = list(vae_dictionary["input"].values()) + list(actuator_dict.values())
     target_vae = list(output_dict.values())
 
+    latent_space_size = 0
+    for this_vae in input_vae:
+        latent_space_size += this_vae.latent_dim
     
+    # Check correspondence of VAE output and mbenchmark model input
+    for l in SETTINGS.MODEL.signal_layers:
+        if l["type"] == "linear":
+            if l["params"]["in_features"] != latent_space_size:
+                raise ValueError(f"VAE output size {l['params']['in_features']} does not match model input size {latent_space_size}")
+            else:
+                break
+            
     for epoch in range(SETTINGS.TRAINING.num_epochs):
         
         if verbose:
@@ -130,8 +141,17 @@ def train_model(
                 if verbose:
                     print(f"\nBatch {batch_idx}")
 
-            data, target, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
+            data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
 
+            # Exact shape equality
+            assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0] (
+                f"Shapes differ:\n"
+                f"data        : {data.shape[0]}\n"
+                f"target      : {target.shape[0]}\n"
+                f"input_mask  : {input_mask.shape[0]}\n"
+                f"target_mask : {target_mask.shape[0]}\n"
+            )
+            
             if data is None:
                 continue
             
@@ -139,7 +159,7 @@ def train_model(
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
-                    reconstruction = model(data)
+                    reconstruction = model(data, input_mask)
                     loss = masked_loss(reconstruction, target, target_mask)
                     
                     if not torch.isfinite(loss).item():
@@ -154,7 +174,7 @@ def train_model(
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
             else:
-                reconstruction = model(data)
+                reconstruction = model(data, input_mask)
                 loss = masked_loss(reconstruction, target, target_mask)
                 if not torch.isfinite(loss).item():
                     if verbose:
@@ -201,17 +221,26 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
+                data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
+                
+                # Exact shape equality
+                assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0] (
+                    f"Shapes differ:\n"
+                    f"data        : {data.shape[0]}\n"
+                    f"target      : {target.shape[0]}\n"
+                    f"input_mask  : {input_mask.shape[0]}\n"
+                    f"target_mask : {target_mask.shape[0]}\n"
+                )
 
                 if data is None:
                     continue
      
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
-                        reconstruction = model(data)
+                        reconstruction = model(data, input_mask)
                         loss = masked_loss(reconstruction, target, target_mask)
                 else:
-                    reconstruction = model(data)
+                    reconstruction = model(data, input_mask)
                     loss = masked_loss(reconstruction, target, target_mask)
                 if not torch.isfinite(loss).item():
                     if verbose:

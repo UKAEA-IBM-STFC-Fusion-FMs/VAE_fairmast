@@ -9,174 +9,146 @@ import pandas as pd
 import seaborn as sns
 from pathlib import Path
 
+def find_outlayers(mu_matrix, thr = 3):
+    """Find outlayers 
 
+    Args:
+        mu_matrix (numpy array): a stack across all the shots of the latent dimensions for a specific time window, shape [shot count, latent_dim]
+        thr (float): threshold for outlayers
+    Returns:
+        tuple: index in the mu_matrix array and value of the outlayers
+    """
+    
+    mu_mean = mu_matrix.mean(axis=0)
+    mu_std = mu_matrix.std(axis=0)
 
+    z = (mu_matrix - mu_mean) / mu_std
+    
+    outlier_mask = np.abs(z) > thr
+ 
+    idx_0, idx_1 = np.where(outlier_mask)
+    
+    return idx_0, idx_1, z[idx_0,idx_1], mu_mean, mu_std
+
+def get_all_shot_in_campaign(campaign):
+    summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
+    return summary.loc[summary["campaign"] == campaign, "shot_id"]
+
+def get_all_shots_for(key, value):
+    summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
+    return summary.loc[summary[key] == value, "shot_id"]
 
 def load_pickle(path):
     with open(path, "rb") as f:
         return pickle.load(f)
 
+def plot_latent_space_vs_shot_id(latent_data, time_window_idx, save_path, shot_min=None, shot_max=None):
+    """ Plot latent coordinates versus shot_id for all shots in latent_data, 
+        an optional window of interest can be set via shot_min, shot_max.
+    Args:
+        latent_data (collections.defaultdict): {shot_id : {window_idx : latent_data}}
+        time_window_idx (int): time window index
+        save_path (str): 
+        shot_min (int, optional):  Defaults to None.
+        shot_max (int, optional):  Defaults to None.
 
-def plot_mu_vs_shot_id(latent_data, shot_min, shot_max, save_path):
+    Raises:
+        ValueError: _description_
+
+    Returns:
+        shot_ids (list(int)) : list of shot_ids
+        mu_matrix (np array) : 2D stacked tensor for the whole latent space corresponding to the selected shot_ids
+        idx_0 : outlayer 0-th index in mu_matrix
+        idx_1 : outlayer 1-th index in mu_matrix
     """
-    Plot latent coordinates versus shot_id
-    for all shots in [shot_min, shot_max].
-    """
+    
+    if isinstance(shot_min, int) and isinstance(shot_max, int):
+        shot_ids = sorted( shot_id for shot_id in latent_data if shot_min <= shot_id <= shot_max)
+        if len(shot_ids) == 0:
+            raise ValueError(f"No shots found in interval [{shot_min}, {shot_max}]")
+    else:
+        print("Using the whole shot_ids sequence")
+        shot_ids = sorted(shot_id for shot_id in latent_data)
 
-    shot_ids = sorted(
-        shot_id
-        for shot_id in latent_data
-        if shot_min <= shot_id <= shot_max
-    )
-
-    if len(shot_ids) == 0:
-        raise ValueError(
-            f"No shots found in interval [{shot_min}, {shot_max}]"
-        )
-
-    first_shot = shot_ids[0]
-    window_indices = sorted(latent_data[first_shot].keys())
-
-    mu_matrix = np.stack([
-        latent_data[shot_id][window_indices[0]]["mu"]
-        for shot_id in shot_ids
-    ])
+    # A stacked tensor for the whole latent space corresponding to the selected shot interval.
+    mu_matrix = np.stack([latent_data[shot_id][time_window_idx]["mu"] for shot_id in shot_ids])
     
     latent_dim = mu_matrix.shape[1]
 
-    mu_mean = mu_matrix.mean(axis=0)
-    mu_std = mu_matrix.std(axis=0)
-
-    fig, axes = plt.subplots(
-        latent_dim,
-        1,
-        figsize=(12, 2.5 * latent_dim),
-        sharex=True,
-    )
+    idx_0, idx_1, z_score, mu_mean, mu_std = find_outlayers(mu_matrix) 
+    
+    fig, axes = plt.subplots(latent_dim,1,figsize=(12, 2.5 * latent_dim),sharex=True, )
 
     if latent_dim == 1:
         axes = [axes]
 
-    # tick_idx = np.arange(0, len(shot_ids), 10)
 
     for d in range(latent_dim):
 
-        axes[d].plot(
-            shot_ids,
-            mu_matrix[:, d],
-            marker="o",
-            linewidth=1,
-        )
-
-        axes[d].axhline(
-            mu_mean[d] + 3 * mu_std[d],
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="+3 std",
-        )
-
-        axes[d].axhline(
-            mu_mean[d] - 3 * mu_std[d],
-            color="red",
-            linestyle="--",
-            linewidth=1,
-            label="-3 std",
-        )
+        axes[d].plot(shot_ids, mu_matrix[:, d],marker="o",linewidth=1)
+        axes[d].axhline( mu_mean[d] + 3 * mu_std[d],color="red",linestyle="--",linewidth=1,label="+3 std")
+        axes[d].axhline(mu_mean[d] - 3 * mu_std[d],color="red", linestyle="--", linewidth=1,label="-3 std")
 
         axes[d].set_ylabel(f"$z_{d}$")
         axes[d].grid(True)
-
         axes[d].set_xticks(shot_ids)
-        axes[d].set_xticklabels(
-            shot_ids,
-            rotation=90,
-        )
+        axes[d].set_xticklabels( shot_ids,rotation=90 )
+        axes[d].tick_params( axis="x",labelbottom=True, labelsize=6 )
 
-        axes[d].tick_params(
-            axis="x",
-            labelbottom=True,
-            labelsize=6,
-        )
-
-    fig.suptitle(
-        f"Latent coordinates ({shot_min}-{shot_max})",
-        y=0.995,
-    )
+    fig.suptitle( f"Latent coordinates ({shot_min}-{shot_max})",y=0.995)
 
     plt.tight_layout()
-    fig.savefig(save_path, dpi=300)
+    fig.savefig(os.path.join(save_path, "latent_space_vs_shot_id.pdf"), dpi=300)
     plt.close(fig)
-
+    
+    return shot_ids, mu_matrix, idx_0, idx_1, z_score
 
 def plot_residual_vs_shot_id(
     latent_data,
-    shot_min,
-    shot_max,
     save_path,
+    shot_min=None,
+    shot_max=None
 ):
     """
     Plot residual versus shot_id.
     """
 
-    shot_ids = sorted(
-        shot_id
-        for shot_id in latent_data
-        if shot_min <= shot_id <= shot_max
-    )
-
-    if len(shot_ids) == 0:
-        raise ValueError(
-            f"No shots found in interval [{shot_min}, {shot_max}]"
-        )
-
+    if isinstance(shot_min, int) and isinstance(shot_max, int):
+        shot_ids = sorted( shot_id for shot_id in latent_data if shot_min <= shot_id <= shot_max)
+        if len(shot_ids) == 0:
+            raise ValueError(f"No shots found in interval [{shot_min}, {shot_max}]")
+    else:
+        print("Using the whole shot_ids sequence")
+        shot_ids = sorted(shot_id for shot_id in latent_data)
+    
     residuals = []
 
     for shot_id in shot_ids:
-        shot_residuals = [latent_data[shot_id][0]["residual"].item()]
+        shot_residuals = [latent_data[shot_id][0]["shot_average_residual"]]
         residuals.append(shot_residuals)
 
     fig, ax = plt.subplots(figsize=(12, 5))
 
-    ax.plot(
-        shot_ids,
-        residuals,
-        marker="o",
-        linewidth=1,
-    )
+    ax.plot(shot_ids, residuals,marker="o",linewidth=1)
 
     ax.set_xlabel("shot_id")
-    ax.set_ylabel("residual")
+    ax.set_ylabel("shot_average_residual")
     ax.grid(True)
 
-    # tick_idx = np.arange(0, len(shot_ids), 1)
-
     ax.set_xticks(shot_ids)
-    ax.set_xticklabels(
-        shot_ids,
-        rotation=90,
-        fontsize=10,
-    )
+    ax.set_xticklabels( shot_ids, rotation=90, fontsize=10)
 
     plt.tight_layout()
-    fig.savefig(save_path, dpi=300)
+    fig.savefig( os.path.join(save_path, "residual_vs_shot_id.pdf"), dpi=300)
     plt.close(fig)
 
-def get_shot_in_campaign(campaign):
-    summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
-    return summary.loc[summary["campaign"] == campaign, "shot_id"]
-
-def get_shots_for(key, value):
-    summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
-    return summary.loc[summary[key] == value, "shot_id"]
-
-def plot_zoom_shot_interval(shot_min, shot_max, pickle_file):
+def plot_shot_interval(shot_min, shot_max, pickle_file):
 
     latent_data = load_pickle(pickle_file)
 
     parent_dir = os.path.dirname(pickle_file)
     
-    plot_mu_vs_shot_id(
+    plot_latent_space_vs_shot_id(
         latent_data,
         shot_min,
         shot_max,
@@ -189,7 +161,6 @@ def plot_zoom_shot_interval(shot_min, shot_max, pickle_file):
         shot_max,
          os.path.join(parent_dir, "residual_vs_shot_id.pdf"),
     )
-
 
 def plot_merged_latent_spaces(
     pickle_files,

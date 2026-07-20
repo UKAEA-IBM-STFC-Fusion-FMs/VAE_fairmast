@@ -18,6 +18,18 @@ from src.utils.layer_factory import SequentialBuilder
 
 
 class BenchmarkModel(nn.Module):
+    """The model takes as input a concatenation of latent representations 
+       obtained6from multiple pretrained VAEs together with a corresponding validity mask.
+
+        Feature-wise scaling (gamma) and shifting (beta) coefficients. 
+        These coefficients modulate the signal features through a 
+          
+            h = (1 + gamma) * h_signal + beta
+        
+        This h is then passed to a prediction head that estimates the future latent representation of the target signal.
+            
+
+    """
     def __init__(self, SETTINGS):
         super().__init__()
 
@@ -28,51 +40,55 @@ class BenchmarkModel(nn.Module):
         
         self.fusion_mlp = SequentialBuilder({"layers": SETTINGS.MODEL.end_layers})
         
-        # Find signal input-output dimensions
-        self.signal_dim = None
+        # Find signal input-output dimensions from SETTINGS
+        self.signal_in_features = None
         self.signal_out_features = None
         for l in SETTINGS.MODEL.signal_layers:
             if l["type"] == "linear":
-                if self.signal_dim ==None: self.signal_dim = l["params"]["in_features"]
+                if self.signal_in_features ==None: 
+                    self.signal_in_features = l["params"]["in_features"]
                 self.signal_out_features = l["params"]["out_features"]
         
-        # Find mask input-output dimensions
-        self.mask_dim = None
+        # Find mask input-output dimensions from SETTINGS
+        self.mask_in_features = None
         self.mask_out_features = None
         for l in SETTINGS.MODEL.mask_layers:
             if l["type"] == "linear":
-                if self.mask_dim ==None: self.mask_dim = l["params"]["in_features"]
+                if self.mask_in_features ==None: 
+                    self.mask_in_features = l["params"]["in_features"]
                 self.mask_out_features = l["params"]["out_features"]
         
-        # Find end_model input-output dimensions
-        self.end_model_dim = None
+        # Find end_model input-output dimensions from SETTINGS
+        self.end_model_in_features = None
         self.end_model_out_features = None
         for l in SETTINGS.MODEL.end_layers:
             if l["type"] == "linear":
-                if self.end_model_dim ==None: self.end_model_dim = l["params"]["in_features"]
+                if self.end_model_in_features == None: 
+                    self.end_model_in_features = l["params"]["in_features"]
                 self.end_model_out_features = l["params"]["out_features"]
     
-        if  self.mask_dim is None or self.mask_out_features is None:
+        # Check neteork architectures
+        if  self.mask_in_features is None or self.mask_out_features is None:
             raise ValueError("Mask input and output dimensions could not be determined. Make sure the mask_model linear")
         
-        if  self.signal_dim is None or self.signal_out_features is None:
+        if  self.signal_in_features is None or self.signal_out_features is None:
             raise ValueError("Signal input and output dimensions could not be determined. Make sure the signal_model linear")
         
-        if  self.end_model_dim is None or self.end_model_out_features is None:
+        if  self.end_model_in_features is None or self.end_model_out_features is None:
             raise ValueError("The end_model input and output dimensions could not be determined. Make sure the end_model_model linear")
+
+        if  int(self.mask_out_features/2) != self.signal_out_features:
+            raise ValueError(f"The mask network should output gamma and beta each one having same size as the input layer of the signal network : {self.signal_out_features}.\
+                Current size of mask output is {self.mask_out_features} thus beta and gamma have size {int(self.mask_out_features/2)}")
         
-        if self.end_model_dim != self.signal_out_features + self.mask_out_features :
-            raise ValueError(f"The `end_model` input size (currently {self.end_model_dim}) \
-                must be equal to the signal+mask output size, (currently {self.signal_out_features + self.mask_out_features})")
+    def forward(self, signal, mask):
+       
+        h_signal = self.signal_mlp(signal)
+        h_mask = self.mask_mlp(mask)
         
-    def forward(self, x):
-
-        x_signal = x[..., :self.signal_dim] 
-        x_mask = x[..., self.signal_dim:self.signal_dim + self.mask_dim]
-
-        h_signal = self.signal_mlp(x_signal)
-        h_mask = self.mask_mlp(x_mask)
-
-        h = torch.cat([h_signal, h_mask], dim=-1)
-        y = self.fusion_mlp(h)
+        gamma, beta = torch.chunk(h_mask, 2, dim=-1)
+        
+        h_signal = (1 + gamma) * h_signal + beta
+        
+        y = self.fusion_mlp(h_signal)
         return y
