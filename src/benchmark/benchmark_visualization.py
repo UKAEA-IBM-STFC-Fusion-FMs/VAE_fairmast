@@ -4,6 +4,7 @@ python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
 import json
+import pickle
 import os
 import sys
 import torch
@@ -319,6 +320,7 @@ def evaluate_model(
     dataloader: DataLoader,
     vae_dictionary,
     SETTINGS,
+    output_directory,
     use_amp = True,
     verbose = True
 ):
@@ -329,6 +331,8 @@ def evaluate_model(
     all_rmse_per_signal = None
     best_reco = [None, None, float("inf")]
     worst_reco = [None, None, float("-inf")]
+    best_rmse =  float("inf")
+    worst_rmse = float("-inf")
     
     # Collect VAEs for inputs and targets
     actuator_dict = vae_dictionary["actuator"] or {}
@@ -405,13 +409,44 @@ def evaluate_model(
 
             rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_real_space)
             
+            
+            rmse_per_sample = torch.stack(rmse_list_signals, dim=1)
+            rmse_total = rmse_per_sample.sum(dim=1)  
+            
+            best_idx = torch.argmin(rmse_total)
+            worst_idx = torch.argmax(rmse_total)
+     
+            if rmse_total[best_idx] < best_rmse:
+                best_rmse = rmse_total[best_idx]
+               
+                best_reco_real_space = {
+                    "sample_idx": int(best_idx),
+                    "signals_rec": [x[best_idx].cpu() for x in reco_signals_real_space],
+                    "signals_true": [x[best_idx].cpu() for x in target_real_space],
+                    "rmse":best_rmse
+                }
+
+                with open(os.path.join(output_directory,"best_reco.pkl"), "wb") as f:
+                    pickle.dump(best_reco_real_space , f)
+
+            if rmse_total[worst_idx] > worst_rmse:
+                worst_rmse = rmse_total[worst_idx]
+                worst_reco_real_space = {
+                    "sample_idx": int(worst_idx),
+                    "signals_rec": [x[worst_idx].cpu() for x in reco_signals_real_space],
+                    "signals_true": [x[worst_idx].cpu() for x in target_real_space],
+                    "rmse": worst_rmse
+                }
+                with open(os.path.join(output_directory,"worst_reco.pkl"), "wb") as f:
+                    pickle.dump(worst_reco_real_space, f)
+                    
             if all_rmse_per_signal is None:
                 all_rmse_per_signal = [[] for _ in rmse_list_signals]
                 
             for i, rmse_signal in enumerate(rmse_list_signals):
                 all_rmse_per_signal[i].append(rmse_signal)
                 
-    return batch_losses, batch_rmse, all_rmse_per_signal, worst_reco, best_reco
+    return batch_losses, batch_rmse, all_rmse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space
 
 def main():
     # Determine device to train on
@@ -585,11 +620,12 @@ def main():
     model.eval()
         
 
-    all_losses, rmse, all_rmse_per_signal, worst_reco, best_reco = evaluate_model(
+    all_losses, rmse, all_rmse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space = evaluate_model(
         model,
         test_dataloader,
         vae_dictionary,
         SETTINGS,
+        output_directory,
         use_amp = False,
         verbose = True
     )
