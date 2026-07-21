@@ -381,8 +381,8 @@ def process_batch(
     input_data_list, input_mask_list = process_data(input_vae, input_, "do_not_expand_mask_over_latent_dim") 
     target_data_list, target_mask_list = process_data(target_vae, target_, "expand_mask_over_latent_dim")
     
-    input_data = torch.cat(input_data_list, dim=1)
-    input_mask = torch.cat(input_mask_list, dim=1)
+    input_data = torch.cat(input_data_list, dim=1)  # [B, sum n_signals]
+    input_mask = torch.cat(input_mask_list, dim=1)  # [B, sum n_signals]
     
     target_data = torch.cat(target_data_list, dim=1)  # [B, sum n_signals]
     target_mask = torch.cat(target_mask_list, dim=1)  # [B, sum n_signals]

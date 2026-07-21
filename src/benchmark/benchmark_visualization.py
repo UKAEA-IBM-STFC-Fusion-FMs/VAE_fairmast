@@ -497,7 +497,7 @@ def main():
             )
     
     # MAST base datasets
-    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/level2/tmp/"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
@@ -587,7 +587,7 @@ def main():
 
     all_losses, rmse, all_rmse_per_signal, worst_reco, best_reco = evaluate_model(
         model,
-        val_dataloader,
+        test_dataloader,
         vae_dictionary,
         SETTINGS,
         use_amp = False,

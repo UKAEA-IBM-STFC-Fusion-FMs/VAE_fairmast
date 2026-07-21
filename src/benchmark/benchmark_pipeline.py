@@ -107,14 +107,15 @@ def train_model(
     target_vae = list(output_dict.values())
 
     latent_space_size = 0
-    for this_vae in input_vae:
+    for nr_vae, this_vae in enumerate(input_vae):
         latent_space_size += this_vae.latent_dim
+    print(f"Latent space dimension = {latent_space_size}")
     
     # Check correspondence of VAE output and mbenchmark model input
     for l in SETTINGS.MODEL.signal_layers:
         if l["type"] == "linear":
             if l["params"]["in_features"] != latent_space_size:
-                raise ValueError(f"VAE output size {l['params']['in_features']} does not match model input size {latent_space_size}")
+                raise ValueError(f"VAE expected output size from config file, {l['params']['in_features']}, does not match model input size {latent_space_size}")
             else:
                 break
             
@@ -144,7 +145,7 @@ def train_model(
             data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
 
             # Exact shape equality
-            assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0] (
+            assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
                 f"Shapes differ:\n"
                 f"data        : {data.shape[0]}\n"
                 f"target      : {target.shape[0]}\n"
@@ -224,7 +225,7 @@ def train_model(
                 data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
                 
                 # Exact shape equality
-                assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0] (
+                assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
                     f"Shapes differ:\n"
                     f"data        : {data.shape[0]}\n"
                     f"target      : {target.shape[0]}\n"
