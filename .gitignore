@@ -186,7 +186,7 @@ output_chronos_test/
 
 src/vae_pipeline/transforms/signal_level_transforms/*
 src/vae_pipeline/transforms/shot_level_transforms/*
-src/benchmark/data/output/*
 src/vae_pipeline/data/output/*
+src/probe_diagnostics/data
 src/benchmark/configs/*
 src/vae_pipeline/configs/*

@@ -290,15 +290,16 @@ def evaluate_model(
             batch_rmse.extend(rmse.tolist())
                 
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
-            
+            target_native_space = []
             for i, signal in enumerate(target_real_space):
                 reco_signals_real_space[i] = reco_signals_real_space[i].reshape(signal.shape[0],*signal.shape[1:]).to(signal.device)
                 name = f"{target_names[i][0]}-{target_names[i][1]}"
                 reco_signals_real_space[i]= (reco_signals_real_space[i]  *  dict_stats_metadata[name]["std"]) + dict_stats_metadata[name]["mean"]
-                breakpoint()
+                target_native_space.append( (signal *  dict_stats_metadata[name]["std"]) + dict_stats_metadata[name]["mean"])
+           
 
 
-            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_real_space)
+            rmse_list_signals = get_RMSE_for_list_signals(reco_signals_real_space, target_native_space)
             
             if all_rmse_per_signal is None:
                 all_rmse_per_signal = [[] for _ in rmse_list_signals]

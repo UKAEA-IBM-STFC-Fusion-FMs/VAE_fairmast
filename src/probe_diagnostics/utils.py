@@ -23,12 +23,12 @@ def find_outlayers(mu_matrix, thr = 3):
     mu_std = mu_matrix.std(axis=0)
 
     z = (mu_matrix - mu_mean) / mu_std
-    
+
     outlier_mask = np.abs(z) > thr
  
     idx_0, idx_1 = np.where(outlier_mask)
     
-    return idx_0, idx_1, z[idx_0,idx_1], mu_mean, mu_std
+    return idx_0, idx_1, z, mu_mean, mu_std
 
 def get_all_shot_in_campaign(campaign):
     summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
