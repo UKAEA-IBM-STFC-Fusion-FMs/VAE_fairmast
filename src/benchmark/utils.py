@@ -274,15 +274,15 @@ def process_data(
                 raise ValueError(f"Batch is not on the same device as the model: {p.device}")
             
             # Initialize mask and latent representation with zeros
-            z = torch.zeros(B, model.latent_dim, device=batch.device, dtype=batch.dtype)
             if mask_type  == "expand_mask_over_latent_dim": 
                 mask = torch.zeros(B, model.latent_dim, device=batch.device, dtype = batch.dtype)
             else:
                 mask = torch.zeros(B, 1, device=batch.device, dtype = batch.dtype)
 
+            with torch.no_grad():
+                z = model.encode(batch)[0]
+
             if valid_samples.any():
-                with torch.no_grad():
-                    z[valid_samples] = model.encode(batch[valid_samples])[0]
                 mask[valid_samples, :]  = 1
                 mask = mask.to(dtype=batch.dtype)   
         else:
