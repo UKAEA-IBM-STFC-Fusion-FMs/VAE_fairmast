@@ -1,5 +1,5 @@
 """
-python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task2_2_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_2_magnetics_dynamics/task_2-2.yaml
+python src/benchmark/forecasting_visualization.py  --config_benchmark_file_path src/benchmark/configs/forecasting_2_3.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_2_magnetics_dynamics/task_2-3.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -32,9 +32,10 @@ from src.benchmark.utils import (
                                 load_benchmark_settings, 
                                 parse_args,
                                 create_vae_dictionary,
-                                process_batch, 
+                                process_batch_test, 
                                 masked_loss)
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
+from  src.benchmark.forecasting_model import ForecastingModel
 
 from src.utils.utils import ( load_task_config, ComposeTransforms, get_train_test_val_shots, initialize_datasets)
 from src.utils.layer_factory import SequentialBuilder
@@ -210,6 +211,53 @@ def get_mse(reco: torch.Tensor, target: torch.Tensor, mask: torch.Tensor, eps: f
 
     return mse[has_valid]
 
+def _get_mse_for_frame_series(
+    reco_frames : torch.Tensor,
+    target_frames: torch.Tensor,
+    eps: float = 1e-12) :
+
+    mse_frames = []
+
+    for frame in range(target_frames.shape[-1]):
+        reco= reco_frames[:,:,:,frame]
+        target = target_frames[:,:,:,frame]
+
+        valid_entries = torch.isfinite(target)
+
+        if reco.shape != target.shape:
+            raise ValueError(
+                f"reco and target must have the same shape at index {i}, "
+                f"got {reco.shape} and {target.shape}"
+            )
+
+        if target.shape != valid_entries.shape:
+            raise ValueError(
+                f"target and mask must have the same shape at index {i}, "
+                f"got {target.shape} and {valid.shape}"
+            )
+
+        if target.ndim < 2:
+            raise ValueError(
+                f"Target ndim must be at least 2 at index {i}. "
+                f"Here we have ndim = {target.ndim}"
+            )
+        
+        mask = valid_entries.to(dtype=reco.dtype)
+        target[~valid_entries]=0
+            
+        dims = tuple(range(1, target.ndim))
+
+        valid_entries_per_sample = mask.sum(dim=dims)                # shape [B]
+        sqr_diff_sum = (mask * (reco - target) ** 2).sum(dim=dims)   # shape [B]
+
+        mse = sqr_diff_sum / (valid_entries_per_sample + eps)        # shape [B]
+        has_valid = valid_entries_per_sample > 0
+
+        mse_frames.append(mse[has_valid])
+
+    return mse_frames
+
+
 def get_mse_for_list_signals(
     reco_list: list[torch.Tensor],
     target_list: list[torch.Tensor],
@@ -320,7 +368,8 @@ def decode_reco_signals(output_vaes, signals_latent_space, SETTINGS):
     
     
 def evaluate_model(
-    model,
+    model_forecasting,
+    model_reconstruction,
     dataloader: DataLoader,
     vae_dictionary,
     SETTINGS,
@@ -352,30 +401,28 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, input_mask, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae)
+            input_data_list, target_data_list, input_mask_list, target_mask_list, target_real_space, _,  = process_batch_test(batch, input_vae, target_vae)
+            
+            diagnostic_data = input_data_list[:-len(list(actuator_dict.values()))] # drop out last entries corresponding to actuators
+            actuator_data = input_data_list[len(diagnostic_data):] # keep only last entries that are not input diagnostics
+            diagnostic_mask = (torch.cat(input_mask_list[:-len(list(actuator_dict.values()))], dim=1).mean(dim=1) > 0.5).float()
 
-            # Exact shape equality
-            assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
-                f"Shapes differ:\n"
-                f"data        : {data.shape[0]}\n"
-                f"target      : {target.shape[0]}\n"
-                f"input_mask  : {input_mask.shape[0]}\n"
-                f"target_mask : {target_mask.shape[0]}\n"
-            )
+            target = torch.cat(target_data_list, dim=1)  # [B, sum n_signals]
+            target_mask = torch.cat(target_mask_list, dim=1)  # [B, sum n_signals]
+
+
+            with torch.no_grad():
+                initial_target = model_reconstruction(torch.cat(diagnostic_data,dim=1), torch.cat(input_mask_list[:-len(list(actuator_dict.values()))], dim=1))
             
-            for t_real in target_real_space:
-                if t_real.shape[0]!=data.shape[0]:
-                    raise ValueError(f"target real space batch dimension {t_real.shape[0]} differes from that one of data {data.shape[0]}")
-            
-            if data is None:
-                continue
-            
+            data = torch.cat([initial_target]+ actuator_data, dim=1)
+            input_mask = torch.cat([diagnostic_mask.unsqueeze(1)] + input_mask_list[-len(list(actuator_dict.values())):], dim=1)
+
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
-                    reconstruction = model(data, input_mask)
+                    reconstruction = model_forecasting(data, input_mask)
                     loss = masked_loss(reconstruction, target, target_mask)
             else:
-                reconstruction = model(data, input_mask)
+                reconstruction = model_forecasting(data, input_mask)
                 loss = masked_loss(reconstruction, target, target_mask)
             
             if not torch.isfinite(loss).item():
@@ -406,6 +453,7 @@ def evaluate_model(
                 best_reco[0] = reconstruction[min_idx]
                 best_reco[1] = target[min_idx]
             
+        
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
 
             # For psi in a 25ms interval we must permute indices
@@ -417,16 +465,17 @@ def evaluate_model(
                     reco = reco.permute(0, 2, 3, 1)
 
                 reco_signals_real_space[i] = reco.contiguous().to(signal.device)
-
-            mse_list_signals = get_mse_for_list_signals(reco_signals_real_space, target_real_space)
-            mse_per_sample = torch.stack(mse_list_signals, dim=1)
-            mse_total = mse_per_sample.sum(dim=1)  
             
-            best_idx = torch.argmin(mse_total)
-            worst_idx = torch.argmax(mse_total)
+            mse_list_signals = get_mse_for_list_signals(reco_signals_real_space, target_real_space) # mse_list_signals = _get_mse_for_frame_series(reco_signals_real_space[0], target_real_space[0])
+            
+            rmse_per_sample = torch.stack(mse_list_signals, dim=1)
+            rmse_total = rmse_per_sample.sum(dim=1)  
+            
+            best_idx = torch.argmin(rmse_total)
+            worst_idx = torch.argmax(rmse_total)
      
-            if mse_total[best_idx] < best_rmse:
-                best_rmse = mse_total[best_idx]
+            if rmse_total[best_idx] < best_rmse:
+                best_rmse = rmse_total[best_idx]
                
                 best_reco_real_space = {
                     "sample_idx": int(best_idx),
@@ -438,8 +487,8 @@ def evaluate_model(
                 with open(os.path.join(output_directory,"best_reco.pkl"), "wb") as f:
                     pickle.dump(best_reco_real_space , f)
 
-            if mse_total[worst_idx] > worst_rmse:
-                worst_rmse = mse_total[worst_idx]
+            if rmse_total[worst_idx] > worst_rmse:
+                worst_rmse = rmse_total[worst_idx]
                 worst_reco_real_space = {
                     "sample_idx": int(worst_idx),
                     "signals_rec": [x[worst_idx].cpu() for x in reco_signals_real_space],
@@ -454,7 +503,7 @@ def evaluate_model(
                 
             for i, mse_signal in enumerate(mse_list_signals):
                 all_mse_per_signal[i].append(mse_signal)
-
+                
     return batch_losses, batch_mse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space
 
 def main():
@@ -604,33 +653,40 @@ def main():
             if m is None:
                 continue
             m.to(device)
-            
-    # Initialize model and send it to device
-    try:
-        model = BenchmarkModel(SETTINGS)
-        model.to(device)
-    except:
-        # Initialize model and send it to device
-        print("USING single MLP model as a benchmark model")
-        from src.utils.layer_factory import SequentialBuilder
-        model = SequentialBuilder({"layers": SETTINGS.MODEL.model_layers})
-        model.to(device)
-    
+
+
     # Initialize model, load parameters and send it to device
-    model = BenchmarkModel(SETTINGS)
+    model_reconstruction_path = "src/benchmark/data/output/task1_3_config_gamma_factor/"
     
+    try:
+        reco_SETTINGS = load_benchmark_settings(os.path.join(model_reconstruction_path, "task1_3_config_gamma_factor.json"))
+    except Exception as e:
+        raise ValueError(f"Loading reconstruction settings: {e}")
+
+    model_reconstruction = BenchmarkModel(reco_SETTINGS)
+
+    checkpoint = torch.load(os.path.join(model_reconstruction_path, "best_model.pt"), map_location=device)
+
+    model_reconstruction.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    model_reconstruction.to(device)
+    model_reconstruction.eval()
+
+    # Initialize model and send it to device
+    model_forecasting = ForecastingModel(SETTINGS)
+    model_forecasting.to(device)
 
     checkpoint = torch.load(model_path, map_location=device)
     epoch_best_model = checkpoint['epoch']
     print(f"Epoch of the best model: {epoch_best_model}")
     
-    model.load_state_dict(checkpoint["model_state_dict"], strict=False)
-    model.to(device)
-    model.eval()
+    model_forecasting.load_state_dict(checkpoint["model_state_dict"], strict=False)
+    model_forecasting.to(device)
+    model_forecasting.eval()
         
 
-    all_losses, rmse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space = evaluate_model(
-        model,
+    all_losses, mse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space = evaluate_model(
+        model_forecasting,
+        model_reconstruction,
         test_dataloader,
         vae_dictionary,
         SETTINGS,
@@ -652,7 +708,7 @@ def main():
     
     save_fig_rmse_path = os.path.join(output_directory,f"NRMSE_latent_space{config_benchmark_file_name.removesuffix('.json')}.pdf")
     hist_rmse(
-        rmse,
+        mse,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
         xlabel = "NRMSE",
         save_path = save_fig_rmse_path)
@@ -661,17 +717,17 @@ def main():
     hist_rmse(
         all_losses,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-        xlabel = "loss",
+        xlabel = "rmse",
         save_path = save_fig_loss_path)
     
-    rmse_signals = [torch.cat(t_list, dim=0).cpu() for t_list in all_mse_per_signal]
+    mse_signals = [torch.cat(t_list, dim=0).cpu() for t_list in all_mse_per_signal]
 
-    for i,rmse_signal in enumerate(rmse_signals):
+    for i,mse_signal in enumerate(mse_signals):
         save_fig_loss_path = os.path.join(output_directory,f"NRMSE_real_space_{i}_{config_benchmark_file_name.removesuffix('.json')}.pdf")
         hist_rmse(
-            rmse_signal,
+            mse_signal,
             title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-            xlabel = "NRMSE",
+            xlabel = "rmse",
             save_path = save_fig_loss_path)
     
     save_reco_fig_path = os.path.join(output_directory,f"Reco_examples_{config_benchmark_file_name.removesuffix('.json')}.pdf")

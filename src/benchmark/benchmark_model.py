@@ -77,7 +77,7 @@ class BenchmarkModel(nn.Module):
         if  self.end_model_in_features is None or self.end_model_out_features is None:
             raise ValueError("The end_model input and output dimensions could not be determined. Make sure the end_model_model linear")
 
-        if  int(self.mask_out_features/2) != self.signal_out_features:
+        if  (int(self.mask_out_features/2) != self.signal_out_features) and (int(self.mask_out_features) != self.signal_out_features):
             raise ValueError(f"The mask network should output gamma and beta each one having same size as the input layer of the signal network : {self.signal_out_features}.\
                 Current size of mask output is {self.mask_out_features} thus beta and gamma have size {int(self.mask_out_features/2)}")
         
@@ -85,10 +85,18 @@ class BenchmarkModel(nn.Module):
        
         h_signal = self.signal_mlp(signal)
         h_mask = self.mask_mlp(mask)
-        
-        gamma, beta = torch.chunk(h_mask, 2, dim=-1)
-        
-        h_signal = (1 + gamma) * h_signal + beta
+   
+        if h_mask.shape[1] == 2*h_signal.shape[1]:
+            try:
+                gamma, bias = torch.chunk(h_mask, 2, dim=-1)
+                h_signal = (1 + gamma) * h_signal + bias
+            except Exception as e:
+                raise ValueError(f"{e}")
+        elif h_mask.shape[1] == h_signal.shape[1]:
+             h_signal = h_mask * h_signal 
+        else:
+            raise ValueError(f"The mask network should output 1) gamma and beta each one having same size as the input layer of the signal network \
+                or 2) gamma only. Current size of mask output is {self.mask_out_features} signal size {self.signal_out_features}")
         
         y = self.fusion_mlp(h_signal)
         return y

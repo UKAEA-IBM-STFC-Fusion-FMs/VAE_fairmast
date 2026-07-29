@@ -146,9 +146,10 @@ def train_model(
 
             if use_amp:
                 with torch.amp.autocast('cuda', enabled=use_amp):
+
                     reconstruction = model_forecasting(data, input_mask)
                     loss = masked_loss(reconstruction, target, target_mask)
-                    breakpoint()
+       
                     if not torch.isfinite(loss).item():
                         if verbose:
                             print(
@@ -222,14 +223,8 @@ def train_model(
                     initial_target = model_reconstruction(torch.cat(diagnostic_data,dim=1), torch.cat(input_mask_list[:-len(list(actuator_dict.values()))], dim=1))
                 
                 data = torch.cat([initial_target]+ actuator_data, dim=1)
-                input_mask = torch.cat([diagnostic_mask] + input_mask_list[-len(list(actuator_dict.values())):], dim=1)
+                input_mask = torch.cat([diagnostic_mask.unsqueeze(1)] + input_mask_list[-len(list(actuator_dict.values())):], dim=1)
 
-                with torch.no_grad():
-                    initial_target = model_reconstruction(diagnostic_data)
-                
-                data = torch.cat([initial_target]+ actuator_data, dim=1)
-                input_mask = torch.cat([diagnostic_mask] + input_mask[-len(list(actuator_dict.values())):], dim=1)
-     
                 if use_amp:
                     with torch.amp.autocast('cuda', enabled=use_amp):
                         reconstruction = model_forecasting(data, input_mask)

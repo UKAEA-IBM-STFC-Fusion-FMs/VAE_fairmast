@@ -134,12 +134,12 @@ def create_vae_dictionary(device, vae_dictionary, type_of_signal, list_of_signal
 
     return vae_dictionary
     
-def skim_batch(input_, target_):
+def skim_batch(input_, target_, thr = 0.5):
     
     """
     Return a boolean mask indicating which batch samples should be kept.
 
-    A sample is considered valid if more than half of its values are finite.
+    A sample is considered valid if the percentage of its finite values is larger than `thr`.
 
     Then, for each batch sample:
       - the fraction of valid entries across `input_` features is computed;
@@ -152,7 +152,9 @@ def skim_batch(input_, target_):
     Args:
         input_ (list[torch.Tensor]):
             List of input tensors. Each tensor must have shape `[B, ...]`,
-            where the batch dimension `B` is shared across all tensors.
+            where the batch dimension `B` is shared across all tensors. 
+            input_ can contain both diagnostics and actuators or only diagnostics
+            depenig on task configuration. 
         target_ (list[torch.Tensor]):
             List of target tensors. Each tensor must have shape `[B, ...]`,
             where the batch dimension `B` is shared across all tensors.
@@ -165,13 +167,13 @@ def skim_batch(input_, target_):
     """
     
     valid_input_entries = torch.stack(
-        [(torch.isfinite(x_).float().mean(dim=tuple(range(1, x_.ndim))) > 0.5).float()
+        [(torch.isfinite(x_).float().mean(dim=tuple(range(1, x_.ndim))) > thr).float()
         for x_ in input_],
         dim=1
     )  # [B, n_input_entries]
 
     valid_target_entries = torch.stack(
-        [(torch.isfinite(y_).float().mean(dim=tuple(range(1, y_.ndim))) > 0.5).float()
+        [(torch.isfinite(y_).float().mean(dim=tuple(range(1, y_.ndim))) > thr).float()
         for y_ in target_],
         dim=1
     )  # [B, n_target_entries]
@@ -180,9 +182,10 @@ def skim_batch(input_, target_):
     input_validity = valid_input_entries.mean(dim=1)   # [B], fraction of valid input entries
     target_validity = valid_target_entries.mean(dim=1) # [B], fraction of valid target entries
 
-    valid_samples = ~((input_validity < 0.5) | (target_validity < 0.5))  # [B] boolean mask
+    valid_samples = ~((input_validity < thr) | (target_validity < thr))  # [B] boolean mask
     
     return valid_samples
+    
     
 def process_data(
     models: List[Optional[beta_VAE]],
@@ -263,7 +266,7 @@ def process_data(
         
         # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
         invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-        tau = 0.25
+        tau = 0.9
         valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
             
         # Check data for encoding
@@ -330,7 +333,7 @@ def process_batch(
         Encoded inputs concatenated with sample- or element wise- level masks (1 if valid, 0 if invalid).
 
     target_data : Tensor [B, D_out + n_out]
-        CEncoded/real targets.
+        Encoded/real targets.
     
     input_mask : Tensor [B, n_out]
         sample- or element wise- mask for the input data (1 if valid, 0 if invalid).
@@ -389,6 +392,94 @@ def process_batch(
     
     return input_data, target_data, input_mask, target_mask, target_original, input_original
     
+    
+def process_batch_test(
+        batch,
+        input_vae,
+        target_vae
+    ):
+    
+    """
+    Preprocess a batch by:
+    1) Aligning dtype/device with the reference VAE.
+    2) Encoding signals with VAEs when available.
+    3) Flattening signals without VAEs to 2D.
+    4) Concatenating data with corresponding masks.
+
+    Parameters
+    ----------
+    batch : dict
+        Must contain:
+        - 'x': list[Tensor] (inputs + actuators)
+        - 'y': list[Tensor] (targets)
+        All tensors must share the same batch size B.
+
+    input(target)_vae : list[dic]
+        dic =  {
+            "input": dict[str, beta_VAE],
+            "actuator": dict[str, beta_VAE] or {},
+            "output": dict[str, beta_VAE] or {}
+        }
+
+    Returns
+    -------
+    input_data : Tensor [B, D_in + n_in]
+        Encoded inputs concatenated with sample- or element wise- level masks (1 if valid, 0 if invalid).
+
+    target_data : Tensor [B, D_out + n_out]
+        Encoded/real targets.
+    
+    input_mask : Tensor [B, n_out]
+        sample- or element wise- mask for the input data (1 if valid, 0 if invalid).
+        
+    target_mask : Tensor [B, n_out]
+        sample- or element wise- mask for the target data (1 if valid, 0 if invalid).
+
+    target_ : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one target signal.
+        A batch is skimmed to retain only valid samples.
+        
+    input_ : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one input signal.
+        A batch is skimmed to retain only valid samples.
+    
+    """
+
+    # Original data
+    x = batch['x'] # Input + actuator
+    y = batch['y'] # Output
+
+    first_input_model = input_vae[0]
+
+    try:
+        p = next(first_input_model.parameters())
+
+        input_ = [
+            x_ if (x_.device == p.device and x_.dtype == p.dtype) else x_.to(device=p.device, dtype=p.dtype)
+            for x_ in x
+        ]
+
+        target_ = [
+            y_ if (y_.device == p.device and y_.dtype == p.dtype) else y_.to(device=p.device, dtype=p.dtype)
+            for y_ in y
+        ]
+    except Exception as e:
+        raise ValueError(f"Error while aligning batch tensors with model dtype/device: {e}")
+    
+    valid_samples = skim_batch(input_, target_).to(input_[0].device)
+    
+    input_  = [x_[valid_samples] for x_ in input_]
+    target_ = [y_[valid_samples] for y_ in target_]
+    
+    target_original = [t.clone() for t in target_]
+    input_original =  [t.clone() for t in input_]
+    
+    # Process data
+    input_data_list, input_mask_list = process_data(input_vae, input_, "do_not_expand_mask_over_latent_dim") 
+    target_data_list, target_mask_list = process_data(target_vae, target_, "expand_mask_over_latent_dim")
+
+    
+    return input_data_list, target_data_list, input_mask_list, target_mask_list, target_original, input_original
     
 def masked_loss(reco, target, mask, eps = 1e-8):
     """
