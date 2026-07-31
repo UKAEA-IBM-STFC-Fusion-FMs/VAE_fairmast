@@ -1,5 +1,5 @@
 """
-python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task2_2_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_2_magnetics_dynamics/task_2-2.yaml
+python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task2_1_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_2-1.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -129,11 +129,9 @@ def hist_rmse(
     save_path: Optional[str] = None) -> None:
     
     if isinstance(mse, list):
-        breakpoint()
         RMSE =  np.sqrt(np.mean(mse))
         rmse = np.sqrt(mse)
     if isinstance(mse, torch.Tensor):
-        breakpoint()
         RMSE = torch.sqrt(mse.mean())
         rmse =  torch.sqrt(mse)
 
@@ -253,12 +251,18 @@ def get_mse_for_list_signals(
     mse_list = []
 
     for i, (reco, target, valid) in enumerate(zip(reco_list, target_list, valid_entries)):
-      
+        
+
         if reco.shape != target.shape:
-            raise ValueError(
-                f"reco and target must have the same shape at index {i}, "
-                f"got {reco.shape} and {target.shape}"
-            )
+            if target.ndim > reco.ndim and target.shape[-1]==1:
+                target = target.squeeze(-1)
+                valid = valid.squeeze(-1)
+            if reco.shape != target.shape:
+                raise ValueError(
+                    f"reco and target must have the same shape at index {i}, "
+                    f"got {reco.shape} and {target.shape}"
+                )
+
 
         if target.shape != valid.shape:
             raise ValueError(
@@ -293,6 +297,7 @@ def decode_reco_signals(output_vaes, signals_latent_space, SETTINGS):
     Args:
         - output_vaes (list[beta_VAE]): contains VAEs for the signals to be decoded.
         - signals_latent_space (batch): contains samples of signals to be decoded. Shape [B,L].
+        if previously encoded, i.e., corresponding output_vae exists.
         - SETTINGS: configuration object to retrieve important signal-model parameters.
             1-  SETTINGS.output_signals_len is sued to retrieve every signal length `l` within the sample
                 `b` in batch. Sample `b` has total length `L`. This length is the sum_i(l_i).
@@ -315,9 +320,36 @@ def decode_reco_signals(output_vaes, signals_latent_space, SETTINGS):
             signals_real_space.append(output_vaes[i].decode(individual_signal.to(dtype=p.dtype, device=p.device))) 
         else: 
             signals_real_space.append(individual_signal)
-            
+
     return  signals_real_space
+
+def align_shapes(reco_signals_real_space, target_real_space):
     
+    for i, (reco, target) in enumerate(zip(reco_signals_real_space,target_real_space)):
+
+        # psi map needs permutation
+        if reco.ndim == 4 and reco.shape[1] == target.shape[-1]:
+            reco = reco.permute(0, 2, 3, 1)
+
+        # remove trailing singleton dims for lcfs
+        while reco.ndim > target.ndim and reco.shape[-1] == 1:
+            reco = reco.squeeze(-1)
+
+        while target.ndim > reco.ndim and target.shape[-1] == 1:
+            target = target.squeeze(-1)
+
+        # flattened representation
+        if reco.shape != target.shape:
+            if reco.numel() == target.numel():
+                reco = reco.reshape(target.shape)
+
+        assert reco.shape == target.shape, \
+            f"Cannot align shapes: {reco.shape} vs {target.shape}"
+
+        reco_signals_real_space[i] = reco.contiguous().to(target.device)
+        target_real_space[i] = target
+
+    return reco_signals_real_space, target_real_space
     
 def evaluate_model(
     model,
@@ -349,6 +381,7 @@ def evaluate_model(
     
     with torch.inference_mode():
         for batch_idx, batch in enumerate(dataloader):
+            
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
@@ -408,16 +441,8 @@ def evaluate_model(
             
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
 
-            # For psi in a 25ms interval we must permute indices
-            for i, signal in enumerate(target_real_space):
-                reco = reco_signals_real_space[i]
-
-                if reco.ndim == 4 and reco.shape[1] == signal.shape[-1]:
-                    # [B,C,H,W] -> [B,H,W,C]
-                    reco = reco.permute(0, 2, 3, 1)
-
-                reco_signals_real_space[i] = reco.contiguous().to(signal.device)
-
+            reco_signals_real_space, target_real_space = align_shapes(reco_signals_real_space, target_real_space)
+            
             mse_list_signals = get_mse_for_list_signals(reco_signals_real_space, target_real_space)
             mse_per_sample = torch.stack(mse_list_signals, dim=1)
             mse_total = mse_per_sample.sum(dim=1)  
@@ -654,7 +679,7 @@ def main():
     hist_rmse(
         rmse,
         title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-        xlabel = "NRMSE",
+        xlabel = "rmse",
         save_path = save_fig_rmse_path)
 
     save_fig_loss_path = os.path.join(output_directory,f"All_samples_loss_{config_benchmark_file_name.removesuffix('.json')}.pdf")
@@ -671,7 +696,7 @@ def main():
         hist_rmse(
             rmse_signal,
             title = f"Task_{config_benchmark_file_name.removesuffix('.json')}",
-            xlabel = "NRMSE",
+            xlabel = "rmse",
             save_path = save_fig_loss_path)
     
     save_reco_fig_path = os.path.join(output_directory,f"Reco_examples_{config_benchmark_file_name.removesuffix('.json')}.pdf")

@@ -445,7 +445,7 @@ def main():
         
 
     # Prepare datasets
-    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    zarr_local_path = "/lustre/home/bf3280/tokamark_fairmast_dataset"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,

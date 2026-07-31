@@ -268,7 +268,7 @@ def process_data(
         invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
         tau = 0.9
         valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
-            
+
         # Check data for encoding
         if model is not None:
         

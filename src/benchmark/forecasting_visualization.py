@@ -130,11 +130,9 @@ def hist_rmse(
     save_path: Optional[str] = None) -> None:
     
     if isinstance(mse, list):
-        breakpoint()
         RMSE =  np.sqrt(np.mean(mse))
         rmse = np.sqrt(mse)
     if isinstance(mse, torch.Tensor):
-        breakpoint()
         RMSE = torch.sqrt(mse.mean())
         rmse =  torch.sqrt(mse)
 

@@ -71,7 +71,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
     )
 
     # Create sets of shot IDs for training, validation and testing
-    train_shots, _, val_shots = get_train_test_val_shots(
+    train_shots, test_shots, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
         max_index_for_test = None,
@@ -105,17 +105,17 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         }
 
     # Prepare datasets
-    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    zarr_local_path = "/lustre/home/bf3280/tokamark_fairmast_dataset"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.DATA.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
-        shots={"train": train_shots, "val": val_shots, "test": []},
+        shots={"train": train_shots, "val": val_shots, "test": test_shots},
         signal_transform_map=signal_transform_map,
         local_flag=SETTINGS.DATA.local,
         store_mast_settings=store_mast_settings
     )
 
-    base_val_dataset = base_datasets['val']
+    base_val_dataset = base_datasets['test']
 
     # Tokamark datasets
     model_specific_transform = ModelSpecificTransform()
@@ -125,7 +125,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=False,
+        test_mode=True,
         shuffle_windows = False,
         verbose=False
     )
