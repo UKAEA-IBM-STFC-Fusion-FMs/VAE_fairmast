@@ -189,4 +189,5 @@ src/vae_pipeline/transforms/shot_level_transforms/*
 src/vae_pipeline/data/output/*
 src/probe_diagnostics/data
 src/benchmark/configs/*
+src/benchmark/data/output/*
 src/vae_pipeline/configs/*

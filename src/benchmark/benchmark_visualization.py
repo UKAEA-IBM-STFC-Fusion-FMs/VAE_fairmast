@@ -1,5 +1,5 @@
 """
-python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task2_1_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_2-1.yaml
+python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task3_1_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_3_profiles_dynamics/task_3-1.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt

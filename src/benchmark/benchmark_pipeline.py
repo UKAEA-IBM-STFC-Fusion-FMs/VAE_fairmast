@@ -3,7 +3,7 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_2_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-2.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task3_1_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_3_profiles_dynamics/task_3-1.yaml
 python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 
 
@@ -176,6 +176,7 @@ def train_model(
                 scaler.unscale_(optimizer)
             else:
                 reconstruction = model(data, input_mask)
+             
                 loss = masked_loss(reconstruction, target, target_mask)
                 if not torch.isfinite(loss).item():
                     if verbose:
@@ -377,7 +378,7 @@ def main():
             )
         
     # MAST base datasets
-    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    zarr_local_path = "/lustre/home/bf3280/tokamark_fairmast_dataset"
     store_mast_settings = {"base_local_zarr_path":zarr_local_path} if SETTINGS.local and zarr_local_path else None
     base_datasets = initialize_datasets(
         sources_and_signals=source_signal_list,
@@ -399,7 +400,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
@@ -408,7 +409,7 @@ def main():
         task_metadata=dict_task_metadata,
         config_metadata=config_task,
         custom_transform=model_specific_transform,
-        test_mode=True,
+        test_mode=False,
         shuffle_windows = False,
         verbose=False
     )
