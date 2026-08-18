@@ -3,7 +3,7 @@ For breaf summary check vae_pipeline.py introduction.
 
 New: in this version of the pipeline a masked loss was introduced.
 
-python src/vae_pipeline/vae_pipeline_masked.py --config_file_path src/vae_pipeline/configs/config_b_field_pol_probe_obv_field.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE.yaml
+python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config_thomson_scattering_t_e_cropped_start.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE.yaml
 '''
 
 import argparse
@@ -39,7 +39,7 @@ from src.utils.utils import (ComposeTransforms,
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.utils.utils import training_block
-from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform
+from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, CropSignalFeatures
 
 def train_vae_model(
     SETTINGS,
@@ -414,6 +414,8 @@ def main():
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
+    val_shots.remove(24623)
+
     #Get mean and std for signal transformation
     # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
     #     dict_mean = pickle.load(f)
@@ -427,7 +429,7 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
                     ReshapeLcfsTransform()
                 ]
             )
@@ -437,7 +439,8 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
+                    CropSignalFeatures(crop_factor = 30)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]

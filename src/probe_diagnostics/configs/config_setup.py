@@ -147,8 +147,6 @@ class TimeSettings:
         time_specs = config.get("time_settings", {})
 
         # Assign None if missing, and log warnings
-        self.stride_sec = self._get_key(time_specs, "stride_sec")
-        self.x_window_sec = self._get_key(time_specs, "x_window_sec")
         self.targeted_time_stamps_per_window = self._get_key(time_specs, "targeted_time_stamps_per_window")
 
     def _get_key(self, section, key):

@@ -22,7 +22,7 @@ from tokamark.tools.transforms.reshape_lcfs_transform import  ReshapeLcfsTransfo
 from tokamark.tasks import get_task_metadata
 from tokamark.data import initialize_TokaMark_dataset
 
-from src.common_transforms.general_transforms import StdScalingTransform, ModelSpecificTransform
+from src.common_transforms.general_transforms import StdScalingTransform, ModelSpecificTransform,  CropSignalFeatures
 from src.utils.utils import (ComposeTransforms, 
     initialize_datasets, get_train_test_val_shots, load_task_config)
 
@@ -88,7 +88,7 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
                     ReshapeLcfsTransform()
                 ]
             )
@@ -98,7 +98,8 @@ def test_model(config_task, config_file_name, source:str, signal_name:str, outpu
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
+                    CropSignalFeatures(crop_factor = 25)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]

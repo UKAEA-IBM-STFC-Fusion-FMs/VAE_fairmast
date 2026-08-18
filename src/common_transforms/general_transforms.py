@@ -69,6 +69,7 @@ class ModelSpecificTransform:  # TEMPLATE
 
 # ======================================================================================================================
 '''Adaptation from tokamark/src/tokamark/tools/transforms/stdscale_transform.py'''
+'''Adaptation from tokamark/src/tokamark/tools/transforms/stdscale_transform.py'''
 class StdScalingTransform:
     """
     STD scaling transform.
@@ -80,8 +81,7 @@ class StdScalingTransform:
 
     """
 
-    # ------------------------------------------------------------------------------------------------------------------
-    def __init__(self, mean: float, std: float) -> None:
+    def __init__(self, mean: float, std: float, clean = False, nan_outlayer = False) -> None:
         """
         Initialize class attributes.
 
@@ -100,8 +100,9 @@ class StdScalingTransform:
 
         self.mean = mean
         self.std = std
+        self.clean = clean
+        self.nan_outlayer = nan_outlayer 
 
-    # ------------------------------------------------------------------------------------------------------------------
     def __call__(self, dict_: Mapping[str, Any]) -> dict[str, Any]:
         """
         Parameters
@@ -115,17 +116,70 @@ class StdScalingTransform:
             Augmented input dictionary with values normalized per feature.
 
         """
-
         values = dict_["values"]
+        time = dict_['time']
+        mask = []
 
+        if self.clean:
+            mask = ~((time < 0) & np.isnan(values).all(axis=0))
+            values = values[:,mask]
+            time = time[mask]
+        
         if values is not None:
-            z = (values - self.mean)/self.std
-            values[np.abs(z) > 2.705] = np.nan
+            if self.nan_outlayer:
+                z = (values - self.mean)/self.std
+                values[np.abs(z) > 2.705] = np.nan
             values = (values - self.mean) / self.std
 
-        return {"time": dict_["time"], "values": values}
+        return {"time": time, "values": values}
 
-    # ------------------------------------------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------------------------------------------
+    
+class CropSignalFeatures():
+    def __init__(self, crop_factor:int):
+        """Crop signal by a number of time stamps equal to `crop_factor` starting from the beginning or the end 
+        of the signal.
+
+        Args:
+            crop_factor (int): number of time stamps to retain
+            - if crop_factor < 0, retian tail of the signal
+            - if crop_factor > 0, retain begenning of the signal
+
+        Raises:
+            ValueError if crop_factor is not an integer or if crop_factor == 0
+        """
+
+        if not isinstance(crop_factor, int):
+            raise ValueError(
+                f"Crop factor must be an integer, got {type(crop_factor)}"
+            )
+
+        if crop_factor == 0:
+            raise ValueError("Crop factor cannot be zero")
+
+        self.crop_factor = crop_factor
+
+    def __call__(self, dict_):
+        """crop signal
+
+        Args:
+            dict_ (dic): _description_
+        """
+        time = dict_['time']
+        values = dict_['values']
+
+
+        crop = abs(self.crop_factor)
+  
+        if values.shape[0] < crop:
+            raise ValueError(f"Crop_factor is larger than signal features: {self.crop_factor}, {values.shape[-1]}")
+
+        if self.crop_factor > 0:
+            return {"time": time, "values": values[:crop]}
+      
+        return {"time": time, "values": values[-crop:]}
+
+# ------------------------------------------------------------------------------------------------------------------
 
 class ReplaceNaN():
 
@@ -198,7 +252,7 @@ class StdDescalingTransform:
     # ------------------------------------------------------------------------------------------------------------------
 
 
-class ProbeDiagnosticTransform:  # TEMPLATE
+class ProbeDiagnosticTransform: 
     """
     Model specific transform.
 
