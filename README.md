@@ -170,4 +170,5 @@ The script cannot run in isolation; it depends on the following.
 - The **JSON config file** and **YAML task file** passed on the command line.
 - A **CUDA GPU** is optional: training works on CPU, but AMP is only enabled on CUDA.
 
-
+### Model architecture
+![VAE Architecture](docs/images/VAE_architecture.png)
