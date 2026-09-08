@@ -153,8 +153,7 @@ def skim_batch(input_, target_, thr = 0.5):
         input_ (list[torch.Tensor]):
             List of input tensors. Each tensor must have shape `[B, ...]`,
             where the batch dimension `B` is shared across all tensors. 
-            input_ can contain both diagnostics and actuators or only diagnostics
-            depenig on task configuration. 
+            input_ can contain both diagnostics and actuators. 
         target_ (list[torch.Tensor]):
             List of target tensors. Each tensor must have shape `[B, ...]`,
             where the batch dimension `B` is shared across all tensors.
@@ -329,24 +328,24 @@ def process_batch(
 
     Returns
     -------
-    input_data : Tensor [B, D_in + n_in]
-        Encoded inputs concatenated with sample- or element wise- level masks (1 if valid, 0 if invalid).
+    input_data : Tensor [B, ...]
+        Encoded inputs
 
-    target_data : Tensor [B, D_out + n_out]
+    target_data : Tensor [B, ...]
         Encoded/real targets.
     
-    input_mask : Tensor [B, n_out]
+    input_mask : Tensor [B, ...]
         sample- or element wise- mask for the input data (1 if valid, 0 if invalid).
         
-    target_mask : Tensor [B, n_out]
+    target_mask : Tensor [B, ...]
         sample- or element wise- mask for the target data (1 if valid, 0 if invalid).
 
-    target_ : list(torch.Tensor)
-        Each entry is a batch from the dataloader corresponding to one target signal.
+    input_original : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one input signal.
         A batch is skimmed to retain only valid samples.
         
-    input_ : list(torch.Tensor)
-        Each entry is a batch from the dataloader corresponding to one input signal.
+    target_original : list(torch.Tensor)
+        Each entry is a batch from the dataloader corresponding to one target signal.
         A batch is skimmed to retain only valid samples.
     
     """
