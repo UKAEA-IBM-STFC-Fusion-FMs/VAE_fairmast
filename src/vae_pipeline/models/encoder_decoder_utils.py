@@ -192,7 +192,7 @@ def build_conv1d_encoder_decoder(SETTINGS):
 
     if _chek_for_missing_attributes(SETTINGS):
         return None
-    
+
     # Create layer specs from SETTINGS. Retrieve nr. of channels and sig. length after each conv1d layers.
     encoder_specs = {"layers": SETTINGS.ENCODER.layers}
     conv1d_encoder_specs = copy.deepcopy(encoder_specs)  # independent clone # make copy before adding new layers

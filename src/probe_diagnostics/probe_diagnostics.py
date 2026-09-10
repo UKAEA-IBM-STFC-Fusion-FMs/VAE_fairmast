@@ -112,22 +112,28 @@ def main():
     
     
     # MAKE LISTS OF DATA ####################################
-    _, test_shots, _ = get_train_test_val_shots(
+    _, test_shots, val_shots = get_train_test_val_shots(
         max_index_for_train = SETTINGS.TRAINING.num_train_samples,
         max_index_for_val = SETTINGS.TRAINING.num_val_samples,
         max_index_for_test = SETTINGS.TRAINING.num_test_samples,
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
+    val_shots = [val_shots[val_shots.index(24623)]]
+  
     # filtered_shots = list(get_shots_for('generic_max_energy_time', "SW Beam"))
-    import pandas as pd
-    summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
-    filtered =  list(summary.loc[ summary["generic_max_energy_time"] < 0.2, "shot_id"])
+    # import pandas as pd
+    # filtered = []
 
-    common = [shot for shot in test_shots if shot in list(filtered)]
-    if len(common)==0:
-        raise ValueError(f"No shots available with the current filters")
-    test_shots = common
+    # # summary  = pd.read_parquet('https://mastapp.site/parquet/level2/shots')
+    # # filtered =  list(summary.loc[ summary["generic_max_energy_time"] < 0.2, "shot_id"])
+
+    # if filtered:
+    #     common = [shot for shot in test_shots if shot in list(filtered)]
+    #     if len(common)==0:
+    #         raise ValueError(f"No shots available with the current filters")
+    #     test_shots = common
+
     print(f"Nr shots = {len(test_shots)}")
 
     #### INITIALIZE DATA TRANSFORMS ####################################
@@ -157,7 +163,7 @@ def main():
       
     
     # INITIALIZE DATASET ####################################
-    zarr_local_path = "/rds/project/rds-mOlK9qn0PlQ/fairmast/upload-tmp/level2"
+    zarr_local_path = "/lustre/home/bf3280/tokamark_fairmast_dataset"
     if SETTINGS.DATA.local and zarr_local_path:
         store_mast_settings = {"base_local_zarr_path":zarr_local_path}  
     else :
@@ -166,13 +172,13 @@ def main():
     # store_mast_settings = {"s3_mast_dataset_path":"mast/level2/shots"} 
     base_datasets = initialize_datasets(
         sources_and_signals=SETTINGS.DATA.data_names,
-        shots={"train": [], "val": [], "test": test_shots},
+        shots={"train": [], "val": val_shots, "test": test_shots},
         signal_transform_map=signal_transform_map,
         local_flag=SETTINGS.DATA.local,
         store_mast_settings = store_mast_settings 
     )
     
-    base_dataset = base_datasets['test']
+    base_dataset = base_datasets['val']
     
     dataset = initialize_TokaMark_dataset(
         dataset=base_dataset,
@@ -205,10 +211,11 @@ def main():
     #### MAIN LOOP TO CREATE LATENT DATA DIC ####################################
     latent_data = defaultdict(dict)
     for batch_nr, batch in enumerate(dataloader):
+        breakpoint()
         
         if batch_nr % 10 == 0:
             print(f"Batch nr = {batch_nr}")
-        
+
         x = batch["x"].to(device=device, dtype=model_type)
 
         x_recon, mu, _, mask, x0 = model(x)
@@ -218,18 +225,20 @@ def main():
         sum_mask = mask.sum()
         if sum_mask > 0:
             residual = (mask * abs(x_recon - x0)).sum() / sum_mask
-            residual
         else:
             continue
         
-        for shot_id, window_idx, latent in zip(
+        for shot_id, window_idx, latent, signal in zip(
             batch["shot_id"],
             batch["window_index"],
-            mu
+            mu,
+            x0
         ):
             latent_data[int(shot_id)][int(window_idx)] = {
                 "mu":latent.numpy(),
-                "shot_average_residual": residual.item()
+                "shot_average_residual": residual.item(),
+                "signal_original": signal.detach().cpu(),
+                "signal_reco": x_recon.detach().cpu(),
                 }
   
   

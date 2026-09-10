@@ -629,17 +629,7 @@ def main():
             if m is None:
                 continue
             m.to(device)
-            
-    # Initialize model and send it to device
-    try:
-        model = BenchmarkModel(SETTINGS)
-        model.to(device)
-    except:
-        # Initialize model and send it to device
-        print("USING single MLP model as a benchmark model")
-        from src.utils.layer_factory import SequentialBuilder
-        model = SequentialBuilder({"layers": SETTINGS.MODEL.model_layers})
-        model.to(device)
+
     
     # Initialize model, load parameters and send it to device
     model = BenchmarkModel(SETTINGS)
