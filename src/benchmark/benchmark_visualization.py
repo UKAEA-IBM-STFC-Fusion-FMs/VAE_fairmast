@@ -1,5 +1,5 @@
 """
-python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task3_1_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_3_profiles_dynamics/task_3-1.yaml
+python src/benchmark/benchmark_visualization.py --config_benchmark_file_path src/benchmark/configs/task1_3_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 """
 from typing import Iterable, Optional, Tuple, Dict
 import matplotlib.pyplot as plt
@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 import yaml
 import numpy as np
+import pandas as pd
 
 REPO_ROOT = os.path.abspath(
     os.path.join(
@@ -380,6 +381,7 @@ def evaluate_model(
     target_vae = list(output_dict.values())
     
     with torch.inference_mode():
+        rows = []
         for batch_idx, batch in enumerate(dataloader):
             
             if batch_idx % 100 == 0 and verbose:
@@ -438,7 +440,7 @@ def evaluate_model(
                 best_reco[2] = min_value
                 best_reco[0] = reconstruction[min_idx]
                 best_reco[1] = target[min_idx]
-            
+
             reco_signals_real_space = decode_reco_signals(target_vae, reconstruction, SETTINGS)
 
             reco_signals_real_space, target_real_space = align_shapes(reco_signals_real_space, target_real_space)
@@ -480,7 +482,28 @@ def evaluate_model(
             for i, mse_signal in enumerate(mse_list_signals):
                 all_mse_per_signal[i].append(mse_signal)
 
-    return batch_losses, batch_mse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space
+            
+            shot_ids = batch["shot_id"].detach().cpu().numpy()
+            window_indices = batch["window_index"].detach().cpu().numpy()
+            for i, mse_tmp in enumerate(mse_list_signals):
+                for shot, window, value in zip(
+                    shot_ids,
+                    window_indices,
+                    mse_tmp
+                    ):
+                    rows.append({
+                        "shot": int(shot),
+                        "window_index": int(window),
+                        "signal_index": i,
+                        "rmse": np.sqrt(value.cpu().numpy()),
+                    })
+
+    df = pd.DataFrame(
+        rows,
+        columns=["shot", "window_index", "signal_index", "rmse"]
+    )
+    df.to_csv("My_metrics.csv", index=False)
+    return batch_losses, batch_mse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space, df
 
 def main():
     # Determine device to train on
@@ -644,7 +667,7 @@ def main():
     model.eval()
         
 
-    all_losses, rmse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space = evaluate_model(
+    all_losses, rmse, all_mse_per_signal, worst_reco, best_reco, worst_reco_real_space, best_reco_real_space, df = evaluate_model(
         model,
         test_dataloader,
         vae_dictionary,
