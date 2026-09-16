@@ -383,8 +383,8 @@ def benchmark_evaluation_per_shot(
                 y_pred = reco_real_space[i].detach().cpu().numpy().astype(np.float64)
                 y_target = target_real_space[i].detach().cpu().numpy().astype(np.float64)
                 
-                # y_pred = y_pred * std + mean
-                # y_target = y_target * std + mean
+                y_pred = y_pred * std + mean
+                y_target = y_target * std + mean
 
                 b = y_pred.shape[0]
                 accumulator.add_batch(

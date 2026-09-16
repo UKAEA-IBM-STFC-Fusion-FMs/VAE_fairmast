@@ -265,7 +265,7 @@ def process_data(
         
         # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
         invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-        tau = 0.9
+        tau = 1
         valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
 
         # Check data for encoding
