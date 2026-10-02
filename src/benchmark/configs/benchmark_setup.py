@@ -68,7 +68,7 @@ class SettingsBenchmark:
         else:
             raise KeyError("'training' not found in config")
         
-        if ("signal_model" in config.keys() and "mask_model" in config.keys() and "end_model" in config.keys()) or "model" in config.keys():
+        if ("signal_model" in config.keys() and "mask_model" in config.keys() and "end_model" in config.keys()):
             self.MODEL = Models(config)
         else:
             raise KeyError("One or more `models` not found in config")
@@ -93,7 +93,12 @@ class SettingsBenchmark:
         if "task" not in config.keys():
             raise KeyError("'task' not defined in benchmark_setup, interrupting execution.")
 
-        self.task = config.get("task", None)
+        self.task = config["task"]
+
+        if "fine_tuning" not in config.keys():
+            self.fine_tuning = False
+        else:
+            self.fine_tuning = config["fine_tuning"]
 
         
 # ----------------------------------------------------------------------------------------------------------------------
@@ -173,12 +178,6 @@ class Models:
             self.end_layers = self._get_key(end_model, "layers")
         else:
             self.end_layers = None
-            
-        model = config.get("model", {})
-        if model:
-            self.model_layers = self._get_key(model, "layers")
-        else:
-            self.model_layers = None
             
     def _get_key(self, section, key):
         if key in section:
