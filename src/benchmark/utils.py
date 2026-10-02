@@ -77,7 +77,7 @@ def load_vae_model(config_path:str, signal_name: str, device):
     model.load_state_dict(checkpoint['model_state_dict'])
 
     model.to(device)
-    model.eval()
+    # model.eval()
     
     return model
     
@@ -189,7 +189,8 @@ def skim_batch(input_, target_, thr = 0.5):
 def process_data(
     models: List[Optional[beta_VAE]],
     batched_data: List[torch.Tensor],
-    mask_type):
+    mask_type,
+    fine_tuning = False):
     """
     - If model is not None
         For each pair of batched_data and model we get the latent space representation of the 
@@ -265,7 +266,7 @@ def process_data(
         
         # Invalidate poor quality samples based on the fraction of invalid entries in the original batch
         invalid_fraction_per_sample = invalid_entries.float().mean(dim=dims)  # [B]
-        tau = 1
+        tau = 0.75
         valid_samples = invalid_fraction_per_sample <= tau  # bool [B]
 
         # Check data for encoding
@@ -281,7 +282,10 @@ def process_data(
             else:
                 mask = torch.zeros(B, 1, device=batch.device, dtype = batch.dtype)
 
-            with torch.no_grad():
+            if not fine_tuning:
+                with torch.no_grad():
+                    z = model.encode(batch)[0]
+            else:
                 z = model.encode(batch)[0]
 
             if valid_samples.any():
@@ -301,7 +305,8 @@ def process_data(
 def process_batch(
         batch,
         input_vae,
-        target_vae
+        target_vae,
+        fine_tuning = False
     ):
     
     """
@@ -380,8 +385,8 @@ def process_batch(
     input_original =  [t.clone() for t in input_]
     
     # Process data
-    input_data_list, input_mask_list = process_data(input_vae, input_, "do_not_expand_mask_over_latent_dim") 
-    target_data_list, target_mask_list = process_data(target_vae, target_, "expand_mask_over_latent_dim")
+    input_data_list, input_mask_list = process_data(input_vae, input_, "do_not_expand_mask_over_latent_dim", fine_tuning) 
+    target_data_list, target_mask_list = process_data(target_vae, target_, "expand_mask_over_latent_dim", fine_tuning)
     
     input_data = torch.cat(input_data_list, dim=1)  # [B, sum n_signals]
     input_mask = torch.cat(input_mask_list, dim=1)  # [B, sum n_signals]
@@ -431,3 +436,27 @@ def masked_loss(reco, target, mask, eps = 1e-8):
         loss  = torch.tensor(0.0, device=target.device, dtype=target.dtype)
         
     return loss
+
+
+def save_finetuned_vaes(vae_dictionary, save_dir):
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    for group_name in ["input", "actuator"]:
+        for signal_name, vae in vae_dictionary[group_name].items():
+
+            if vae is None:
+                continue
+
+            filename = f"{group_name}__{signal_name}.pth"
+
+            torch.save(
+                {
+                    "group": group_name,
+                    "signal_name": signal_name,
+                    "state_dict": vae.state_dict(),
+                },
+                os.path.join(save_dir, filename),
+            )
+
+            print(f"Saved {filename}")

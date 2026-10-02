@@ -3,8 +3,8 @@ PyTorch pipeline to evaluate trained VAEs over tasks defined in tokamark.
 For more details on the benchmark study see arXiv:2602.10132 
 
 RUN:
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task3_1_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_3_profiles_dynamics/task_3-1.yaml
-python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task2_3_config_with_fine_tuning.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_2_magnetics_dynamics/task_2-3.yaml
+python src/benchmark/benchmark_pipeline.py --config_benchmark_file_path src/benchmark/configs/task1_3_config_gamma_factor.json --config_task_file_path tokamark/src/tokamark/tasks_configs/group_1_reconstruction/task_1-3.yaml
 
 
 DATA INGESTION:
@@ -66,7 +66,8 @@ from src.benchmark.utils import (load_benchmark_settings,
                                 parse_args,
                                 create_vae_dictionary,
                                 process_batch,
-                                masked_loss)
+                                masked_loss,
+                                save_finetuned_vaes)
 from src.benchmark.configs.benchmark_setup import SettingsBenchmark
 from src.benchmark.benchmark_model import BenchmarkModel
 
@@ -135,14 +136,21 @@ def train_model(
 
         # TRAINING
         model.train()
-        
+
+        for group in ("input", "actuator", "output"):
+            for m in vae_dictionary[group].values():
+                if SETTINGS.fine_tuning:
+                    m.train()
+                else:
+                    m.eval()
+
         # Loop thrpough batches
         for batch_idx, batch in enumerate(train_dataloader):
             if batch_idx % 100 == 0:
                 if verbose:
                     print(f"\nBatch {batch_idx}")
 
-            data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
+            data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae, SETTINGS.fine_tuning)
 
             # Exact shape equality
             assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
@@ -209,13 +217,17 @@ def train_model(
             # Accumulate
             train_loss += loss.item()
             train_counts += 1
-        
+            
         train_vs_epoch.append(train_loss/max(1,train_counts))
             
         scheduler.step()  
         
         # EVALUATION
         model.eval()
+        for group in ("input", "actuator", "output"):
+            for m in vae_dictionary[group].values():
+                m.train()
+
         with torch.no_grad():
             for batch_idx, batch in enumerate(val_dataloader):
                 
@@ -223,7 +235,7 @@ def train_model(
                     if verbose:
                         print(f"\nBatch {batch_idx}")
 
-                data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae)
+                data, target, input_mask, target_mask, _, _ = process_batch(batch, input_vae, target_vae, SETTINGS.fine_tuning)
                 
                 # Exact shape equality
                 assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
@@ -337,7 +349,7 @@ def main():
         max_index_for_test = None,
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
-    
+    val_shots.remove(24623)
     # Initialize task specific metadata
     dict_task_metadata = get_task_metadata(
         config_task,
@@ -436,25 +448,34 @@ def main():
     create_vae_dictionary(device, vae_dictionary, "output", config_task["sources_and_signals"].get("output_name"), SETTINGS, SETTINGS.LOCAL_PATHS.output_vae_models)
 
     # Set VAEs mode:
-    for group in ("input", "actuator", "output"):
-        for m in vae_dictionary[group].values():
-            if m is None:
-                continue
-            m.to(device)
+    # for group in ("input", "actuator", "output"):
+    #     for m in vae_dictionary[group].values():
+    #         if m is None:
+    #             continue
+    #         m.to(device)
     
-    # Initialize model and send it to device
-    try:
-        model = BenchmarkModel(SETTINGS)
-        model.to(device)
-    except:
-        # Initialize model and send it to device
-        print("USING single MLP model as a benchmark model")
-        from src.utils.layer_factory import SequentialBuilder
-        model = SequentialBuilder({"layers": SETTINGS.MODEL.model_layers})
-        model.to(device)
+    model = BenchmarkModel(SETTINGS)
+    model.to(device)
         
     # Optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr = SETTINGS.TRAINING.lr)
+    if SETTINGS.fine_tuning:
+        params = list(model.parameters())
+
+        for group_name, group in vae_dictionary.items():
+            
+            # Freeze output VAEs parameters 
+            if group_name == "output":
+                for vae in group.values():
+                    for p in vae.parameters():
+                        p.requires_grad = False
+
+            for vae in group.values():
+                params.extend(vae.parameters())
+
+        optimizer = torch.optim.Adam(params, lr=SETTINGS.TRAINING.lr) 
+
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr = SETTINGS.TRAINING.lr)
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
              optimizer,
@@ -501,5 +522,6 @@ def main():
         verbose = True
         )
     
+    save_finetuned_vaes(vae_dictionary, "/lustre/home/bf3280/RESULTS_finetuning_benchmark")
 if __name__ == "__main__":
     main()

@@ -371,6 +371,14 @@ def evaluate_model(
     best_rmse =  float("inf")
     worst_rmse = float("-inf")
     
+
+    for group in ("input", "actuator", "output"):
+            for m in vae_dictionary[group].values():
+                if SETTINGS.fine_tuning:
+                    m.train()
+                else:
+                    m.eval()
+                    
     # Collect VAEs for inputs and targets
     actuator_dict = vae_dictionary["actuator"] or {}
     output_dict = vae_dictionary["output"] or {}
@@ -387,7 +395,7 @@ def evaluate_model(
             if batch_idx % 100 == 0 and verbose:
                 print(f"\nBatch {batch_idx}")
 
-            data, target, input_mask, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae)
+            data, target, input_mask, target_mask, target_real_space, _ = process_batch(batch, input_vae, target_vae, SETTINGS.fine_tuning)
 
             # Exact shape equality
             assert data.shape[0] == target.shape[0] == input_mask.shape[0] == target_mask.shape[0], (
