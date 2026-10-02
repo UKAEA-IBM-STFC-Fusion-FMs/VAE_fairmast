@@ -39,7 +39,7 @@ from src.utils.utils import (ComposeTransforms,
 from src.vae_pipeline.configs.config_setup import get_settings
 from src.vae_pipeline.models.vae_model import beta_VAE
 from src.vae_pipeline.utils.utils import training_block
-from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform, CropSignalFeatures
+from src.common_transforms.general_transforms import ModelSpecificTransform, StdScalingTransform
 
 def train_vae_model(
     SETTINGS,
@@ -414,7 +414,6 @@ def main():
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
-    val_shots.remove(24623)
 
     #Get mean and std for signal transformation
     # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
@@ -439,8 +438,7 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
-                    CropSignalFeatures(crop_factor = 30)
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True)
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
