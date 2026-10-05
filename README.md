@@ -2,7 +2,7 @@
 # `vae_pipeline.py` — MAST β-VAE training script
 
 ## Getting started
-git clone --recurse-submodules git@gitlab.stfc.ac.uk:hncdi-fusion-plasma-modelling/VAE_fairmast.git
+git clone --recurse-submodules git@github.com:UKAEA-IBM-STFC-Fusion-FMs/VAE_fairmast.git
 
 ### Create conda environment
 1- Install Miniforge distribution compatible with your operative system.
