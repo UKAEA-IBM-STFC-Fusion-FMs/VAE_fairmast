@@ -186,9 +186,12 @@ output_chronos_test/
 
 src/vae_pipeline/transforms/signal_level_transforms/*
 src/vae_pipeline/transforms/shot_level_transforms/*
+
 src/vae_pipeline/data/output/*
 !src/vae_pipeline/data/output/.gitkeep
-src/probe_diagnostics/data/*
+
+src/probe_diagnostics/data/output/*
+!src/probe_diagnostics/data/output.gitkeep
 
 src/benchmark/data/output/*
 !src/benchmark/data/output/.gitkeep
