@@ -428,7 +428,7 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True),
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std']),
                     ReshapeLcfsTransform()
                 ]
             )
@@ -438,7 +438,7 @@ def main():
         signal_transform_map = {
             var: ComposeTransforms(
                 [   
-                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'], clean = True)
+                    StdScalingTransform(dict_stats_metadata[var]['mean'], dict_stats_metadata[var]['std'])
                 ]
             )
             for var in [f"{source}-{signal}" for source, signal in source_signal_list]
