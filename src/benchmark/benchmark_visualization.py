@@ -410,7 +410,7 @@ def evaluate_model(
                 if t_real.shape[0]!=data.shape[0]:
                     raise ValueError(f"target real space batch dimension {t_real.shape[0]} differes from that one of data {data.shape[0]}")
             
-            if data is None:
+            if data is None or data.size(0) == 0:
                 continue
             
             if use_amp:

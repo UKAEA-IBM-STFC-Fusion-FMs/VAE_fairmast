@@ -161,7 +161,7 @@ def train_model(
                 f"target_mask : {target_mask.shape[0]}\n"
             )
             
-            if data is None:
+            if data is None or data.size(0) == 0:
                 continue
             
             optimizer.zero_grad(set_to_none=True)
@@ -246,7 +246,7 @@ def train_model(
                     f"target_mask : {target_mask.shape[0]}\n"
                 )
 
-                if data is None:
+                if data is None or data.size(0) == 0:
                     continue
      
                 if use_amp:
