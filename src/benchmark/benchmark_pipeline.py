@@ -349,7 +349,7 @@ def main():
         max_index_for_test = None,
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
-    val_shots.remove(24623)
+
     # Initialize task specific metadata
     dict_task_metadata = get_task_metadata(
         config_task,
