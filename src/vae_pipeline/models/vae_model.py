@@ -60,22 +60,15 @@ class beta_VAE(nn.Module):
             After permute: [B, C, H, W]
             Output shape: [B, 2C, H, W]
         """
-        # For a 3D signals (i.e., x dimension == 4) we use a conv2d encoder.
-        # we must permute the indices of our tensor to agree with the PyTorch conv2d convention.
-        if x.ndim == 4:
-            x = x.permute(0, 3, 1, 2).contiguous() 
-
-        # When using a linear model [B,F,L=1] we need to transpose F,L to match the expected input shape.
-        if x.shape[-1] == 1 and x.ndim == 3:
-            x = x[..., 0]   
-
+        
         mask = torch.isfinite(x)
         mask = mask.to(dtype=x.dtype) 
         
         x0 = torch.nan_to_num(x, nan=0.0)
-        x_cat = torch.cat([x0, mask], dim=1)
-
-        return x0, mask, x_cat
+        
+        x  = torch.cat([x0, mask], dim=1)
+        print(x.shape)
+        return x0, mask, x
         
     def encode(self, x):
         x0, mask, x_cat = self._prepare(x)

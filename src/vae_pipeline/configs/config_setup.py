@@ -176,6 +176,7 @@ class WindowShape:
     
         self.window_channels = self._get_key(window_specs, "window_channels")
         self.window_length = self._get_key(window_specs,"window_length")
+        self.permutation = self._get_key(window_specs, "permutation")
     
     def _get_key(self, section, key):
         if key in section:

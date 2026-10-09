@@ -3,7 +3,7 @@ For breaf summary check vae_pipeline.py introduction.
 
 New: in this version of the pipeline a masked loss was introduced.
 
-python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config_thomson_scattering_t_e_cropped_start.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE.yaml
+python src/vae_pipeline/vae_pipeline.py --config_file_path src/vae_pipeline/configs/config_equilibrium_psi.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE_psi.yaml
 '''
 
 import argparse
@@ -414,7 +414,6 @@ def main():
         csv_path = SETTINGS.LOCAL_PATHS.data_split_csv_path
     )
     
-
     #Get mean and std for signal transformation
     # with open(os.path.join(SETTINGS.LOCAL_PATHS.global_mean_std_path, "dict_mean_shot.pkl"), "rb") as f:
     #     dict_mean = pickle.load(f)
@@ -460,7 +459,7 @@ def main():
     base_val_dataset = base_datasets['val']
 
     # Tokamark datasets
-    model_specific_transform = ModelSpecificTransform()
+    model_specific_transform = ModelSpecificTransform(SETTINGS.WINDOWsSHAPE.permutation)
 
     train_model_dataset = initialize_TokaMark_dataset(
         dataset=base_train_dataset,

@@ -1,0 +1,77 @@
+{
+  "input": {
+    "data_names": [["equilibrium","psi"]],
+    "target_names": [["equilibrium","psi"]]
+  },
+  "windowed_data_specs":{
+    "window_channels":65,
+    "window_length": 65,
+    "permutation": [2,0,1]
+  },
+  "time_settings":{
+    "x_window_sec": 0.005,
+    "y_window_sec": 0.0002,
+    "dt_sec": 0.0, 
+    "stride_sec": 0.0035,
+    "stride_unitary": true,
+    "targeted_time_stamps_per_window": 1
+  },
+  "training": {
+    "num_epochs": 65,
+    "min_nr_epochs": 45,
+    "patience":5,
+    "min_increment": 0.0005,
+    "lr": 0.5e-3,
+    "num_train_samples":9259,
+    "num_val_samples": 1157,
+    "dataloader_batch_size": 2000,
+    "num_workers": 0
+  },
+  "beta-vae":{
+    "latent_dim":16,
+    "beta":0.001,
+    "ref_freq": 0.001
+  },
+  "encoder":{
+    "type": "encoder_decoder",
+    "activation_fn": "leaky_relu",
+    "layers": [
+      {"type": "conv2d", "params": {"in_channels": 2, "out_channels": 16, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv2d", "params": {"in_channels": 16, "out_channels": 32, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv2d", "params": {"in_channels": 32, "out_channels": 64, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"},
+      {"type": "conv2d", "params": {"in_channels": 64, "out_channels": 128, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"},
+      {"type": "flatten", "params":{"start_dim":1}},
+      {"type": "linear", "params":{"in_features": 3200, "out_features": 1024}},
+      {"type": "leaky_relu"}
+    ]
+  },
+  "decoder":{
+    "type": "encoder_decoder",
+    "activation_fn": "leaky_relu",
+    "layers": [
+      { "type": "linear", "params": { "in_features": 16, "out_features": 1024 } },
+      { "type": "leaky_relu" },
+      { "type": "linear", "params": { "in_features": 1024, "out_features": 3200 } },
+      { "type": "leaky_relu" },
+      { "type": "unflatten", "params": {"dim":1, "unflattened_size": [128, 5, 5] }},
+      {"type": "conv_transpose2d", "params": {"in_channels": 128, "out_channels": 64, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv_transpose2d", "params": {"in_channels": 64, "out_channels": 32, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"}, 
+      {"type": "conv_transpose2d", "params": {"in_channels": 32, "out_channels": 16, "kernel_size": 3, "stride": 2, "padding": 1}}, 
+      {"type": "leaky_relu"},
+      {"type": "conv_transpose2d", "params": {"in_channels": 16, "out_channels": 1, "kernel_size": 3, "stride": 2, "padding": 1}}
+    ]
+  },
+  "paths": {
+    "data_split_csv_path":  "VAE_fairmast/tokamark/src/tokamark/metadata/TokaMark_data_splits.csv",
+    "global_mean_std_path":"tokamark/src/tokamark/metadata",
+    "data_output_directory": "src/vae_pipeline/data/output/"
+  },
+  "local": true,
+  "cache_data": false
+}

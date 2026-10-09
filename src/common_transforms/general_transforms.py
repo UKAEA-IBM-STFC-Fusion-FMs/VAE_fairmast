@@ -6,39 +6,32 @@ from typing import Any
 
 
 '''From tokamark/scripts/test_pipeline.py'''
-class ModelSpecificTransform:  # TEMPLATE
+class ModelSpecificTransform: 
     """
     Model specific transform.
 
     Attributes
     ----------
-    verbose : bool
-        If True, activate verbose mode.
+    permutation
 
     Methods
     -------
     __call__(shot)
         Call method.
-
     """
 
     # ------------------------------------------------------------------------------------------------------------------
-    def __init__(self, verbose=False) -> None:
+    def __init__(self, permutation) -> None:
         """
-        Initialize class attributes.
-
         Parameters
         ----------
-        verbose : bool
-            If True, activate verbose mode.
-
-        Returns
-        -------
-        # None  # REMARK: Commented out to avoid type checking errors, as this is a callable class.
+        permutation: list
+            List of indices that set the permutation of current signal dimensions
+            Example: signal.shape = [65,65,5], permutation = [2,0,1] -> signal.shape = [5,65,65]
 
         """
 
-        self.verbose = verbose
+        self.permutation = permutation
 
     # ------------------------------------------------------------------------------------------------------------------
     def __call__(self, shot: Mapping[str, Any]) -> dict[str, Any]:
@@ -57,16 +50,24 @@ class ModelSpecificTransform:  # TEMPLATE
             items, respectively.
 
         """
+        def prepare_values(values):
+            if self.permutation is None:
+                if values.shape[-1] == 1:
+                    values = np.squeeze(values, axis=-1)
+                return values
+            else:
+                values = np.transpose(values, self.permutation)
+                if values.shape[-1] == 1:
+                    values = np.squeeze(values, axis=-1)
+                return values
+
         return {
-            "x": (
-                [data["values"] for var, data in shot["input"].items()]
-                + [data["values"] for var, data in shot["actuator"].items()]
-            ),
-            "y": [data["values"] for var, data in shot["output"].items()],
-        }
-
-
-
+                    "x": (
+                            [ prepare_values(data["values"]) for var, data in shot["input"].items()] +
+                            [ prepare_values(data["values"])for var, data in shot["actuator"].items()]
+                        ),
+                    "y":    [ prepare_values(data["values"]) for var, data in shot["output"].items()]
+                }
 # ======================================================================================================================
 '''Adaptation from tokamark/src/tokamark/tools/transforms/stdscale_transform.py'''
 class StdScalingTransform:
@@ -253,3 +254,7 @@ class ProbeDiagnosticTransform:  # TEMPLATE
             "x": next(iter(shot["input"].values()))["values"],
             "shot_id" : shot['shot_id']
         }
+
+
+
+    
