@@ -77,7 +77,7 @@ Parsed by `WindowShape` (`config_setup.py:173`).
 |---|---|---|
 | `window_channels` | int | Channel count of the input window. In the vae_pipeline convention this is the channel dimension of the tensor fed to the encoder — the raw signal channels **plus** the validity-mask channels concatenated by `beta_VAE._prepare` (`models/vae_model.py:41-78`), i.e. typically 2× the raw signal channels (e.g. `30` for the 15-channel `flux_loop_flux` signal; the sibling `probe_diagnostics` config of the same VAE lists the raw `15`). Presence is required by `_chek_for_missing_attributes` (`encoder_decoder_utils.py:455`) and it is used as the tensor size in the test harness (`models/vae_model.py:312`). |
 | `window_length` | int | Number of time samples per window. Used as the starting length in the conv output-size computation `_compute_conv_output_dim` (`encoder_decoder_utils.py:503`) and must equal `time_settings.targeted_time_stamps_per_window` (warning otherwise). |
-
+| `permutation` | list(int) | Sequence of dimension indices specifying how to reorder the signal axes. Used in `src.common_transforms.general_transforms.ModelSpecificTransform`
 ---
 
 ## `training`
