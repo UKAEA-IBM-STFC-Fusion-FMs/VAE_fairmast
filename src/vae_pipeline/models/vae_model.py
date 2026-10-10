@@ -66,9 +66,9 @@ class beta_VAE(nn.Module):
         
         x0 = torch.nan_to_num(x, nan=0.0)
         
-        x  = torch.cat([x0, mask], dim=1)
-        print(x.shape)
-        return x0, mask, x
+        x_cat  = torch.cat([x0, mask], dim=1)
+   
+        return x0, mask, x_cat
         
     def encode(self, x):
         x0, mask, x_cat = self._prepare(x)
@@ -229,7 +229,6 @@ def test_model_reco(model, in_channels, input_length):
     x_recon, mu, logvar = model(x)
     
     rms = torch.sqrt(torch.mean((x - x_recon) ** 2))
-    print(rms)
 
     return x, x_recon
     
@@ -312,9 +311,3 @@ if __name__ == "__main__":
     test_model_reco(model, nr_channels,length)
     #2
     test_model_state_dic_retrieval(model, model_home_directory, nr_channels,length)
-
-    
-    
-    
-        
-       
