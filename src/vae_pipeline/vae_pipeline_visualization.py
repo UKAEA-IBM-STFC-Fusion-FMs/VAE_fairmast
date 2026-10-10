@@ -1,6 +1,6 @@
 """Plot VAE reconstructions for test windows near a requested physical RMSE.
 
-python src/vae_pipeline/vae_rms_visualize.py --config_file_path src/vae_pipeline/configs/config_equilibrium_psi.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE_psi.yaml --target_rmse 0.0204 --rmse_tolerance 0.0002
+python src/vae_pipeline/vae_visualization.py --config_file_path src/vae_pipeline/configs/config_equilibrium_psi.json --config_task_file_path src/vae_pipeline/configs/task_encoding_VAE_psi.yaml --output_dir src/vae_pipeline/data/output/conv2d_vae_config_equilibrium_psi
 """
 
 import argparse
