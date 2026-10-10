@@ -389,3 +389,159 @@ def plot_psi(
     )
 
     plt.close(fig)
+
+
+import numpy as np
+import matplotlib.pyplot as plt
+from typing import Optional
+
+
+def plot_loss_vs_epoch(
+    data: dict,
+    title: str = "Loss vs epochs",
+    save_path: Optional[str] = None,
+) -> None:
+    """
+    Plot training and validation losses.
+
+    Supported formats:
+
+    Format 1 (VAE):
+        data["Loss"]["val_total"]
+        data["Loss"]["val_recon"]
+        data["Loss"]["val_kl"]
+        data["Loss"]["train_total"]
+        data["Loss"]["train_recon"]
+        data["Loss"]["train_kl"]
+
+    Format 2 (simple):
+        data["val_losses"]
+        data["train_losses"]
+    """
+
+    fig, ax = plt.subplots()
+
+    # ----------------------------------------------------------
+    # VAE format
+    # ----------------------------------------------------------
+    if "Loss" in data:
+        beta_history = data["beta_history"]
+
+        loss_data = data["Loss"]
+
+        val_loss = loss_data["val_total"]
+        train_loss = loss_data["train_total"]
+
+        epochs = np.arange(1, len(val_loss) + 1)
+
+        # total losses
+        ax.plot(
+            epochs,
+            val_loss,
+            color="blue",
+            linestyle="solid",
+            marker="o",
+            label="Validation total",
+        )
+
+        ax.plot(
+            epochs,
+            train_loss,
+            color="red",
+            linestyle="solid",
+            marker="o",
+            label="Training total",
+        )
+
+        # reconstruction losses (optional)
+        ax.plot(
+            epochs,
+            loss_data["val_recon"],
+            color="blue",
+            linestyle="dashed",
+            label="Validation recon",
+        )
+
+        ax.plot(
+            epochs,
+            loss_data["train_recon"],
+            color="red",
+            linestyle="dashed",
+            label="Training recon",
+        )
+
+        if beta_history is None:
+            beta = np.ones(len(loss_data["val_kl"]))
+        else:
+            beta = np.asarray(beta_history)
+
+        val_kl = np.asarray(loss_data["val_kl"]) * beta
+        train_kl = np.asarray(loss_data["train_kl"]) * beta
+
+        ax.plot(
+            epochs,
+            val_kl,
+            color="blue",
+            linestyle="dotted",
+            label="Validation KL x β",
+        )
+
+        ax.plot(
+            epochs,
+            train_kl,
+            color="red",
+            linestyle="dotted",
+            label="Training KL x β",
+        )
+
+    # ----------------------------------------------------------
+    # Simple format
+    # ----------------------------------------------------------
+    elif "val_losses" in data and "train_losses" in data:
+
+        val_loss = data["val_losses"]
+        train_loss = data["train_losses"]
+
+        epochs = np.arange(1, len(val_loss) + 1)
+
+        ax.plot(
+            epochs,
+            val_loss,
+            color="blue",
+            linestyle="solid",
+            marker="o",
+            label="Validation loss",
+        )
+
+        ax.plot(
+            epochs,
+            train_loss,
+            color="red",
+            linestyle="solid",
+            marker="o",
+            label="Training loss",
+        )
+
+    else:
+        raise ValueError(
+            "Unknown loss format. Expected either "
+            "'Loss' or ('val_losses', 'train_losses')."
+        )
+
+    # ----------------------------------------------------------
+    # Shared formatting
+    # ----------------------------------------------------------
+    ax.set_yscale("log")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Losses")
+    ax.set_title(title)
+    ax.grid(True)
+    ax.legend()
+
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, bbox_inches="tight")
+        plt.close(fig)
+    else:
+        plt.show()
